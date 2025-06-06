@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm, type SubmitHandler, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -23,7 +23,7 @@ const profileSchema = z.object({
   user_name: z.string().min(2, 'Name should be at least 2 characters.').max(50, 'Name cannot exceed 50 characters.').optional(),
   email_id: z.string().email('Invalid email address.'), 
   phone_number: z.string().max(20, 'Phone number cannot exceed 20 characters.').optional().or(z.literal('')), 
-  location_string: z.string().max(255, 'Locations cannot exceed 255 characters.').optional().or(z.literal('')),
+  location_string: z.string().max(255, 'Preferred Locations cannot exceed 255 characters.').optional().or(z.literal('')),
   country: z.string().max(100, 'Country cannot exceed 100 characters.').optional().or(z.literal('')),
   professional_summary: z.string().min(50, 'Profile summary should be at least 50 characters.').optional().or(z.literal('')),
   desired_job_role: z.string().min(10, 'Job preferences should be at least 10 characters.').optional().or(z.literal('')),
@@ -39,6 +39,7 @@ type ProfileFormValues = z.infer<typeof profileSchema>;
 export default function ProfilePage() {
   const [userProfile, setUserProfile] = useLocalStorage<User | null>('user-profile', null);
   const { toast } = useToast();
+  const [isEmailReadOnly, setIsEmailReadOnly] = useState(false); // Initialize to false
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
@@ -75,6 +76,10 @@ export default function ProfilePage() {
         skills_list_text: userProfile.skills_list_text || '',
         resume: userProfile.resume || '',
       });
+      // Set readOnly state after hydration and when userProfile is available
+      setIsEmailReadOnly(!!userProfile.email_id);
+    } else {
+      setIsEmailReadOnly(false);
     }
   }, [userProfile, reset]);
 
@@ -127,7 +132,14 @@ export default function ProfilePage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="email_id">Email Address</Label>
-                <Input id="email_id" type="email" {...register('email_id')} placeholder="you@example.com" className={errors.email_id ? 'border-destructive' : ''} readOnly={!!userProfile?.email_id} />
+                <Input 
+                  id="email_id" 
+                  type="email" 
+                  {...register('email_id')} 
+                  placeholder="you@example.com" 
+                  className={errors.email_id ? 'border-destructive' : ''} 
+                  readOnly={isEmailReadOnly} // Use state variable here
+                />
                 {errors.email_id && <p className="text-sm text-destructive">{errors.email_id.message}</p>}
               </div>
             </div>
@@ -149,7 +161,7 @@ export default function ProfilePage() {
                 {errors.country && <p className="text-sm text-destructive">{errors.country.message}</p>}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="location_string">Preferred Locations (Optional)</Label>
+                <Label htmlFor="location_string">Preferred Locations (comma-separated, Optional)</Label>
                  <div className="relative flex items-center">
                     <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input id="location_string" {...register('location_string')} placeholder="e.g., New York, Remote, London" className={`pl-10 ${errors.location_string ? 'border-destructive' : ''}`} />
@@ -304,3 +316,5 @@ export default function ProfilePage() {
     </div>
   );
 }
+
+      
