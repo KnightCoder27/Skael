@@ -178,12 +178,12 @@ export default function ProfilePage() {
                 {errors.country && <p className="text-sm text-destructive">{errors.country.message}</p>}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="location_string">Preferred Locations (comma-separated, Optional)</Label>
+                <Label htmlFor="location_string">Preferred Locations</Label>
                  <div className="relative flex items-center">
                     <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input id="location_string" {...register('location_string')} placeholder="e.g., New York, Remote, London" className={`pl-10 ${errors.location_string ? 'border-destructive' : ''}`} />
                 </div>
-                <p className="text-xs text-muted-foreground">Enter cities or "Remote", separated by commas.</p>
+                <p className="text-xs text-muted-foreground">Optional. Enter cities or "Remote", separated by commas.</p>
                 {errors.location_string && <p className="text-sm text-destructive">{errors.location_string.message}</p>}
               </div>
             </div>
