@@ -6,7 +6,7 @@ import { useForm, type SubmitHandler, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import useLocalStorage from '@/hooks/use-local-storage';
-import type { User, RemotePreference } from '@/types';
+import type { User, RemotePreference, TrackedApplication } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -14,8 +14,10 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
-import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle } from 'lucide-react';
 
 const remotePreferenceOptions: RemotePreference[] = ["Remote", "Hybrid", "Onsite", "Any"];
 
@@ -28,7 +30,7 @@ const profileSchema = z.object({
   professional_summary: z.string().min(50, 'Profile summary should be at least 50 characters.').optional().or(z.literal('')),
   desired_job_role: z.string().min(10, 'Job preferences should be at least 10 characters.').optional().or(z.literal('')),
   experience: z.coerce.number().int().nonnegative('Experience must be a positive number.').optional().nullable(), 
-  remote_preference: z.enum(["Remote", "Hybrid", "Onsite", "Any"]).optional(),
+  remote_preference: z.enum(remotePreferenceOptions).optional(),
   expected_salary: z.string().max(50, 'Expected salary cannot exceed 50 characters.').optional().or(z.literal('')), 
   skills_list_text: z.string().max(500, 'Skills list cannot exceed 500 characters.').optional().or(z.literal('')), 
   resume: z.string().url('Please enter a valid URL for your resume.').max(255, 'Resume URL cannot exceed 255 characters.').optional().or(z.literal('')),
@@ -38,7 +40,9 @@ type ProfileFormValues = z.infer<typeof profileSchema>;
 
 export default function ProfilePage() {
   const [userProfile, setUserProfile] = useLocalStorage<User | null>('user-profile', null);
+  const [, setTrackedApplications] = useLocalStorage<TrackedApplication[]>('tracked-applications', []);
   const { toast } = useToast();
+  const router = useRouter();
   const [isEmailReadOnly, setIsEmailReadOnly] = useState(false); 
 
   const form = useForm<ProfileFormValues>({
@@ -62,8 +66,12 @@ export default function ProfilePage() {
 
   useEffect(() => {
     // Determine if email should be read-only only on the client after hydration
+    setIsEmailReadOnly(false); // Default to not read-only
+    if (userProfile && userProfile.email_id) {
+        setIsEmailReadOnly(true);
+    }
+
     if (userProfile) {
-      setIsEmailReadOnly(!!userProfile.email_id);
       reset({
         user_name: userProfile.user_name || '',
         email_id: userProfile.email_id || '',
@@ -78,8 +86,6 @@ export default function ProfilePage() {
         skills_list_text: userProfile.skills_list_text || '',
         resume: userProfile.resume || '',
       });
-    } else {
-      setIsEmailReadOnly(false); // Ensure it's not read-only if no profile
     }
   }, [userProfile, reset]);
 
@@ -101,6 +107,17 @@ export default function ProfilePage() {
 
   const handleGenerateCustomCoverLetter = () => {
     toast({ title: "Coming Soon!", description: "Custom cover letter generation will be available soon." });
+  };
+
+  const handleDeleteAccountConfirm = () => {
+    setUserProfile(null);
+    setTrackedApplications([]);
+    toast({
+      title: "Account Deleted",
+      description: "Your account data has been removed from this browser.",
+      variant: "destructive",
+    });
+    router.push('/auth');
   };
 
   return (
@@ -313,6 +330,52 @@ export default function ProfilePage() {
           These tools use your saved profile information. Ensure your profile is up-to-date for best results.
         </CardFooter>
       </Card>
+
+      <Separator className="my-10" />
+
+      <Card className="shadow-lg border-destructive">
+        <CardHeader>
+          <CardTitle className="font-headline text-xl flex items-center text-destructive">
+            <AlertTriangle className="mr-2 h-6 w-6" /> Danger Zone
+          </CardTitle>
+          <CardDescription>
+            Proceed with caution. These actions are irreversible.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive" className="w-full sm:w-auto">
+                <Trash2 className="mr-2 h-4 w-4" /> Delete Account
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle className="flex items-center">
+                   <AlertTriangle className="mr-2 h-5 w-5 text-destructive" /> Are you absolutely sure?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  This action cannot be undone. This will permanently delete your
+                  account data (profile and tracked applications) from this browser.
+                  This is a simulation and no data is stored on a server.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleDeleteAccountConfirm} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
+                  Yes, delete account
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </CardContent>
+        <CardFooter className="text-xs text-muted-foreground pt-4">
+          Deleting your account will remove all your saved information from this application in your current browser.
+        </CardFooter>
+      </Card>
+
     </div>
   );
 }
+
+    
