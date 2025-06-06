@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { MapPin, Briefcase, DollarSign, FileText, ExternalLink, Percent, Sparkles, CalendarDays } from 'lucide-react'; // Added CalendarDays
+import { MapPin, Briefcase, DollarSign, FileText, ExternalLink, Percent, Sparkles, CalendarDays, Clock3 } from 'lucide-react'; // Added Clock3
 import { LoadingSpinner } from './loading-spinner';
 import Image from 'next/image';
 
@@ -64,6 +64,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isL
             <span className="flex items-center"><MapPin className="w-4 h-4 mr-1.5" /> {job.location}</span>
             {job.salary_string && <span className="flex items-center text-accent"><DollarSign className="w-4 h-4 mr-1.5" /> {job.salary_string}</span>} {/* Updated field */}
             {job.date_posted && <span className="flex items-center"><CalendarDays className="w-4 h-4 mr-1.5" /> Posted: {formatDate(job.date_posted)}</span>} {/* Updated field and added formatting */}
+            {job.employment_status && <span className="flex items-center"><Clock3 className="w-4 h-4 mr-1.5" /> {job.employment_status}</span>}
           </div>
           {job.technologies && job.technologies.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
