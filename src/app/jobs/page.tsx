@@ -21,7 +21,7 @@ import { extractJobDescriptionPoints, type ExtractJobDescriptionPointsInput, typ
 import { 
   generateResume, 
   generateCoverLetter, 
-  type GenerateDocumentInput, // Updated: Using the shared input type
+  type GenerateDocumentInput,
   type GenerateResumeOutput,
   type GenerateCoverLetterOutput 
 } from '@/ai/flows/resume-cover-letter-generator';
@@ -79,15 +79,12 @@ export default function JobExplorerPage() {
   useEffect(() => {
     const loadJobs = async () => {
       setIsLoadingJobs(true);
-      if (userProfile?.professional_summary && sampleJobs.length > 0) { 
-        setJobs(sampleJobs.map(j => ({...j, matchScore: undefined, matchExplanation: undefined })));
-      } else {
-        setJobs(sampleJobs);
-      }
+      // Check if professional_summary exists for AI features, not for basic job loading
+      setJobs(sampleJobs.map(j => ({...j, matchScore: undefined, matchExplanation: undefined })));
       setIsLoadingJobs(false);
     };
     loadJobs();
-  }, [userProfile]);
+  }, []); // Removed userProfile dependency here, as basic job listing shouldn't depend on profile status. AI enrichment will.
 
 
   const handleViewDetails = (job: JobListing) => { 
@@ -113,8 +110,8 @@ export default function JobExplorerPage() {
   };
 
   const handleGenerateMaterials = async (job: JobListing) => { 
-    if (!userProfile || !userProfile.professional_summary) { 
-      toast({ title: "Profile Required", description: "Please complete your profile to generate application materials.", variant: "destructive" });
+    if (!userProfile || !userProfile.professional_summary || !userProfile.desired_job_role || !userProfile.skills_list_text) { 
+      toast({ title: "Profile Incomplete", description: "Please complete your professional summary, desired job role, and key skills in your profile to generate application materials.", variant: "destructive" });
       return;
     }
     setSelectedJobForMaterials(job);
@@ -127,13 +124,12 @@ export default function JobExplorerPage() {
       const pointsInput: ExtractJobDescriptionPointsInput = { jobDescription: job.description }; 
       const pointsResult = await extractJobDescriptionPoints(pointsInput);
       
-      const materialsInput: GenerateDocumentInput = { // Using the shared input type
+      const materialsInput: GenerateDocumentInput = {
         jobDescription: job.description, 
         userProfile: userProfile.professional_summary, 
         pointsToMention: [...(pointsResult.keyRequirements || []), ...(pointsResult.keySkills || [])],
       };
       
-      // Call resume and cover letter generation in parallel
       const [resumeResult, coverLetterResult] = await Promise.all([
         generateResume(materialsInput),
         generateCoverLetter(materialsInput)
@@ -154,6 +150,8 @@ export default function JobExplorerPage() {
     }
   };
 
+  const isProfileIncomplete = !userProfile || !userProfile.professional_summary || !userProfile.desired_job_role || !userProfile.skills_list_text;
+
   if (isLoadingJobs) {
     return <FullPageLoading message="Finding best jobs for you..." />;
   }
@@ -170,12 +168,12 @@ export default function JobExplorerPage() {
         </p>
       </header>
 
-      {!userProfile?.professional_summary && ( 
+      {isProfileIncomplete && ( 
         <Alert variant="default" className="bg-primary/10 border-primary/30 text-primary-dark">
           <Info className="h-5 w-5 text-primary" />
           <AlertTitle className="font-semibold text-primary">Complete Your Profile for Better Matches!</AlertTitle>
           <AlertDescription>
-            AI-powered matching and material generation work best with a complete profile. 
+            AI-powered matching and material generation work best with a complete profile (summary, desired role, and skills). 
             <Button variant="link" asChild className="p-0 h-auto ml-1 text-primary font-semibold">
               <Link href="/profile">Update your profile now.</Link>
             </Button>
