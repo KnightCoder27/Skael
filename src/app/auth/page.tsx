@@ -16,9 +16,9 @@ import { useToast } from '@/hooks/use-toast';
 import { LogIn, UserPlus, Eye, EyeOff, Compass } from 'lucide-react';
 import type { User } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
-import { getUserByEmail, createUser as createUserInDb } from '@/services/userService'; // Renamed to avoid conflict
+import { getUserByEmail, createUser as createUserInDb } from '@/services/userService'; 
 
-// Schemas (no change)
+// Schemas
 const loginSchema = z.object({
   email: z.string().email({ message: "Invalid email address." }),
   password: z.string().min(6, { message: "Password must be at least 6 characters." }),
@@ -62,20 +62,21 @@ export default function AuthPage() {
   });
 
   const onLoginSubmit: SubmitHandler<LoginFormValues> = async (data) => {
-    loginForm.formState.isSubmitting = true;
+    // react-hook-form handles isSubmitting automatically
     try {
       let user = await getUserByEmail(data.email);
 
       if (!user) {
-        // User doesn't exist, create a basic profile in Firestore
         toast({ title: "New User Detected", description: "Creating a basic profile for you..." });
         const newUserPartial: Omit<User, 'id' | 'joined_date'> = {
           email_id: data.email,
-          user_name: data.email.split('@')[0] || "Demo User", // Default name from email
+          user_name: data.email.split('@')[0] || "Demo User",
           professional_summary: `Logged in as ${data.email}. Profile details can be updated.`,
           desired_job_role: "No preferences set yet.",
-          skills: [],
-          preferred_locations: [],
+          // skills: [], // Assuming skills_list_text will be used
+          // preferred_locations: [], // Assuming location_string will be used
+          skills_list_text: "",
+          location_string: "",
         };
         user = await createUserInDb(newUserPartial);
       }
@@ -87,30 +88,26 @@ export default function AuthPage() {
     } catch (error) {
       console.error("Login error:", error);
       toast({ title: "Login Failed", description: "Could not log in. Please try again.", variant: "destructive" });
-    } finally {
-        loginForm.formState.isSubmitting = false;
     }
+    // react-hook-form handles isSubmitting automatically
   };
 
   const onRegisterSubmit: SubmitHandler<RegisterFormValues> = async (data) => {
-    registerForm.formState.isSubmitting = true;
+    // react-hook-form handles isSubmitting automatically
     try {
       const existingUser = await getUserByEmail(data.email);
       if (existingUser) {
         toast({ title: "Registration Failed", description: "An account with this email already exists.", variant: "destructive" });
-        registerForm.formState.isSubmitting = false;
-        return;
+        return; // Exit early
       }
 
       const newUserPartial: Omit<User, 'id' | 'joined_date'> = {
         user_name: data.name,
         email_id: data.email,
-        // Initialize other fields as empty or default
         professional_summary: "", 
         desired_job_role: "",   
         skills_list_text: "",
         location_string: "",
-        // No password storage in this phase. Firebase Auth would handle this.
       };
       const registeredUser = await createUserInDb(newUserPartial);
       
@@ -121,9 +118,8 @@ export default function AuthPage() {
     } catch (error) {
       console.error("Registration error:", error);
       toast({ title: "Registration Failed", description: "Could not create account. Please try again.", variant: "destructive" });
-    } finally {
-        registerForm.formState.isSubmitting = false;
     }
+    // react-hook-form handles isSubmitting automatically
   };
 
   const toggleShowLoginPassword = () => setShowLoginPassword(!showLoginPassword);
@@ -195,7 +191,6 @@ export default function AuthPage() {
                   )}
                 </div>
                 <div className="flex items-center justify-end">
-                  {/* This would link to a password reset flow if Firebase Auth was used */}
                   <Link href="#" className="text-sm text-primary hover:underline" tabIndex={-1} onClick={(e) => e.preventDefault()}>
                     Forgot password?
                   </Link>
@@ -211,15 +206,13 @@ export default function AuthPage() {
                     <Button variant="link" className="p-0 h-auto text-primary" onClick={() => { 
                         const currentRegisterTab = document.querySelector('[data-state="active"][role="tab"][aria-selected="true"]');
                         if (currentRegisterTab && currentRegisterTab.getAttribute('data-value') === 'register') {
-                             // Already on register tab, reset forms
                              registerForm.reset();
                              loginForm.reset();
                         } else {
-                            // Switch to register tab
                             const trigger = document.querySelector('button[role="tab"][data-value="register"]') as HTMLButtonElement | null;
                             trigger?.click();
                         }
-                         setActiveTab('register'); // Ensure internal state matches
+                         setActiveTab('register'); 
                          loginForm.reset(); 
                          registerForm.reset();
                       }}
@@ -337,15 +330,13 @@ export default function AuthPage() {
                      <Button variant="link" className="p-0 h-auto text-primary" onClick={() => { 
                         const currentLoginTab = document.querySelector('[data-state="active"][role="tab"][aria-selected="true"]');
                         if (currentLoginTab && currentLoginTab.getAttribute('data-value') === 'login') {
-                            // Already on login tab, reset forms
                             loginForm.reset();
                             registerForm.reset();
                         } else {
-                            // Switch to login tab
                             const trigger = document.querySelector('button[role="tab"][data-value="login"]') as HTMLButtonElement | null;
                             trigger?.click();
                         }
-                        setActiveTab('login'); // Ensure internal state matches
+                        setActiveTab('login'); 
                         registerForm.reset(); 
                         loginForm.reset();
                      }}>
