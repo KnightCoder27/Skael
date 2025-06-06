@@ -2,7 +2,7 @@
 /**
  * Enum for specifying remote work preferences.
  */
-export type RemotePreference = "Remote" | "Hybrid" | "Onsite";
+export type RemotePreference = "Remote" | "Hybrid" | "Onsite" | "Flexible";
 
 /**
  * Represents a geographical location.
@@ -85,6 +85,7 @@ export interface User {
   
   preferred_locations?: Location[]; // Many-to-many with Location
   location_string?: string; // Simple string for current profile form, was 'location' in UserProfileData
+  country?: string; // User's country
 
   remote_preference?: RemotePreference;
   
@@ -103,52 +104,50 @@ export interface User {
  * Replaces the old JobOpportunity.
  */
 export interface JobListing {
-  id: number; // Or string if API IDs are non-numeric
-  unique_input_id?: string; // If applicable from your input source
-  api_id?: string; // ID from the external API
-  job_title: string; // Was 'title'
-  url?: string; // Link to the job posting
-  date_posted?: string; // ISO date string (was 'postedDate')
+  id: number; 
+  unique_input_id?: string; 
+  api_id?: string; 
+  job_title: string; 
+  url?: string; 
+  date_posted?: string; 
   employment_status?: string;
   
-  company: string; // Raw company name from API response (was 'company')
-  company_domain?: string; // Company domain from API
-  company_obj_id?: number; // Foreign Key to Companies table
-  company_obj?: Company; // The full company object
+  company: string; 
+  company_domain?: string; 
+  company_obj_id?: number; 
+  company_obj?: Company; 
 
   final_url?: string;
   source_url?: string;
-  location: string; // (was 'location')
+  location: string; 
   remote?: boolean;
   hybrid?: boolean;
   
-  salary_string?: string; // Original salary string from API (was 'salary')
+  salary_string?: string; 
   min_salary?: number;
   max_salary?: number;
-  currency?: string; // e.g., USD, EUR, INR (3 characters)
+  currency?: string; 
 
   country?: string;
   seniority?: string;
-  discovered_at?: string; // ISO datetime string (default: datetime.datetime.utcnow)
+  discovered_at?: string; 
   
-  description: string; // Was 'description', 'fullDescription' can be merged or this used for full.
+  description: string; 
   reposted?: boolean;
-  date_reposted?: string; // ISO date string
-  country_code?: string; // e.g., US (2 characters)
+  date_reposted?: string; 
+  country_code?: string; 
   job_expired?: boolean;
   
-  industry_id?: string; // API sourced industry identifier, linking to companies.industry_id
-  fetched_data?: string; // ISO date string
+  industry_id?: string; 
+  fetched_data?: string; 
   matching_phrase?: string[];
   matching_words?: string[];
 
-  technologies?: Technology[]; // Many-to-many with Technologies (was 'tags' - can be derived)
+  technologies?: Technology[]; 
 
-  // Fields from old JobOpportunity to retain for AI/UI:
-  companyLogo?: string; // Can be derived from company_obj.logo. Kept for easier transition.
-  // tags?: string[]; // This is now covered by technologies. Removed to avoid redundancy.
-  matchScore?: number; // AI-generated match score
-  matchExplanation?: string; // AI-generated explanation
+  companyLogo?: string; 
+  matchScore?: number; 
+  matchExplanation?: string; 
 }
 
 /**
@@ -160,12 +159,11 @@ export type ApplicationStatus = "Interested" | "Saved" | "Applied" | "Interviewi
  * Represents a job application tracked by the user.
  */
 export interface TrackedApplication {
-  jobId: number; // Corresponds to JobListing.id
+  jobId: number; 
   jobTitle: string;
   company: string;
   status: ApplicationStatus;
-  appliedDate?: string; // ISO date string
+  appliedDate?: string; 
   notes?: string;
-  lastUpdated: string; // ISO date string
-  // jobListing?: JobListing; // Optional: link to the full job listing object for richer display
+  lastUpdated: string; 
 }

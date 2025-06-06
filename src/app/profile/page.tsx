@@ -15,22 +15,23 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks } from 'lucide-react';
+import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe } from 'lucide-react';
 
-const remotePreferenceOptions: RemotePreference[] = ["Remote", "Hybrid", "Onsite"];
+const remotePreferenceOptions: RemotePreference[] = ["Remote", "Hybrid", "Onsite", "Flexible"];
 
 const profileSchema = z.object({
   user_name: z.string().min(2, 'Name should be at least 2 characters.').max(50, 'Name cannot exceed 50 characters.').optional(),
-  email_id: z.string().email('Invalid email address.'), // Usually not editable after registration
-  phone_number: z.string().optional().or(z.literal('')), // Optional phone number
-  location_string: z.string().optional(),
+  email_id: z.string().email('Invalid email address.'), 
+  phone_number: z.string().max(20, 'Phone number cannot exceed 20 characters.').optional().or(z.literal('')), 
+  location_string: z.string().max(255, 'Locations cannot exceed 255 characters.').optional().or(z.literal('')),
+  country: z.string().max(100, 'Country cannot exceed 100 characters.').optional().or(z.literal('')),
   professional_summary: z.string().min(50, 'Profile summary should be at least 50 characters.').optional().or(z.literal('')),
   desired_job_role: z.string().min(10, 'Job preferences should be at least 10 characters.').optional().or(z.literal('')),
-  experience: z.coerce.number().int().nonnegative('Experience must be a positive number.').optional().nullable(), // Years of experience
-  remote_preference: z.enum(["Remote", "Hybrid", "Onsite"]).optional(),
-  expected_salary: z.string().optional().or(z.literal('')), // e.g., "$80k - $100k"
-  skills_list_text: z.string().optional().or(z.literal('')), // Comma-separated skills
-  resume: z.string().url('Please enter a valid URL for your resume.').optional().or(z.literal('')), // URL for resume
+  experience: z.coerce.number().int().nonnegative('Experience must be a positive number.').optional().nullable(), 
+  remote_preference: z.enum(["Remote", "Hybrid", "Onsite", "Flexible"]).optional(),
+  expected_salary: z.string().max(50, 'Expected salary cannot exceed 50 characters.').optional().or(z.literal('')), 
+  skills_list_text: z.string().max(500, 'Skills list cannot exceed 500 characters.').optional().or(z.literal('')), 
+  resume: z.string().url('Please enter a valid URL for your resume.').max(255, 'Resume URL cannot exceed 255 characters.').optional().or(z.literal('')),
 });
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
@@ -46,9 +47,10 @@ export default function ProfilePage() {
       email_id: '',
       phone_number: '',
       location_string: '',
+      country: '',
       professional_summary: '',
       desired_job_role: '',
-      experience: undefined, // Initialize as undefined or null
+      experience: undefined, 
       remote_preference: undefined,
       expected_salary: '',
       skills_list_text: '',
@@ -64,9 +66,10 @@ export default function ProfilePage() {
         email_id: userProfile.email_id || '',
         phone_number: userProfile.phone_number || '',
         location_string: userProfile.location_string || '',
+        country: userProfile.country || '',
         professional_summary: userProfile.professional_summary || '',
         desired_job_role: userProfile.desired_job_role || '',
-        experience: userProfile.experience ?? undefined, // Handle null or undefined
+        experience: userProfile.experience ?? undefined, 
         remote_preference: userProfile.remote_preference,
         expected_salary: userProfile.expected_salary || '',
         skills_list_text: userProfile.skills_list_text || '',
@@ -77,11 +80,9 @@ export default function ProfilePage() {
 
   const onSubmit: SubmitHandler<ProfileFormValues> = (data) => {
     setUserProfile(prevProfile => ({
-      ...(prevProfile || { id: Date.now(), email_id: data.email_id }), // Ensure id and email_id are present
+      ...(prevProfile || { id: Date.now(), email_id: data.email_id }), 
       ...data,
-      experience: data.experience === null ? undefined : data.experience, // Store null as undefined if needed or keep as null
-      // Future: Convert skills_list_text to Technology[]
-      // For now, skills_list_text is directly saved to User.skills_list_text
+      experience: data.experience === null ? undefined : data.experience, 
     }));
     toast({
       title: 'Profile Updated',
@@ -130,7 +131,7 @@ export default function ProfilePage() {
                 {errors.email_id && <p className="text-sm text-destructive">{errors.email_id.message}</p>}
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-2">
                 <Label htmlFor="phone_number">Phone Number (Optional)</Label>
                 <div className="relative flex items-center">
@@ -140,8 +141,20 @@ export default function ProfilePage() {
                 {errors.phone_number && <p className="text-sm text-destructive">{errors.phone_number.message}</p>}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="location_string">Current Location (Optional)</Label>
-                <Input id="location_string" {...register('location_string')} placeholder="e.g., San Francisco, CA or Remote" className={errors.location_string ? 'border-destructive' : ''} />
+                <Label htmlFor="country">Country (Optional)</Label>
+                <div className="relative flex items-center">
+                    <Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input id="country" {...register('country')} placeholder="e.g., United States" className={`pl-10 ${errors.country ? 'border-destructive' : ''}`} />
+                </div>
+                {errors.country && <p className="text-sm text-destructive">{errors.country.message}</p>}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="location_string">Preferred Locations (Optional)</Label>
+                 <div className="relative flex items-center">
+                    <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input id="location_string" {...register('location_string')} placeholder="e.g., New York, Remote, London" className={`pl-10 ${errors.location_string ? 'border-destructive' : ''}`} />
+                </div>
+                <p className="text-xs text-muted-foreground">Enter cities or "Remote", separated by commas.</p>
                 {errors.location_string && <p className="text-sm text-destructive">{errors.location_string.message}</p>}
               </div>
             </div>
@@ -291,5 +304,3 @@ export default function ProfilePage() {
     </div>
   );
 }
-
-    
