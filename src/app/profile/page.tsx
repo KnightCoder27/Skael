@@ -81,7 +81,7 @@ export default function ProfilePage() {
         professional_summary: userProfile.professional_summary || '',
         desired_job_role: userProfile.desired_job_role || '',
         experience: userProfile.experience ?? undefined,
-        remote_preference: userProfile.remote_preference ?? undefined, // Ensure undefined if null/undefined
+        remote_preference: userProfile.remote_preference ?? undefined,
         expected_salary: userProfile.expected_salary || '',
         skills_list_text: userProfile.skills_list_text || '',
         resume: userProfile.resume || '',
@@ -272,9 +272,9 @@ export default function ProfilePage() {
                         control={control}
                         render={({ field }) => (
                             <Select onValueChange={field.onChange} value={field.value ?? undefined}>
-                                <SelectTrigger className={`relative ${errors.remote_preference ? 'border-destructive' : ''}`}>
+                                <SelectTrigger className={`relative w-full justify-between pl-10 pr-3 ${errors.remote_preference ? 'border-destructive' : ''}`}>
                                      <CloudSun className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                                    <SelectValue placeholder="Select preference" className="pl-7" /> {/* Ensure padding for icon */}
+                                    <SelectValue placeholder="Select preference" />
                                 </SelectTrigger>
                                 <SelectContent>
                                     {remotePreferenceOptions.map(option => (
@@ -375,5 +375,3 @@ export default function ProfilePage() {
     </div>
   );
 }
-
-    
