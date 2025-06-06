@@ -2,27 +2,35 @@
 "use client";
 
 import { useEffect } from 'react';
-import { useForm, type SubmitHandler } from 'react-hook-form';
+import { useForm, type SubmitHandler, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import useLocalStorage from '@/hooks/use-local-storage';
-import type { User } from '@/types'; // Changed from UserProfileData
+import type { User, RemotePreference } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { User as UserIcon, Edit3, FileText, Wand2 } from 'lucide-react'; // Renamed User to UserIcon to avoid conflict
+import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks } from 'lucide-react';
 
-// Schema updated to align with User type fields
+const remotePreferenceOptions: RemotePreference[] = ["Remote", "Hybrid", "Onsite"];
+
 const profileSchema = z.object({
   user_name: z.string().min(2, 'Name should be at least 2 characters.').max(50, 'Name cannot exceed 50 characters.').optional(),
-  email_id: z.string().email('Invalid email address.'),
-  location_string: z.string().optional(), // For simple text input, maps to User.location_string
-  professional_summary: z.string().min(50, 'Profile text (resume/summary) should be at least 50 characters.').optional(),
-  desired_job_role: z.string().min(10, 'Job preferences should be at least 10 characters.').optional(),
+  email_id: z.string().email('Invalid email address.'), // Usually not editable after registration
+  phone_number: z.string().optional().or(z.literal('')), // Optional phone number
+  location_string: z.string().optional(),
+  professional_summary: z.string().min(50, 'Profile summary should be at least 50 characters.').optional().or(z.literal('')),
+  desired_job_role: z.string().min(10, 'Job preferences should be at least 10 characters.').optional().or(z.literal('')),
+  experience: z.coerce.number().int().nonnegative('Experience must be a positive number.').optional().nullable(), // Years of experience
+  remote_preference: z.enum(["Remote", "Hybrid", "Onsite"]).optional(),
+  expected_salary: z.string().optional().or(z.literal('')), // e.g., "$80k - $100k"
+  skills_list_text: z.string().optional().or(z.literal('')), // Comma-separated skills
+  resume: z.string().url('Please enter a valid URL for your resume.').optional().or(z.literal('')), // URL for resume
 });
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
@@ -36,30 +44,44 @@ export default function ProfilePage() {
     defaultValues: {
       user_name: '',
       email_id: '',
+      phone_number: '',
       location_string: '',
       professional_summary: '',
       desired_job_role: '',
+      experience: undefined, // Initialize as undefined or null
+      remote_preference: undefined,
+      expected_salary: '',
+      skills_list_text: '',
+      resume: '',
     },
   });
-  const { register, handleSubmit, formState: { errors, isSubmitting }, reset } = form;
+  const { register, handleSubmit, formState: { errors, isSubmitting }, reset, control } = form;
 
   useEffect(() => {
     if (userProfile) {
       reset({
         user_name: userProfile.user_name || '',
-        email_id: userProfile.email_id || '', // email_id is mandatory in User type
+        email_id: userProfile.email_id || '',
+        phone_number: userProfile.phone_number || '',
         location_string: userProfile.location_string || '',
         professional_summary: userProfile.professional_summary || '',
         desired_job_role: userProfile.desired_job_role || '',
+        experience: userProfile.experience ?? undefined, // Handle null or undefined
+        remote_preference: userProfile.remote_preference,
+        expected_salary: userProfile.expected_salary || '',
+        skills_list_text: userProfile.skills_list_text || '',
+        resume: userProfile.resume || '',
       });
     }
   }, [userProfile, reset]);
 
   const onSubmit: SubmitHandler<ProfileFormValues> = (data) => {
-    // When saving, merge with existing profile to preserve other fields like id, skills, etc.
     setUserProfile(prevProfile => ({
       ...(prevProfile || { id: Date.now(), email_id: data.email_id }), // Ensure id and email_id are present
-      ...data, 
+      ...data,
+      experience: data.experience === null ? undefined : data.experience, // Store null as undefined if needed or keep as null
+      // Future: Convert skills_list_text to Technology[]
+      // For now, skills_list_text is directly saved to User.skills_list_text
     }));
     toast({
       title: 'Profile Updated',
@@ -69,12 +91,10 @@ export default function ProfilePage() {
   
   const handleGenerateGeneralResume = () => {
     toast({ title: "Coming Soon!", description: "General resume generation will be available soon." });
-    console.log("Generate General Resume based on profile:", userProfile);
   };
 
   const handleGenerateCustomCoverLetter = () => {
     toast({ title: "Coming Soon!", description: "Custom cover letter generation will be available soon." });
-    console.log("Generate Custom Cover Letter: User would paste JD here.");
   };
 
   return (
@@ -94,7 +114,7 @@ export default function ProfilePage() {
           <CardHeader>
             <CardTitle className="font-headline text-xl">Personal & Contact Information</CardTitle>
             <CardDescription>
-              Basic information about you. Email is used for account purposes.
+              Basic information about you. Your email is used for account identity.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -106,36 +126,78 @@ export default function ProfilePage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="email_id">Email Address</Label>
-                <Input id="email_id" type="email" {...register('email_id')} placeholder="you@example.com" className={errors.email_id ? 'border-destructive' : ''} />
+                <Input id="email_id" type="email" {...register('email_id')} placeholder="you@example.com" className={errors.email_id ? 'border-destructive' : ''} readOnly={!!userProfile?.email_id} />
                 {errors.email_id && <p className="text-sm text-destructive">{errors.email_id.message}</p>}
               </div>
             </div>
-             <div className="space-y-2">
-              <Label htmlFor="location_string">Location (Optional)</Label>
-              <Input id="location_string" {...register('location_string')} placeholder="e.g., San Francisco, CA or Remote" className={errors.location_string ? 'border-destructive' : ''} />
-              {errors.location_string && <p className="text-sm text-destructive">{errors.location_string.message}</p>}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <Label htmlFor="phone_number">Phone Number (Optional)</Label>
+                <div className="relative flex items-center">
+                    <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input id="phone_number" type="tel" {...register('phone_number')} placeholder="(123) 456-7890" className={`pl-10 ${errors.phone_number ? 'border-destructive' : ''}`} />
+                </div>
+                {errors.phone_number && <p className="text-sm text-destructive">{errors.phone_number.message}</p>}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="location_string">Current Location (Optional)</Label>
+                <Input id="location_string" {...register('location_string')} placeholder="e.g., San Francisco, CA or Remote" className={errors.location_string ? 'border-destructive' : ''} />
+                {errors.location_string && <p className="text-sm text-destructive">{errors.location_string.message}</p>}
+              </div>
             </div>
           </CardContent>
 
           <Separator className="my-6" />
 
           <CardHeader>
-            <CardTitle className="font-headline text-xl">Professional Summary & Resume</CardTitle>
+            <CardTitle className="font-headline text-xl">Professional Background</CardTitle>
             <CardDescription>
-              Paste your resume or LinkedIn profile summary. This is crucial for AI matching.
+              Your experience, skills, and resume summary are crucial for AI matching.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="professional_summary" className="text-base">Profile Text (Resume/LinkedIn Summary)</Label>
+              <Label htmlFor="professional_summary" className="text-base flex items-center"><BookUser className="mr-2 h-5 w-5 text-primary/80"/>Professional Summary / Resume Text</Label>
               <Textarea
                 id="professional_summary"
                 {...register('professional_summary')}
-                placeholder="Paste your full resume or a detailed LinkedIn profile summary here..."
+                placeholder="Paste your full resume text or a detailed LinkedIn profile summary here. The more detail, the better the AI matching!"
                 rows={15}
                 className={errors.professional_summary ? 'border-destructive' : ''}
               />
               {errors.professional_summary && <p className="text-sm text-destructive">{errors.professional_summary.message}</p>}
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                    <Label htmlFor="experience">Years of Professional Experience (Optional)</Label>
+                    <div className="relative flex items-center">
+                        <Briefcase className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input id="experience" type="number" {...register('experience')} placeholder="e.g., 5" className={`pl-10 ${errors.experience ? 'border-destructive' : ''}`} />
+                    </div>
+                    {errors.experience && <p className="text-sm text-destructive">{errors.experience.message}</p>}
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="resume">Resume URL (Optional)</Label>
+                     <div className="relative flex items-center">
+                        <FileText className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input id="resume" {...register('resume')} placeholder="https://example.com/your-resume.pdf" className={`pl-10 ${errors.resume ? 'border-destructive' : ''}`} />
+                    </div>
+                    {errors.resume && <p className="text-sm text-destructive">{errors.resume.message}</p>}
+                </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="skills_list_text" className="text-base flex items-center"><ListChecks className="mr-2 h-5 w-5 text-primary/80"/>Key Skills (Comma-separated, Optional)</Label>
+              <Textarea
+                id="skills_list_text"
+                {...register('skills_list_text')}
+                placeholder="e.g., React, Node.js, Python, Project Management, UI/UX Design"
+                rows={3}
+                className={errors.skills_list_text ? 'border-destructive' : ''}
+              />
+              <p className="text-xs text-muted-foreground">Enter skills separated by commas. This helps AI find relevant jobs.</p>
+              {errors.skills_list_text && <p className="text-sm text-destructive">{errors.skills_list_text.message}</p>}
             </div>
           </CardContent>
           
@@ -144,7 +206,7 @@ export default function ProfilePage() {
           <CardHeader>
             <CardTitle className="font-headline text-xl">Job Preferences</CardTitle>
             <CardDescription>
-              Describe your ideal role, desired location, salary expectations, preferred technologies, etc.
+              Help us tailor job suggestions to your ideal role and work environment.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -153,11 +215,45 @@ export default function ProfilePage() {
               <Textarea
                 id="desired_job_role"
                 {...register('desired_job_role')}
-                placeholder="e.g., Looking for remote frontend developer roles, interested in startups, target salary $120k+, preferred technologies: React, Next.js..."
+                placeholder="e.g., Senior Frontend Developer specializing in e-commerce, interested in mid-size tech companies..."
                 rows={5}
                 className={errors.desired_job_role ? 'border-destructive' : ''}
               />
               {errors.desired_job_role && <p className="text-sm text-destructive">{errors.desired_job_role.message}</p>}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                    <Label htmlFor="remote_preference">Remote Work Preference (Optional)</Label>
+                    <Controller
+                        name="remote_preference"
+                        control={control}
+                        render={({ field }) => (
+                            <Select onValueChange={field.onChange} value={field.value}>
+                                <SelectTrigger className={errors.remote_preference ? 'border-destructive' : ''}>
+                                     <CloudSun className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                    <span className="pl-5">
+                                        <SelectValue placeholder="Select preference" />
+                                    </span>
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {remotePreferenceOptions.map(option => (
+                                        <SelectItem key={option} value={option}>{option}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        )}
+                    />
+                    {errors.remote_preference && <p className="text-sm text-destructive">{errors.remote_preference.message}</p>}
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="expected_salary">Expected Salary (Optional)</Label>
+                     <div className="relative flex items-center">
+                        <DollarSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input id="expected_salary" {...register('expected_salary')} placeholder="e.g., $120,000 USD or 90K EUR" className={`pl-10 ${errors.expected_salary ? 'border-destructive' : ''}`} />
+                    </div>
+                    {errors.expected_salary && <p className="text-sm text-destructive">{errors.expected_salary.message}</p>}
+                </div>
             </div>
           </CardContent>
           <CardFooter className="flex-col items-start gap-4 sm:flex-row sm:justify-between sm:items-center pt-6 border-t">

@@ -78,7 +78,9 @@ export interface User {
   professional_summary?: string; // Was 'rawText' in UserProfileData, for resume/LinkedIn summary
   desired_job_role?: string; // Partially covers 'preferences' from UserProfileData
   
-  skills?: Technology[]; // Many-to-many with Technologies
+  skills?: Technology[]; // Many-to-many with Technologies - populated from skills_list_text for now
+  skills_list_text?: string; // Temporary field to store comma-separated skills as text
+
   experience?: number; // Years of experience
   
   preferred_locations?: Location[]; // Many-to-many with Location
@@ -158,7 +160,7 @@ export type ApplicationStatus = "Interested" | "Saved" | "Applied" | "Interviewi
  * Represents a job application tracked by the user.
  */
 export interface TrackedApplication {
-  jobId: number; // Corresponds to JobListing.id, which is now number
+  jobId: number; // Corresponds to JobListing.id
   jobTitle: string;
   company: string;
   status: ApplicationStatus;
