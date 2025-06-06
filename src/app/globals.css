@@ -5,74 +5,86 @@
 
 @layer base {
   :root {
-    --background: 38 33% 96%; /* Linen (#F9F6F2) */
-    --foreground: 0 0% 20%; /* Charcoal (#333333) */
-    --card: 40 100% 98%; /* Cosmic Latte (#FFFCF7) */
-    --card-foreground: 0 0% 20%; /* Charcoal (#333333) */
-    --popover: 40 100% 98%; /* Cosmic Latte (#FFFCF7) */
-    --popover-foreground: 0 0% 20%; /* Charcoal (#333333) */
-    --primary: 210 29% 24%; /* Charcoal Blue (#2C3E50) */
-    --primary-foreground: 38 33% 96%; /* Linen (#F9F6F2) */
-    --secondary: 19 70% 70%; /* Terra Cotta (#E89A7A) */
-    --secondary-foreground: 0 0% 20%; /* Charcoal (#333333) */
-    --muted: 0 0% 90%; /* Light Gray */
+    --background: 60 56% 91%; /* Soft Beige (#F5F5DC) */
+    --foreground: 220 4% 23%; /* Dark Charcoal (#3A3B3C) */
+
+    --card: 40 33% 97%; /* Off White (#FAF9F6) */
+    --card-foreground: 220 4% 23%; /* Dark Charcoal */
+
+    --popover: 40 33% 97%; /* Off White */
+    --popover-foreground: 220 4% 23%; /* Dark Charcoal */
+
+    --primary: 120 26% 65%; /* Muted Green (#8FBC8F) */
+    --primary-foreground: 0 0% 100%; /* White */
+
+    --secondary: 120 18% 52%; /* Darker Muted Green (#709a70) */
+    --secondary-foreground: 0 0% 100%; /* White */
+
+    --muted: 0 0% 87%; /* Lighter Gray (e.g. #DDD) */
     --muted-foreground: 0 0% 40%; /* Medium Warm Gray */
-    --accent: 44 83% 73%; /* Muted Gold (#F3D582) */
-    --accent-foreground: 0 0% 20%; /* Charcoal (#333333) */
+
+    --accent: 0 0% 50%; /* Warm Gray (#808080) */
+    --accent-foreground: 0 0% 100%; /* White */
+
     --destructive: 0 84.2% 60.2%; /* Default ShadCN Red */
     --destructive-foreground: 0 0% 98%; /* Default ShadCN Light for Destructive */
-    --border: 0 0% 88%; /* Light Warm Gray */
-    --input: 0 0% 88%; /* Light Warm Gray */
-    --ring: 210 29% 24%; /* Charcoal Blue (#2C3E50) */
-    --chart-1: 210 29% 24%; /* Primary */
-    --chart-2: 19 70% 70%; /* Secondary */
-    --chart-3: 44 83% 73%; /* Accent */
-    --chart-4: 210 29% 44%; /* Lighter Primary */
-    --chart-5: 19 40% 75%; /* Desaturated Secondary */
+
+    --border: 0 0% 88%; /* Light Gray (#E0E0E0) */
+    --input: 0 0% 88%; /* Light Gray */
+    --ring: 120 26% 65%; /* Muted Green (Primary) */
+
+    --chart-1: 120 26% 65%; /* Primary */
+    --chart-2: 120 18% 52%; /* Secondary */
+    --chart-3: 0 0% 50%; /* Accent */
+    --chart-4: 120 26% 75%; /* Lighter Primary */
+    --chart-5: 120 18% 62%; /* Lighter Secondary */
     --radius: 0.5rem;
-    --sidebar-background: 38 30% 92%; /* Slightly darker/warmer Linen */
-    --sidebar-foreground: 0 0% 20%; /* Charcoal */
-    --sidebar-primary: 210 29% 24%; /* Charcoal Blue */
-    --sidebar-primary-foreground: 38 33% 96%; /* Linen */
-    --sidebar-accent: 19 70% 80%; /* Lighter Terra Cotta for hover */
-    --sidebar-accent-foreground: 0 0% 20%; /* Charcoal */
-    --sidebar-border: 0 0% 88%; /* Light Warm Gray */
-    --sidebar-ring: 210 29% 24%; /* Charcoal Blue */
+
+    /* Sidebar variables can remain or be adjusted if a sidebar is used with this theme */
+    --sidebar-background: 60 50% 88%; /* Lighter/Slightly desaturated Soft Beige */
+    --sidebar-foreground: 220 4% 23%; /* Dark Charcoal */
+    --sidebar-primary: 120 26% 65%; /* Muted Green */
+    --sidebar-primary-foreground: 0 0% 100%; /* White */
+    --sidebar-accent: 0 0% 60%; /* Lighter Warm Gray for hover */
+    --sidebar-accent-foreground: 0 0% 100%; /* White */
+    --sidebar-border: 0 0% 80%; /* Slightly darker border for sidebar */
+    --sidebar-ring: 120 26% 65%; /* Muted Green */
   }
 
   .dark {
-    --background: 220 15% 12%; /* Very Dark Desaturated Blue/Grey (#1A1D24) */
-    --foreground: 38 33% 96%; /* Linen (#F9F6F2) */
-    --card: 220 14% 15%; /* Slightly lighter than dark bg (#20242B) */
-    --card-foreground: 38 33% 96%; /* Linen */
-    --popover: 220 15% 12%; /* Dark Background */
-    --popover-foreground: 38 33% 96%; /* Linen */
-    --primary: 210 30% 51%; /* Lighter Charcoal Blue (#6082A3) */
-    --primary-foreground: 210 20% 8%; /* Very Dark Gray for text on Primary */
-    --secondary: 19 70% 80%; /* Lighter Terra Cotta (#F2B8A2) */
-    --secondary-foreground: 0 0% 10%; /* Very Dark Gray for text on Secondary */
-    --muted: 220 10% 22%; /* Darker Gray */
-    --muted-foreground: 38 15% 70%; /* Lighter Gray */
-    --accent: 44 88% 78%; /* Lighter Muted Gold (#F9DB94) */
-    --accent-foreground: 0 0% 10%; /* Very Dark Gray for text on Accent */
-    --destructive: 0 70% 45%; /* Darker Red */
+    /* Keeping a basic dark theme structure, can be refined later if needed */
+    --background: 220 15% 12%; 
+    --foreground: 60 50% 90%; 
+    --card: 220 14% 15%; 
+    --card-foreground: 60 50% 90%;
+    --popover: 220 15% 12%;
+    --popover-foreground: 60 50% 90%;
+    --primary: 120 26% 70%; /* Slightly lighter Muted Green for dark mode */
+    --primary-foreground: 220 4% 15%; 
+    --secondary: 120 18% 60%; /* Slightly lighter Darker Muted Green */
+    --secondary-foreground: 220 4% 15%;
+    --muted: 220 10% 22%;
+    --muted-foreground: 60 15% 70%; 
+    --accent: 0 0% 60%; /* Lighter Warm Gray */
+    --accent-foreground: 220 4% 15%;
+    --destructive: 0 70% 45%;
     --destructive-foreground: 0 0% 98%;
-    --border: 220 10% 25%; /* Medium Dark Gray */
-    --input: 220 10% 25%; /* Medium Dark Gray */
-    --ring: 210 30% 51%; /* Lighter Charcoal Blue */
-    --chart-1: 210 30% 51%; /* Dark Primary */
-    --chart-2: 19 70% 80%; /* Dark Secondary */
-    --chart-3: 44 88% 78%; /* Dark Accent */
-    --chart-4: 210 30% 65%; /* Lighter Dark Primary */
-    --chart-5: 19 40% 85%; /* Desaturated Lighter Dark Secondary */
-    --sidebar-background: 220 15% 10%; /* Darker version of main dark bg */
-    --sidebar-foreground: 38 33% 96%; /* Linen */
-    --sidebar-primary: 210 30% 51%; /* Lighter Charcoal Blue */
-    --sidebar-primary-foreground: 210 20% 8%; /* Very Dark Gray */
-    --sidebar-accent: 19 70% 75%; /* Mid Lighter Terra Cotta for hover */
-    --sidebar-accent-foreground: 38 33% 96%; /* Linen */
-    --sidebar-border: 220 10% 20%; /* Darker border for sidebar */
-    --sidebar-ring: 210 30% 51%; /* Lighter Charcoal Blue */
+    --border: 220 10% 25%;
+    --input: 220 10% 25%;
+    --ring: 120 26% 70%;
+    --chart-1: 120 26% 70%;
+    --chart-2: 120 18% 60%;
+    --chart-3: 0 0% 60%;
+    --chart-4: 120 26% 80%;
+    --chart-5: 120 18% 70%;
+    --sidebar-background: 220 15% 10%;
+    --sidebar-foreground: 60 50% 90%;
+    --sidebar-primary: 120 26% 70%;
+    --sidebar-primary-foreground: 220 4% 15%;
+    --sidebar-accent: 0 0% 55%;
+    --sidebar-accent-foreground: 60 50% 90%;
+    --sidebar-border: 220 10% 20%;
+    --sidebar-ring: 120 26% 70%;
   }
 }
 
