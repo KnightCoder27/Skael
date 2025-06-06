@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -8,6 +9,17 @@ export default function DashboardPage() {
     <div className="space-y-8">
       <section className="py-12 bg-gradient-to-br from-primary/10 via-background to-background rounded-lg shadow-sm">
         <div className="container mx-auto px-4 text-center">
+          <div className="mb-8">
+            <Image
+              src="https://placehold.co/300x200.png"
+              alt="Illustrative image for career guidance"
+              width={300}
+              height={200}
+              className="mx-auto rounded-lg shadow-md"
+              data-ai-hint="career guidance"
+              priority
+            />
+          </div>
           <h1 className="text-4xl md:text-5xl font-bold font-headline mb-4 text-primary">
             Welcome to Career Compass AI
           </h1>
