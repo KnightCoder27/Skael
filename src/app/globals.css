@@ -5,86 +5,96 @@
 
 @layer base {
   :root {
-    --background: 60 56% 91%; /* Soft Beige (#F5F5DC) */
-    --foreground: 220 4% 23%; /* Dark Charcoal (#3A3B3C) */
+    --background: 210 17% 85%; /* HEX: #d8dadc */
+    --foreground: 316 28% 18%; /* HEX: #3c2235 */
 
-    --card: 40 33% 97%; /* Off White (#FAF9F6) */
-    --card-foreground: 220 4% 23%; /* Dark Charcoal */
+    --card: 210 17% 88%; /* Slightly Lighter #d8dadc */
+    --card-foreground: 316 28% 18%; /* HEX: #3c2235 */
 
-    --popover: 40 33% 97%; /* Off White */
-    --popover-foreground: 220 4% 23%; /* Dark Charcoal */
+    --popover: 210 17% 88%; /* Slightly Lighter #d8dadc */
+    --popover-foreground: 316 28% 18%; /* HEX: #3c2235 */
 
-    --primary: 120 26% 65%; /* Muted Green (#8FBC8F) */
-    --primary-foreground: 0 0% 100%; /* White */
+    --primary: 347 48% 35%; /* HEX: #842e40 */
+    --primary-foreground: 0 0% 100%; /* White for contrast */
 
-    --secondary: 120 18% 52%; /* Darker Muted Green (#709a70) */
-    --secondary-foreground: 0 0% 100%; /* White */
+    --secondary: 316 16% 54%; /* HEX: #9b7a92 */
+    --secondary-foreground: 316 28% 18%; /* Dark foreground for contrast */
 
-    --muted: 0 0% 87%; /* Lighter Gray (e.g. #DDD) */
-    --muted-foreground: 0 0% 40%; /* Medium Warm Gray */
+    --muted: 253 8% 75%; /* Lighter version of #6e6a7c */
+    --muted-foreground: 316 28% 30%; /* Slightly lighter main foreground */
 
-    --accent: 0 0% 50%; /* Warm Gray (#808080) */
-    --accent-foreground: 0 0% 100%; /* White */
+    --accent: 253 8% 45%; /* HEX: #6e6a7c */
+    --accent-foreground: 316 28% 18%; /* Dark foreground for contrast */
 
     --destructive: 0 84.2% 60.2%; /* Default ShadCN Red */
     --destructive-foreground: 0 0% 98%; /* Default ShadCN Light for Destructive */
 
-    --border: 0 0% 88%; /* Light Gray (#E0E0E0) */
-    --input: 0 0% 88%; /* Light Gray */
-    --ring: 120 26% 65%; /* Muted Green (Primary) */
+    --border: 210 17% 75%; /* Darker shade of background #d8dadc */
+    --input: 210 17% 75%; /* Darker shade of background #d8dadc */
+    --ring: 347 48% 35%; /* Primary color #842e40 */
 
-    --chart-1: 120 26% 65%; /* Primary */
-    --chart-2: 120 18% 52%; /* Secondary */
-    --chart-3: 0 0% 50%; /* Accent */
-    --chart-4: 120 26% 75%; /* Lighter Primary */
-    --chart-5: 120 18% 62%; /* Lighter Secondary */
+    --chart-1: 347 48% 35%; /* Primary */
+    --chart-2: 316 16% 54%; /* Secondary */
+    --chart-3: 253 8% 45%; /* Accent */
+    --chart-4: 347 48% 45%; /* Lighter Primary */
+    --chart-5: 316 16% 64%; /* Lighter Secondary */
     --radius: 0.5rem;
 
-    /* Sidebar variables can remain or be adjusted if a sidebar is used with this theme */
-    --sidebar-background: 60 50% 88%; /* Lighter/Slightly desaturated Soft Beige */
-    --sidebar-foreground: 220 4% 23%; /* Dark Charcoal */
-    --sidebar-primary: 120 26% 65%; /* Muted Green */
+    /* Sidebar variables */
+    --sidebar-background: 253 8% 45%; /* Accent color #6e6a7c */
+    --sidebar-foreground: 210 17% 85%; /* Background color #d8dadc for contrast */
+    --sidebar-primary: 347 48% 45%; /* Slightly lighter Primary for sidebar */
     --sidebar-primary-foreground: 0 0% 100%; /* White */
-    --sidebar-accent: 0 0% 60%; /* Lighter Warm Gray for hover */
-    --sidebar-accent-foreground: 0 0% 100%; /* White */
-    --sidebar-border: 0 0% 80%; /* Slightly darker border for sidebar */
-    --sidebar-ring: 120 26% 65%; /* Muted Green */
+    --sidebar-accent: 253 8% 55%; /* Lighter Accent for hover */
+    --sidebar-accent-foreground: 210 17% 90%; /* Lighter Background for contrast */
+    --sidebar-border: 253 8% 35%; /* Darker Accent */
+    --sidebar-ring: 347 48% 45%; /* Sidebar Primary */
   }
 
   .dark {
-    /* Keeping a basic dark theme structure, can be refined later if needed */
-    --background: 220 15% 12%; 
-    --foreground: 60 50% 90%; 
-    --card: 220 14% 15%; 
-    --card-foreground: 60 50% 90%;
-    --popover: 220 15% 12%;
-    --popover-foreground: 60 50% 90%;
-    --primary: 120 26% 70%; /* Slightly lighter Muted Green for dark mode */
-    --primary-foreground: 220 4% 15%; 
-    --secondary: 120 18% 60%; /* Slightly lighter Darker Muted Green */
-    --secondary-foreground: 220 4% 15%;
-    --muted: 220 10% 22%;
-    --muted-foreground: 60 15% 70%; 
-    --accent: 0 0% 60%; /* Lighter Warm Gray */
-    --accent-foreground: 220 4% 15%;
-    --destructive: 0 70% 45%;
+    --background: 316 15% 12%; /* Darkened #3c2235 */
+    --foreground: 210 17% 80%; /* Lightened #d8dadc */
+
+    --card: 316 15% 15%;
+    --card-foreground: 210 17% 80%;
+
+    --popover: 316 15% 12%;
+    --popover-foreground: 210 17% 80%;
+
+    --primary: 347 45% 55%; /* Lightened #842e40 */
+    --primary-foreground: 316 28% 10%; /* Very dark for contrast */
+
+    --secondary: 316 15% 65%; /* Lightened #9b7a92 */
+    --secondary-foreground: 316 28% 10%; /* Very dark for contrast */
+
+    --muted: 253 8% 22%; /* Darkened #6e6a7c */
+    --muted-foreground: 210 17% 65%; 
+
+    --accent: 253 8% 55%; /* Lightened #6e6a7c */
+    --accent-foreground: 316 28% 10%; /* Very dark for contrast */
+    
+    --destructive: 0 70% 50%;
     --destructive-foreground: 0 0% 98%;
-    --border: 220 10% 25%;
-    --input: 220 10% 25%;
-    --ring: 120 26% 70%;
-    --chart-1: 120 26% 70%;
-    --chart-2: 120 18% 60%;
-    --chart-3: 0 0% 60%;
-    --chart-4: 120 26% 80%;
-    --chart-5: 120 18% 70%;
-    --sidebar-background: 220 15% 10%;
-    --sidebar-foreground: 60 50% 90%;
-    --sidebar-primary: 120 26% 70%;
-    --sidebar-primary-foreground: 220 4% 15%;
-    --sidebar-accent: 0 0% 55%;
-    --sidebar-accent-foreground: 60 50% 90%;
-    --sidebar-border: 220 10% 20%;
-    --sidebar-ring: 120 26% 70%;
+
+    --border: 316 10% 25%;
+    --input: 316 10% 25%;
+    --ring: 347 45% 55%; /* Lightened primary */
+
+    --chart-1: 347 45% 55%;
+    --chart-2: 316 15% 65%;
+    --chart-3: 253 8% 55%;
+    --chart-4: 347 45% 65%;
+    --chart-5: 316 15% 75%;
+
+    /* Sidebar variables for dark theme */
+    --sidebar-background: 316 15% 10%; /* Very Dark */
+    --sidebar-foreground: 210 17% 75%; /* Lightened #d8dadc */
+    --sidebar-primary: 347 45% 55%; /* Dark theme primary */
+    --sidebar-primary-foreground: 316 28% 10%; /* Very dark text */
+    --sidebar-accent: 316 15% 18%; /* Hover for sidebar */
+    --sidebar-accent-foreground: 210 17% 80%; /* Lightened text */
+    --sidebar-border: 316 10% 15%; /* Darker border */
+    --sidebar-ring: 347 45% 55%; /* Dark theme primary */
   }
 }
 
