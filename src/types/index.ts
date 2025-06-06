@@ -1,3 +1,4 @@
+
 export type JobOpportunity = {
   id: string;
   title: string;
@@ -15,8 +16,11 @@ export type JobOpportunity = {
 };
 
 export type UserProfileData = {
-  rawText: string;
-  preferences: string;
+  name?: string;
+  email?: string;
+  location?: string;
+  rawText: string; // Resume content / detailed summary
+  preferences: string; // Job preferences
   // Potentially add more structured fields later
   // e.g., skills: string[], experience: ExperienceEntry[]
 };

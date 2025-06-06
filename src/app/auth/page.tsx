@@ -3,6 +3,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation'; // Import useRouter
 import { useForm, type SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -13,6 +14,8 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { LogIn, UserPlus, Eye, EyeOff, Compass } from 'lucide-react';
+import useLocalStorage from '@/hooks/use-local-storage'; // Import useLocalStorage
+import type { UserProfileData } from '@/types'; // Import UserProfileData type
 
 // Schemas
 const loginSchema = z.object({
@@ -39,7 +42,9 @@ type RegisterFormValues = z.infer<typeof registerSchema>;
 
 export default function AuthPage() {
   const { toast } = useToast();
+  const router = useRouter(); // Initialize useRouter
   const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
+  const [, setUserProfile] = useLocalStorage<UserProfileData | null>('user-profile', null); // For setting profile on register
   
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
@@ -58,13 +63,26 @@ export default function AuthPage() {
   const onLoginSubmit: SubmitHandler<LoginFormValues> = (data) => {
     console.log("Login data:", data);
     // TODO: Implement actual login logic with Firebase Auth or other provider
-    toast({ title: "Login Attempted", description: "Login functionality is a placeholder." });
+    // For now, simulate login by setting a dummy profile and redirecting
+    setUserProfile({ rawText: `Logged in as ${data.email}`, preferences: "No preferences set yet.", name: "User", email: data.email });
+    toast({ title: "Login Successful (Simulated)", description: "Redirecting to job listings..." });
+    router.push('/jobs'); // Redirect to Job Listings page
   };
 
   const onRegisterSubmit: SubmitHandler<RegisterFormValues> = (data) => {
     console.log("Register data:", data);
     // TODO: Implement actual registration logic with Firebase Auth or other provider
-    toast({ title: "Registration Attempted", description: "Registration functionality is a placeholder." });
+    // For now, simulate registration by creating a basic profile and redirecting
+    const newProfile: UserProfileData = {
+      rawText: "", // Empty, user will fill this in profile setup
+      preferences: "", // Empty
+      name: data.name,
+      email: data.email,
+      // location: "" // Location can be added later in profile setup
+    };
+    setUserProfile(newProfile);
+    toast({ title: "Registration Successful (Simulated)", description: "Redirecting to profile setup..." });
+    router.push('/profile'); // Redirect to Profile Setup page
   };
 
   const toggleShowLoginPassword = () => setShowLoginPassword(!showLoginPassword);
@@ -72,7 +90,7 @@ export default function AuthPage() {
   const toggleShowRegisterConfirmPassword = () => setShowRegisterConfirmPassword(!showRegisterConfirmPassword);
 
   return (
-    <div className="flex min-h-[calc(100vh-8rem)] flex-col items-center justify-center p-4">
+    <div className="flex min-h-[calc(100vh-12rem)] flex-col items-center justify-center p-4"> {/* Adjusted min-h for header/footer */}
       <Card className="w-full max-w-md shadow-xl bg-card">
         <Tabs defaultValue="login" className="w-full" onValueChange={(value) => setActiveTab(value as 'login' | 'register')}>
           <CardHeader className="text-center">
@@ -83,7 +101,7 @@ export default function AuthPage() {
                 {activeTab === 'login' ? 'Welcome Back!' : 'Create an Account'}
             </CardTitle>
             <CardDescription>
-                {activeTab === 'login' ? 'Sign in to access your career dashboard.' : 'Join Career Compass to find your path.'}
+                {activeTab === 'login' ? 'Sign in to access your career dashboard.' : 'Join Job Hunter AI to find your path.'}
             </CardDescription>
             <TabsList className="grid w-full grid-cols-2 mt-6 bg-muted">
               <TabsTrigger value="login">Login</TabsTrigger>
@@ -144,11 +162,11 @@ export default function AuthPage() {
               <CardFooter className="flex flex-col gap-4 pt-2">
                 <Button type="submit" className="w-full" disabled={loginForm.formState.isSubmitting}>
                   {loginForm.formState.isSubmitting ? 'Logging in...' : 'Login'}
-                  {!loginForm.formState.isSubmitting && <LogIn className="ml-2" />}
+                  {!loginForm.formState.isSubmitting && <LogIn className="ml-2 h-4 w-4" />}
                 </Button>
                  <p className="text-center text-sm text-muted-foreground">
                     Don't have an account?{" "}
-                    <Button variant="link" className="p-0 h-auto text-primary" onClick={() => setActiveTab('register')}>
+                    <Button variant="link" className="p-0 h-auto text-primary" onClick={() => { setActiveTab('register'); loginForm.reset(); registerForm.reset();}}>
                         Register here
                     </Button>
                 </p>
@@ -244,7 +262,7 @@ export default function AuthPage() {
               <CardFooter className="flex flex-col gap-4 pt-2">
                 <Button type="submit" className="w-full" disabled={registerForm.formState.isSubmitting}>
                   {registerForm.formState.isSubmitting ? 'Creating Account...' : 'Create Account'}
-                  {!registerForm.formState.isSubmitting && <UserPlus className="ml-2" />}
+                  {!registerForm.formState.isSubmitting && <UserPlus className="ml-2 h-4 w-4" />}
                 </Button>
                 <p className="px-6 text-center text-xs text-muted-foreground">
                     By clicking Create Account, you agree to our{" "}
@@ -259,7 +277,7 @@ export default function AuthPage() {
                 </p>
                  <p className="text-center text-sm text-muted-foreground">
                     Already have an account?{" "}
-                    <Button variant="link" className="p-0 h-auto text-primary" onClick={() => setActiveTab('login')}>
+                    <Button variant="link" className="p-0 h-auto text-primary" onClick={() => { setActiveTab('login'); registerForm.reset(); loginForm.reset();}}>
                         Login here
                     </Button>
                 </p>
@@ -271,4 +289,3 @@ export default function AuthPage() {
     </div>
   );
 }
-
