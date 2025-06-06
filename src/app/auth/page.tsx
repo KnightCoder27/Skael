@@ -62,43 +62,41 @@ export default function AuthPage() {
   });
 
   const onLoginSubmit: SubmitHandler<LoginFormValues> = async (data) => {
-    // react-hook-form handles isSubmitting automatically
     try {
-      let user = await getUserByEmail(data.email);
+      const user = await getUserByEmail(data.email);
 
       if (!user) {
-        toast({ title: "New User Detected", description: "Creating a basic profile for you..." });
-        const newUserPartial: Omit<User, 'id' | 'joined_date'> = {
-          email_id: data.email,
-          user_name: data.email.split('@')[0] || "Demo User",
-          professional_summary: `Logged in as ${data.email}. Profile details can be updated.`,
-          desired_job_role: "No preferences set yet.",
-          // skills: [], // Assuming skills_list_text will be used
-          // preferred_locations: [], // Assuming location_string will be used
-          skills_list_text: "",
-          location_string: "",
-        };
-        user = await createUserInDb(newUserPartial);
+        toast({ 
+          title: "Account Not Found", 
+          description: "No account found with this email. Please register or check your email address.", 
+          variant: "destructive" 
+        });
+        return; // Stop execution if user not found
       }
       
+      // If user is found (and password check would happen here in a real auth system)
       setCurrentUser(user);
       toast({ title: "Login Successful", description: "Redirecting to job listings..." });
       router.push('/jobs');
 
     } catch (error) {
       console.error("Login error:", error);
-      toast({ title: "Login Failed", description: "Could not log in. Please try again.", variant: "destructive" });
+      // Check if the error has a message property
+      const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred during login.";
+      toast({ 
+        title: "Login Failed", 
+        description: errorMessage.includes("fetch user by email") ? "Could not connect to the authentication service." : "An issue occurred. Please try again.", 
+        variant: "destructive" 
+      });
     }
-    // react-hook-form handles isSubmitting automatically
   };
 
   const onRegisterSubmit: SubmitHandler<RegisterFormValues> = async (data) => {
-    // react-hook-form handles isSubmitting automatically
     try {
       const existingUser = await getUserByEmail(data.email);
       if (existingUser) {
         toast({ title: "Registration Failed", description: "An account with this email already exists.", variant: "destructive" });
-        return; // Exit early
+        return; 
       }
 
       const newUserPartial: Omit<User, 'id' | 'joined_date'> = {
@@ -108,6 +106,7 @@ export default function AuthPage() {
         desired_job_role: "",   
         skills_list_text: "",
         location_string: "",
+        // Note: A real app would hash the password before saving or use Firebase Auth
       };
       const registeredUser = await createUserInDb(newUserPartial);
       
@@ -117,9 +116,13 @@ export default function AuthPage() {
 
     } catch (error) {
       console.error("Registration error:", error);
-      toast({ title: "Registration Failed", description: "Could not create account. Please try again.", variant: "destructive" });
+      const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred during registration.";
+      toast({ 
+        title: "Registration Failed", 
+        description: errorMessage.includes("create user") ? "Could not connect to the registration service." : "Could not create account. Please try again.", 
+        variant: "destructive" 
+      });
     }
-    // react-hook-form handles isSubmitting automatically
   };
 
   const toggleShowLoginPassword = () => setShowLoginPassword(!showLoginPassword);
@@ -191,7 +194,7 @@ export default function AuthPage() {
                   )}
                 </div>
                 <div className="flex items-center justify-end">
-                  <Link href="#" className="text-sm text-primary hover:underline" tabIndex={-1} onClick={(e) => e.preventDefault()}>
+                  <Link href="#" className="text-sm text-primary hover:underline" tabIndex={-1} onClick={(e) => { e.preventDefault(); toast({title: "Feature Coming Soon", description: "Password recovery will be available in a future update."}) }}>
                     Forgot password?
                   </Link>
                 </div>
@@ -316,11 +319,11 @@ export default function AuthPage() {
                 </Button>
                 <p className="px-6 text-center text-xs text-muted-foreground">
                     By clicking Create Account, you agree to our{" "}
-                    <Link href="/terms" className="underline underline-offset-4 hover:text-primary" tabIndex={-1} onClick={(e) => e.preventDefault()}>
+                    <Link href="#" className="underline underline-offset-4 hover:text-primary" tabIndex={-1} onClick={(e) => {e.preventDefault(); toast({title: "Placeholder", description: "Terms of Service link."})}}>
                         Terms of Service
                     </Link>{" "}
                     and{" "}
-                    <Link href="/privacy" className="underline underline-offset-4 hover:text-primary" tabIndex={-1} onClick={(e) => e.preventDefault()}>
+                    <Link href="#" className="underline underline-offset-4 hover:text-primary" tabIndex={-1} onClick={(e) => {e.preventDefault(); toast({title: "Placeholder", description: "Privacy Policy link."})}}>
                         Privacy Policy
                     </Link>
                     .
@@ -351,3 +354,5 @@ export default function AuthPage() {
     </div>
   );
 }
+
+    
