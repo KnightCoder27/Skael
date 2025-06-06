@@ -17,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe } from 'lucide-react';
 
-const remotePreferenceOptions: RemotePreference[] = ["Remote", "Hybrid", "Onsite", "Flexible"];
+const remotePreferenceOptions: RemotePreference[] = ["Remote", "Hybrid", "Onsite", "Any"];
 
 const profileSchema = z.object({
   user_name: z.string().min(2, 'Name should be at least 2 characters.').max(50, 'Name cannot exceed 50 characters.').optional(),
@@ -28,7 +28,7 @@ const profileSchema = z.object({
   professional_summary: z.string().min(50, 'Profile summary should be at least 50 characters.').optional().or(z.literal('')),
   desired_job_role: z.string().min(10, 'Job preferences should be at least 10 characters.').optional().or(z.literal('')),
   experience: z.coerce.number().int().nonnegative('Experience must be a positive number.').optional().nullable(), 
-  remote_preference: z.enum(["Remote", "Hybrid", "Onsite", "Flexible"]).optional(),
+  remote_preference: z.enum(["Remote", "Hybrid", "Onsite", "Any"]).optional(),
   expected_salary: z.string().max(50, 'Expected salary cannot exceed 50 characters.').optional().or(z.literal('')), 
   skills_list_text: z.string().max(500, 'Skills list cannot exceed 500 characters.').optional().or(z.literal('')), 
   resume: z.string().url('Please enter a valid URL for your resume.').max(255, 'Resume URL cannot exceed 255 characters.').optional().or(z.literal('')),
@@ -39,7 +39,7 @@ type ProfileFormValues = z.infer<typeof profileSchema>;
 export default function ProfilePage() {
   const [userProfile, setUserProfile] = useLocalStorage<User | null>('user-profile', null);
   const { toast } = useToast();
-  const [isEmailReadOnly, setIsEmailReadOnly] = useState(false); // Initialize to false
+  const [isEmailReadOnly, setIsEmailReadOnly] = useState(false); 
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
@@ -61,7 +61,9 @@ export default function ProfilePage() {
   const { register, handleSubmit, formState: { errors, isSubmitting }, reset, control } = form;
 
   useEffect(() => {
+    // Determine if email should be read-only only on the client after hydration
     if (userProfile) {
+      setIsEmailReadOnly(!!userProfile.email_id);
       reset({
         user_name: userProfile.user_name || '',
         email_id: userProfile.email_id || '',
@@ -76,10 +78,8 @@ export default function ProfilePage() {
         skills_list_text: userProfile.skills_list_text || '',
         resume: userProfile.resume || '',
       });
-      // Set readOnly state after hydration and when userProfile is available
-      setIsEmailReadOnly(!!userProfile.email_id);
     } else {
-      setIsEmailReadOnly(false);
+      setIsEmailReadOnly(false); // Ensure it's not read-only if no profile
     }
   }, [userProfile, reset]);
 
@@ -138,7 +138,7 @@ export default function ProfilePage() {
                   {...register('email_id')} 
                   placeholder="you@example.com" 
                   className={errors.email_id ? 'border-destructive' : ''} 
-                  readOnly={isEmailReadOnly} // Use state variable here
+                  readOnly={isEmailReadOnly} 
                 />
                 {errors.email_id && <p className="text-sm text-destructive">{errors.email_id.message}</p>}
               </div>
@@ -316,5 +316,3 @@ export default function ProfilePage() {
     </div>
   );
 }
-
-      

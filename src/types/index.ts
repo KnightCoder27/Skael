@@ -2,7 +2,7 @@
 /**
  * Enum for specifying remote work preferences.
  */
-export type RemotePreference = "Remote" | "Hybrid" | "Onsite" | "Flexible";
+export type RemotePreference = "Remote" | "Hybrid" | "Onsite" | "Any";
 
 /**
  * Represents a geographical location.
