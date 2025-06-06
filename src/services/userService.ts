@@ -24,9 +24,10 @@ export async function getUserByEmail(email: string): Promise<User | null> {
       return { id: userDoc.id, ...userDoc.data() } as User;
     }
     return null;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error fetching user by email:", error);
-    throw error; // Re-throw to be handled by caller
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to fetch user by email: ${message}`);
   }
 }
 
@@ -44,9 +45,10 @@ export async function getUserById(userId: string): Promise<User | null> {
       return { id: userDocSnap.id, ...userDocSnap.data() } as User;
     }
     return null;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error fetching user by ID:", error);
-    throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to fetch user by ID: ${message}`);
   }
 }
 
@@ -65,9 +67,10 @@ export async function createUser(userData: Omit<User, 'id' | 'joined_date'> & { 
     };
     const docRef = await addDoc(collection(db, USERS_COLLECTION), userToCreate);
     return { ...userToCreate, id: docRef.id } as User;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error creating user:", error);
-    throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to create user: ${message}`);
   }
 }
 
@@ -80,9 +83,10 @@ export async function updateUser(userId: string, userData: Partial<Omit<User, 'i
   try {
     const userDocRef = doc(db, USERS_COLLECTION, userId);
     await updateDoc(userDocRef, userData);
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error updating user:", error);
-    throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to update user: ${message}`);
   }
 }
 
@@ -96,8 +100,9 @@ export async function deleteUser(userId: string): Promise<void> {
     await deleteDoc(userDocRef);
     // Note: This does not delete subcollections. If users have subcollections (e.g., trackedApplications),
     // those would need to be deleted separately, often with a Firebase Function for thoroughness.
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error deleting user:", error);
-    throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to delete user: ${message}`);
   }
 }
