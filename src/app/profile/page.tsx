@@ -230,9 +230,9 @@ export default function ProfilePage() {
                         control={control}
                         render={({ field }) => (
                             <Select onValueChange={field.onChange} value={field.value}>
-                                <SelectTrigger className={errors.remote_preference ? 'border-destructive' : ''}>
+                                <SelectTrigger className={`relative ${errors.remote_preference ? 'border-destructive' : ''}`}>
                                      <CloudSun className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                                    <span className="pl-5">
+                                    <span className="pl-10">
                                         <SelectValue placeholder="Select preference" />
                                     </span>
                                 </SelectTrigger>
@@ -291,3 +291,5 @@ export default function ProfilePage() {
     </div>
   );
 }
+
+    
