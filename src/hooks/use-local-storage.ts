@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, Dispatch, SetStateAction } from 'react';
@@ -5,19 +6,30 @@ import { useState, useEffect, Dispatch, SetStateAction } from 'react';
 type SetValue<T> = Dispatch<SetStateAction<T>>;
 
 function useLocalStorage<T>(key: string, initialValue: T): [T, SetValue<T>] {
-  const [storedValue, setStoredValue] = useState<T>(() => {
+  // Always initialize state with initialValue to ensure server and initial client render match.
+  const [storedValue, setStoredValue] = useState<T>(initialValue);
+
+  // useEffect to load the value from localStorage after the component has mounted on the client.
+  useEffect(() => {
+    // This check ensures the code runs only on the client.
     if (typeof window === 'undefined') {
-      return initialValue;
+      return;
     }
     try {
       const item = window.localStorage.getItem(key);
-      return item ? JSON.parse(item) : initialValue;
+      // If item exists in localStorage, parse it and update state.
+      // Otherwise, storedValue remains initialValue.
+      if (item) {
+        setStoredValue(JSON.parse(item));
+      }
     } catch (error) {
-      console.warn(`Error reading localStorage key "${key}":`, error);
-      return initialValue;
+      console.warn(`Error reading localStorage key "${key}" on mount:`, error);
+      // In case of an error, state remains initialValue.
     }
-  });
+  // eslint-disable-next-line react-hooks/exhaustive-deps 
+  }, [key]); // Dependencies array ensures this effect runs once on mount (per key).
 
+  // useEffect to update localStorage whenever storedValue changes.
   useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -26,6 +38,7 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, SetValue<T>] {
         console.warn(`Error setting localStorage key "${key}":`, error);
       }
     }
+    // Do not include initialValue in dependencies if you only want to react to storedValue changes.
   }, [key, storedValue]);
 
   return [storedValue, setStoredValue];

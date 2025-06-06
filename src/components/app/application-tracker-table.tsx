@@ -6,12 +6,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Trash2, ExternalLink } from 'lucide-react'; // Removed Edit3 as notes are not implemented
+import { Trash2, ExternalLink } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import Link from 'next/link'; 
-import { sampleJobs } from '@/lib/sample-data'; 
+import Link from 'next/link';
+import { sampleJobs } from '@/lib/sample-data';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Briefcase } from 'lucide-react'; 
+import { Briefcase } from 'lucide-react';
+import { format, parseISO } from 'date-fns'; // Import date-fns functions
 
 interface ApplicationTrackerTableProps {
   applications: TrackedApplication[];
@@ -28,7 +29,7 @@ const getStatusColor = (status: ApplicationStatus) => {
     case "Interviewing": return "bg-blue-500 text-white";
     case "Applied": return "bg-yellow-500 text-black";
     case "Saved":
-    case "Interested": 
+    case "Interested":
       return "bg-gray-500 text-white";
     case "Rejected": return "bg-red-500 text-white";
     default: return "bg-muted text-muted-foreground";
@@ -36,10 +37,16 @@ const getStatusColor = (status: ApplicationStatus) => {
 };
 
 export function ApplicationTrackerTable({ applications, onUpdateStatus, onDeleteApplication }: ApplicationTrackerTableProps) {
-  
+
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString();
+    try {
+      // Use parseISO to handle ISO strings and format for consistent display
+      return format(parseISO(dateString), 'MM/dd/yyyy');
+    } catch (error) {
+      console.error("Error formatting date:", error);
+      return dateString; // Fallback to original string in case of error
+    }
   };
 
   // JobListing.id is number, TrackedApplication.jobId is number
@@ -68,7 +75,7 @@ export function ApplicationTrackerTable({ applications, onUpdateStatus, onDelete
       </Card>
     );
   }
-  
+
   return (
     <Card>
       <CardHeader>
