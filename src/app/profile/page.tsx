@@ -23,16 +23,16 @@ const remotePreferenceOptions: RemotePreference[] = ["Remote", "Hybrid", "Onsite
 
 const profileSchema = z.object({
   user_name: z.string().min(2, 'Name should be at least 2 characters.').max(50, 'Name cannot exceed 50 characters.').optional(),
-  email_id: z.string().email('Invalid email address.'), 
-  phone_number: z.string().max(20, 'Phone number cannot exceed 20 characters.').optional().or(z.literal('')), 
+  email_id: z.string().email('Invalid email address.'),
+  phone_number: z.string().max(20, 'Phone number cannot exceed 20 characters.').optional().or(z.literal('')),
   location_string: z.string().max(255, 'Preferred Locations cannot exceed 255 characters.').optional().or(z.literal('')),
   country: z.string().max(100, 'Country cannot exceed 100 characters.').optional().or(z.literal('')),
   professional_summary: z.string().min(50, 'Profile summary should be at least 50 characters.').optional().or(z.literal('')),
   desired_job_role: z.string().min(10, 'Job preferences should be at least 10 characters.').optional().or(z.literal('')),
-  experience: z.coerce.number().int().nonnegative('Experience must be a positive number.').optional().nullable(), 
+  experience: z.coerce.number().int().nonnegative('Experience must be a positive number.').optional().nullable(),
   remote_preference: z.enum(remotePreferenceOptions).optional(),
-  expected_salary: z.string().max(50, 'Expected salary cannot exceed 50 characters.').optional().or(z.literal('')), 
-  skills_list_text: z.string().max(500, 'Skills list cannot exceed 500 characters.').optional().or(z.literal('')), 
+  expected_salary: z.string().max(50, 'Expected salary cannot exceed 50 characters.').optional().or(z.literal('')),
+  skills_list_text: z.string().max(500, 'Skills list cannot exceed 500 characters.').optional().or(z.literal('')),
   resume: z.string().url('Please enter a valid URL for your resume.').max(255, 'Resume URL cannot exceed 255 characters.').optional().or(z.literal('')),
 });
 
@@ -43,7 +43,7 @@ export default function ProfilePage() {
   const [, setTrackedApplications] = useLocalStorage<TrackedApplication[]>('tracked-applications', []);
   const { toast } = useToast();
   const router = useRouter();
-  const [isEmailReadOnly, setIsEmailReadOnly] = useState(false); 
+  const [isEmailReadOnly, setIsEmailReadOnly] = useState(false);
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
@@ -55,7 +55,7 @@ export default function ProfilePage() {
       country: '',
       professional_summary: '',
       desired_job_role: '',
-      experience: undefined, 
+      experience: undefined,
       remote_preference: undefined,
       expected_salary: '',
       skills_list_text: '',
@@ -80,8 +80,8 @@ export default function ProfilePage() {
         country: userProfile.country || '',
         professional_summary: userProfile.professional_summary || '',
         desired_job_role: userProfile.desired_job_role || '',
-        experience: userProfile.experience ?? undefined, 
-        remote_preference: userProfile.remote_preference,
+        experience: userProfile.experience ?? undefined,
+        remote_preference: userProfile.remote_preference ?? undefined, // Ensure undefined if null/undefined
         expected_salary: userProfile.expected_salary || '',
         skills_list_text: userProfile.skills_list_text || '',
         resume: userProfile.resume || '',
@@ -91,16 +91,16 @@ export default function ProfilePage() {
 
   const onSubmit: SubmitHandler<ProfileFormValues> = (data) => {
     setUserProfile(prevProfile => ({
-      ...(prevProfile || { id: Date.now(), email_id: data.email_id }), 
+      ...(prevProfile || { id: Date.now(), email_id: data.email_id }),
       ...data,
-      experience: data.experience === null ? undefined : data.experience, 
+      experience: data.experience === null ? undefined : data.experience,
     }));
     toast({
       title: 'Profile Updated',
       description: 'Your profile information has been saved successfully.',
     });
   };
-  
+
   const handleGenerateGeneralResume = () => {
     toast({ title: "Coming Soon!", description: "General resume generation will be available soon." });
   };
@@ -149,13 +149,13 @@ export default function ProfilePage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="email_id">Email Address</Label>
-                <Input 
-                  id="email_id" 
-                  type="email" 
-                  {...register('email_id')} 
-                  placeholder="you@example.com" 
-                  className={errors.email_id ? 'border-destructive' : ''} 
-                  readOnly={isEmailReadOnly} 
+                <Input
+                  id="email_id"
+                  type="email"
+                  {...register('email_id')}
+                  placeholder="you@example.com"
+                  className={errors.email_id ? 'border-destructive' : ''}
+                  readOnly={isEmailReadOnly}
                 />
                 {errors.email_id && <p className="text-sm text-destructive">{errors.email_id.message}</p>}
               </div>
@@ -209,7 +209,7 @@ export default function ProfilePage() {
               />
               {errors.professional_summary && <p className="text-sm text-destructive">{errors.professional_summary.message}</p>}
             </div>
-            
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                     <Label htmlFor="experience">Years of Professional Experience (Optional)</Label>
@@ -242,7 +242,7 @@ export default function ProfilePage() {
               {errors.skills_list_text && <p className="text-sm text-destructive">{errors.skills_list_text.message}</p>}
             </div>
           </CardContent>
-          
+
           <Separator className="my-6" />
 
           <CardHeader>
@@ -271,12 +271,10 @@ export default function ProfilePage() {
                         name="remote_preference"
                         control={control}
                         render={({ field }) => (
-                            <Select onValueChange={field.onChange} value={field.value}>
+                            <Select onValueChange={field.onChange} value={field.value ?? undefined}>
                                 <SelectTrigger className={`relative ${errors.remote_preference ? 'border-destructive' : ''}`}>
-                                     <CloudSun className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                                    <span className="pl-10">
-                                        <SelectValue placeholder="Select preference" />
-                                    </span>
+                                     <CloudSun className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                                    <SelectValue placeholder="Select preference" className="pl-7" /> {/* Ensure padding for icon */}
                                 </SelectTrigger>
                                 <SelectContent>
                                     {remotePreferenceOptions.map(option => (
