@@ -14,10 +14,11 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { LogIn, UserPlus, Eye, EyeOff, Compass } from 'lucide-react';
-import useLocalStorage from '@/hooks/use-local-storage'; 
 import type { User } from '@/types';
+import { useAuth } from '@/contexts/AuthContext';
+import { getUserByEmail, createUser as createUserInDb } from '@/services/userService'; // Renamed to avoid conflict
 
-// Schemas
+// Schemas (no change)
 const loginSchema = z.object({
   email: z.string().email({ message: "Invalid email address." }),
   password: z.string().min(6, { message: "Password must be at least 6 characters." }),
@@ -43,8 +44,8 @@ type RegisterFormValues = z.infer<typeof registerSchema>;
 export default function AuthPage() {
   const { toast } = useToast();
   const router = useRouter(); 
+  const { setCurrentUser } = useAuth();
   const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
-  const [, setUserProfile] = useLocalStorage<User | null>('user-profile', null); 
   
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
@@ -60,66 +61,69 @@ export default function AuthPage() {
     defaultValues: { name: "", email: "", password: "", confirmPassword: "" },
   });
 
-  const onLoginSubmit: SubmitHandler<LoginFormValues> = (data) => {
-    console.log("Login data:", data);
-    // Attempt to retrieve existing profile to preserve name
-    let existingUserProfile: User | null = null;
+  const onLoginSubmit: SubmitHandler<LoginFormValues> = async (data) => {
+    loginForm.formState.isSubmitting = true;
     try {
-      const item = window.localStorage.getItem('user-profile');
-      existingUserProfile = item ? JSON.parse(item) : null;
+      let user = await getUserByEmail(data.email);
+
+      if (!user) {
+        // User doesn't exist, create a basic profile in Firestore
+        toast({ title: "New User Detected", description: "Creating a basic profile for you..." });
+        const newUserPartial: Omit<User, 'id' | 'joined_date'> = {
+          email_id: data.email,
+          user_name: data.email.split('@')[0] || "Demo User", // Default name from email
+          professional_summary: `Logged in as ${data.email}. Profile details can be updated.`,
+          desired_job_role: "No preferences set yet.",
+          skills: [],
+          preferred_locations: [],
+        };
+        user = await createUserInDb(newUserPartial);
+      }
+      
+      setCurrentUser(user);
+      toast({ title: "Login Successful", description: "Redirecting to job listings..." });
+      router.push('/jobs');
+
     } catch (error) {
-      console.warn("Error reading user-profile from localStorage during login:", error);
+      console.error("Login error:", error);
+      toast({ title: "Login Failed", description: "Could not log in. Please try again.", variant: "destructive" });
+    } finally {
+        loginForm.formState.isSubmitting = false;
     }
-
-    let resolvedUserName: string | undefined;
-    const currentStoredName = existingUserProfile?.user_name;
-
-    if (currentStoredName && currentStoredName.trim() !== "" && currentStoredName !== "Demo User") {
-      resolvedUserName = currentStoredName;
-    } else {
-      // If stored name is empty, whitespace, or "Demo User", generate a new one from email.
-      // This ensures "Demo User" from storage is overridden if it's considered stale.
-      resolvedUserName = `User-${data.email.split('@')[0]}`;
-    }
-
-    const loggedInUser: User = {
-      id: existingUserProfile?.id || Date.now(), 
-      email_id: data.email,
-      user_name: resolvedUserName,
-      professional_summary: existingUserProfile?.professional_summary || `Logged in as ${data.email}. Profile details can be updated.`,
-      desired_job_role: existingUserProfile?.desired_job_role || "No preferences set yet.",
-      skills: existingUserProfile?.skills || [],
-      preferred_locations: existingUserProfile?.preferred_locations || [],
-      // Preserve other fields from existingUserProfile if they exist
-      phone_number: existingUserProfile?.phone_number,
-      location_string: existingUserProfile?.location_string,
-      country: existingUserProfile?.country,
-      experience: existingUserProfile?.experience,
-      remote_preference: existingUserProfile?.remote_preference,
-      expected_salary: existingUserProfile?.expected_salary,
-      skills_list_text: existingUserProfile?.skills_list_text,
-      resume: existingUserProfile?.resume,
-    };
-    setUserProfile(loggedInUser);
-    toast({ title: "Login Successful (Simulated)", description: "Redirecting to job listings..." });
-    router.push('/jobs'); 
   };
 
-  const onRegisterSubmit: SubmitHandler<RegisterFormValues> = (data) => {
-    console.log("Register data:", data);
-    // Simulate registration by creating a basic profile and redirecting
-    const newUserProfile: User = {
-      id: Date.now(), 
-      user_name: data.name,
-      email_id: data.email,
-      professional_summary: "", 
-      desired_job_role: "",   
-      skills: [],
-      preferred_locations: [],
-    };
-    setUserProfile(newUserProfile);
-    toast({ title: "Registration Successful (Simulated)", description: "Redirecting to profile setup..." });
-    router.push('/profile'); 
+  const onRegisterSubmit: SubmitHandler<RegisterFormValues> = async (data) => {
+    registerForm.formState.isSubmitting = true;
+    try {
+      const existingUser = await getUserByEmail(data.email);
+      if (existingUser) {
+        toast({ title: "Registration Failed", description: "An account with this email already exists.", variant: "destructive" });
+        registerForm.formState.isSubmitting = false;
+        return;
+      }
+
+      const newUserPartial: Omit<User, 'id' | 'joined_date'> = {
+        user_name: data.name,
+        email_id: data.email,
+        // Initialize other fields as empty or default
+        professional_summary: "", 
+        desired_job_role: "",   
+        skills_list_text: "",
+        location_string: "",
+        // No password storage in this phase. Firebase Auth would handle this.
+      };
+      const registeredUser = await createUserInDb(newUserPartial);
+      
+      setCurrentUser(registeredUser);
+      toast({ title: "Registration Successful", description: "Redirecting to profile setup..." });
+      router.push('/profile');
+
+    } catch (error) {
+      console.error("Registration error:", error);
+      toast({ title: "Registration Failed", description: "Could not create account. Please try again.", variant: "destructive" });
+    } finally {
+        registerForm.formState.isSubmitting = false;
+    }
   };
 
   const toggleShowLoginPassword = () => setShowLoginPassword(!showLoginPassword);
@@ -191,7 +195,8 @@ export default function AuthPage() {
                   )}
                 </div>
                 <div className="flex items-center justify-end">
-                  <Link href="#" className="text-sm text-primary hover:underline">
+                  {/* This would link to a password reset flow if Firebase Auth was used */}
+                  <Link href="#" className="text-sm text-primary hover:underline" tabIndex={-1} onClick={(e) => e.preventDefault()}>
                     Forgot password?
                   </Link>
                 </div>
@@ -203,7 +208,22 @@ export default function AuthPage() {
                 </Button>
                  <p className="text-center text-sm text-muted-foreground">
                     Don't have an account?{" "}
-                    <Button variant="link" className="p-0 h-auto text-primary" onClick={() => { setActiveTab('register'); loginForm.reset(); registerForm.reset();}}>
+                    <Button variant="link" className="p-0 h-auto text-primary" onClick={() => { 
+                        const currentRegisterTab = document.querySelector('[data-state="active"][role="tab"][aria-selected="true"]');
+                        if (currentRegisterTab && currentRegisterTab.getAttribute('data-value') === 'register') {
+                             // Already on register tab, reset forms
+                             registerForm.reset();
+                             loginForm.reset();
+                        } else {
+                            // Switch to register tab
+                            const trigger = document.querySelector('button[role="tab"][data-value="register"]') as HTMLButtonElement | null;
+                            trigger?.click();
+                        }
+                         setActiveTab('register'); // Ensure internal state matches
+                         loginForm.reset(); 
+                         registerForm.reset();
+                      }}
+                    >
                         Register here
                     </Button>
                 </p>
@@ -303,18 +323,32 @@ export default function AuthPage() {
                 </Button>
                 <p className="px-6 text-center text-xs text-muted-foreground">
                     By clicking Create Account, you agree to our{" "}
-                    <Link href="/terms" className="underline underline-offset-4 hover:text-primary">
+                    <Link href="/terms" className="underline underline-offset-4 hover:text-primary" tabIndex={-1} onClick={(e) => e.preventDefault()}>
                         Terms of Service
                     </Link>{" "}
                     and{" "}
-                    <Link href="/privacy" className="underline underline-offset-4 hover:text-primary">
+                    <Link href="/privacy" className="underline underline-offset-4 hover:text-primary" tabIndex={-1} onClick={(e) => e.preventDefault()}>
                         Privacy Policy
                     </Link>
                     .
                 </p>
                  <p className="text-center text-sm text-muted-foreground">
                     Already have an account?{" "}
-                    <Button variant="link" className="p-0 h-auto text-primary" onClick={() => { setActiveTab('login'); registerForm.reset(); loginForm.reset();}}>
+                     <Button variant="link" className="p-0 h-auto text-primary" onClick={() => { 
+                        const currentLoginTab = document.querySelector('[data-state="active"][role="tab"][aria-selected="true"]');
+                        if (currentLoginTab && currentLoginTab.getAttribute('data-value') === 'login') {
+                            // Already on login tab, reset forms
+                            loginForm.reset();
+                            registerForm.reset();
+                        } else {
+                            // Switch to login tab
+                            const trigger = document.querySelector('button[role="tab"][data-value="login"]') as HTMLButtonElement | null;
+                            trigger?.click();
+                        }
+                        setActiveTab('login'); // Ensure internal state matches
+                        registerForm.reset(); 
+                        loginForm.reset();
+                     }}>
                         Login here
                     </Button>
                 </p>
@@ -326,4 +360,3 @@ export default function AuthPage() {
     </div>
   );
 }
-

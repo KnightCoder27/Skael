@@ -1,6 +1,7 @@
 
 "use client";
 
+import { useEffect } from 'react'; // Added useEffect
 import useLocalStorage from '@/hooks/use-local-storage';
 import type { TrackedApplication, ApplicationStatus } from '@/types';
 import { ApplicationTrackerTable } from '@/components/app/application-tracker-table';
@@ -8,10 +9,25 @@ import { Button } from '@/components/ui/button';
 import { Briefcase, FilePlus2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
+import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
+import { useRouter } from 'next/navigation'; // Import useRouter
+import { FullPageLoading } from '@/components/app/loading-spinner'; // Import FullPageLoading
+
 
 export default function TrackerPage() {
+  const { currentUser, isLoadingAuth } = useAuth(); // Use AuthContext
+  const router = useRouter(); // Initialize useRouter
   const [trackedApplications, setTrackedApplications] = useLocalStorage<TrackedApplication[]>('tracked-applications', []);
   const { toast } = useToast();
+
+  // Redirect if not authenticated
+  useEffect(() => {
+    if (!isLoadingAuth && !currentUser) {
+      toast({ title: "Access Denied", description: "Please log in to view your tracker.", variant: "destructive" });
+      router.push('/auth');
+    }
+  }, [isLoadingAuth, currentUser, router, toast]);
+
 
   const handleUpdateStatus = (jobId: number, status: ApplicationStatus) => {
     setTrackedApplications(prevApps =>
@@ -27,11 +43,14 @@ export default function TrackerPage() {
     toast({ title: "Application Removed", description: "The application has been removed from your tracker.", variant: "destructive" });
   };
 
-  // const handleEditNotes = (jobId: string) => {
-  //   // Placeholder for future modal to edit notes
-  //   console.log("Edit notes for job:", jobId);
-  //   toast({ title: "Edit Notes", description: "Note editing feature coming soon!" });
-  // };
+  if (isLoadingAuth) {
+    return <FullPageLoading message="Authenticating..." />;
+  }
+
+  if (!currentUser) { // Should be caught by useEffect, but as a fallback
+    return <FullPageLoading message="Redirecting to login..." />;
+  }
+
 
   return (
     <div className="space-y-8">
@@ -56,7 +75,6 @@ export default function TrackerPage() {
         applications={trackedApplications}
         onUpdateStatus={handleUpdateStatus}
         onDeleteApplication={handleDeleteApplication}
-        // onEditNotes={handleEditNotes}
       />
     </div>
   );

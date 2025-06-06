@@ -8,103 +8,92 @@ export type RemotePreference = "Remote" | "Hybrid" | "Onsite" | "Any";
  * Represents a geographical location.
  */
 export interface Location {
-  id: number;
-  name: string; // e.g., "New York", "London"
-  // users_preferring_location?: User[]; // Back-reference (many-to-many with User)
+  id: number; // Kept as number, assuming these are predefined or managed elsewhere
+  name: string;
 }
 
 /**
  * Represents a technology or skill.
  */
 export interface Technology {
-  id: number;
+  id: number; // Kept as number for sample data consistency
   technology_name: string;
   technology_slug: string;
   category?: string;
   category_slug?: string;
-  logo?: string; // URL to logo
-  logo_thumbnail?: string; // URL to thumbnail
+  logo?: string;
+  logo_thumbnail?: string;
   one_liner?: string;
-  url?: string; // URL to technology's official page
-  description?: string; // Text for potentially longer descriptions
-  // users_with_skill?: User[]; // Back-reference (many-to-many with User)
-  // job_listings_with_tech?: JobListing[]; // Back-reference (many-to-many with JobListing)
+  url?: string;
+  description?: string;
 }
 
 /**
- * Represents a company tier (e.g., "Tier 1", "Gold").
+ * Represents a company tier.
  */
 export interface Tier {
-  id: number;
-  company_id: number; // Foreign Key to Company
-  // company?: Company; // Direct relationship
+  id: string; // Firestore IDs are strings
+  company_id: string; // Assuming Company ID will also be string
   tier_rank?: string;
-  // users?: User[]; // Back-reference (users who prefer this tier)
 }
 
 /**
  * Represents a company.
  */
 export interface Company {
-  id: number;
-  api_company_id?: string; // ID from the external API's company_object
+  id: string; // Firestore IDs are strings
+  api_company_id?: string;
   company_name: string;
   company_domain: string;
   industry?: string;
   country?: string;
-  country_code?: string; // e.g., US, IN (2 characters)
-  url?: string; // Company website
+  country_code?: string;
+  url?: string;
   long_description?: string;
   linkedin_url?: string;
   linkedin_id?: string;
-  logo?: string; // URL to company logo
-  industry_id?: string; // API sourced industry identifier
-  tiers?: Tier[]; // One-to-many relationship
-  // job_listings?: JobListing[]; // One-to-many relationship
-  fetched_date?: string; // ISO date string
+  logo?: string;
+  industry_id?: string;
+  tiers?: Tier[];
+  fetched_date?: string;
 }
 
 /**
  * Represents a user of the application.
- * Replaces the old UserProfileData.
+ * Firestore document ID will be used as the 'id'.
  */
 export interface User {
-  id: number;
-  user_name?: string; // Was 'name' in UserProfileData
+  id: string; // Firestore Document ID
+  user_name?: string;
   phone_number?: string;
-  email_id: string; // Was 'email' in UserProfileData, unique
-  password?: string; // Should ideally not be stored client-side directly in production
+  email_id: string; // Should be unique
   
-  professional_summary?: string; // Was 'rawText' in UserProfileData, for resume/LinkedIn summary
-  desired_job_role?: string; // Partially covers 'preferences' from UserProfileData
+  professional_summary?: string;
+  desired_job_role?: string;
   
-  skills?: Technology[]; // Many-to-many with Technologies - populated from skills_list_text for now
-  skills_list_text?: string; // Temporary field to store comma-separated skills as text
+  // skills?: Technology[]; // For simplicity, keeping skills as text for now if not deeply integrated
+  skills_list_text?: string;
 
-  experience?: number; // Years of experience
+  experience?: number;
   
-  preferred_locations?: Location[]; // Many-to-many with Location
-  location_string?: string; // Simple string for current profile form, was 'location' in UserProfileData
-  country?: string; // User's country
+  // preferred_locations?: Location[]; // For simplicity, keeping locations as text
+  location_string?: string;
+  country?: string;
 
   remote_preference?: RemotePreference;
   
-  preferred_tier_id?: number; // Foreign Key to Tiers
-  // preferred_tier?: Tier;
-  expected_salary?: string; // Could be a range or specific amount string
-  resume?: string; // File path or URL to resume
-  joined_date?: string; // ISO datetime string
-
-  // Other text-based preferences from old UserProfileData can be stored in a generic field if needed
-  // e.g., general_preferences_text?: string; // Was 'preferences' in UserProfileData if desired_job_role isn't enough
+  preferred_tier_id?: string;
+  expected_salary?: string;
+  resume?: string; // URL
+  joined_date?: string; // ISO datetime string (when profile created in Firestore)
 }
 
 /**
  * Represents a job listing.
- * Replaces the old JobOpportunity.
+ * Assuming JobListing data is static or from another source for now, not in Firestore.
  */
 export interface JobListing {
-  id: number; 
+  id: number; // Keeping as number for sample data
   unique_input_id?: string; 
   api_id?: string; 
   job_title: string; 
@@ -114,8 +103,8 @@ export interface JobListing {
   
   company: string; 
   company_domain?: string; 
-  company_obj_id?: number; 
-  company_obj?: Company; 
+  // company_obj_id?: string; // If linking to Company collection
+  // company_obj?: Company; 
 
   final_url?: string;
   source_url?: string;
@@ -157,9 +146,11 @@ export type ApplicationStatus = "Interested" | "Saved" | "Applied" | "Interviewi
 
 /**
  * Represents a job application tracked by the user.
+ * These will be stored in a subcollection under the user.
  */
 export interface TrackedApplication {
-  jobId: number; 
+  id: string; // Firestore Document ID for the tracked application
+  jobId: number; // ID from the JobListing (sample data)
   jobTitle: string;
   company: string;
   status: ApplicationStatus;

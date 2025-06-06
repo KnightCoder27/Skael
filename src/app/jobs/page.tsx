@@ -4,7 +4,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { JobListing, User, TrackedApplication } from '@/types';
 import { sampleJobs } from '@/lib/sample-data';
-import useLocalStorage from '@/hooks/use-local-storage';
+import useLocalStorage from '@/hooks/use-local-storage'; // Still used for trackedApplications and jobAnalysisCache
+import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
 import { JobCard } from '@/components/app/job-card';
 import { JobDetailsModal } from '@/components/app/job-details-modal';
 import { ApplicationMaterialsModal } from '@/components/app/application-materials-modal';
@@ -14,6 +15,8 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Compass, Info, FileWarning } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+
 
 // AI Flow Imports
 import { jobMatchExplanation, type JobMatchExplanationInput, type JobMatchExplanationOutput } from '@/ai/flows/job-match-explanation';
@@ -34,7 +37,10 @@ interface JobAnalysisCache {
 export default function JobExplorerPage() {
   const [jobs, setJobs] = useState<JobListing[]>([]);
   const [isLoadingJobs, setIsLoadingJobs] = useState(true);
-  const [userProfile] = useLocalStorage<User | null>('user-profile', null);
+  const { currentUser, isLoadingAuth } = useAuth(); // Use currentUser from AuthContext
+  const router = useRouter();
+
+  // These still use localStorage for now
   const [trackedApplications, setTrackedApplications] = useLocalStorage<TrackedApplication[]>('tracked-applications', []);
   const [jobAnalysisCache, setJobAnalysisCache] = useLocalStorage<JobAnalysisCache>('job-ai-analysis-cache', {});
 
@@ -56,17 +62,23 @@ export default function JobExplorerPage() {
 
   const { toast } = useToast();
 
+  // Redirect if not authenticated after loading
+  useEffect(() => {
+    if (!isLoadingAuth && !currentUser) {
+      toast({ title: "Access Denied", description: "Please log in to explore jobs.", variant: "destructive" });
+      router.push('/auth');
+    }
+  }, [isLoadingAuth, currentUser, router, toast]);
+
+
   const fetchJobDetailsWithAI = useCallback(async (job: JobListing) => {
-    setSelectedJobForDetails(job); // Set immediately to open modal with basic info
+    setSelectedJobForDetails(job);
     setIsDetailsModalOpen(true);
 
-    // Check if analysis is already on the job object (from initial load or previous fetch in this session)
     if (job.matchScore !== undefined && job.matchExplanation) {
-      // Already have analysis, no need to fetch or load from cache again for modal display
       return;
     }
 
-    // Check localStorage cache
     const cachedAnalysis = jobAnalysisCache[job.id];
     if (cachedAnalysis) {
       setJobs(prevJobs =>
@@ -78,8 +90,8 @@ export default function JobExplorerPage() {
       return;
     }
     
-    // If profile is incomplete, don't attempt AI call for explanation
-    if (!userProfile || !userProfile.professional_summary || !userProfile.desired_job_role || !userProfile.skills_list_text) {
+    if (!currentUser || !currentUser.professional_summary || !currentUser.desired_job_role || !currentUser.skills_list_text) {
+      // Profile check based on currentUser from AuthContext
       return; 
     }
 
@@ -87,21 +99,18 @@ export default function JobExplorerPage() {
     try {
       const input: JobMatchExplanationInput = {
         jobDescription: job.description,
-        userProfile: userProfile.professional_summary,
-        userPreferences: userProfile.desired_job_role || '',
+        userProfile: currentUser.professional_summary,
+        userPreferences: currentUser.desired_job_role || '',
         userHistory: '', 
       };
       const explanationResult = await jobMatchExplanation(input);
       
-      // Update jobs state
       setJobs(prevJobs =>
         prevJobs.map(j =>
           j.id === job.id ? { ...j, ...explanationResult } : j
         )
       );
-      // Update selected job for modal
       setSelectedJobForDetails(prevJob => prevJob ? { ...prevJob, ...explanationResult } : null);
-      // Update localStorage cache
       setJobAnalysisCache(prevCache => ({
         ...prevCache,
         [job.id]: explanationResult,
@@ -113,7 +122,7 @@ export default function JobExplorerPage() {
     } finally {
       setIsLoadingExplanation(false);
     }
-  }, [userProfile, toast, jobAnalysisCache, setJobAnalysisCache]);
+  }, [currentUser, toast, jobAnalysisCache, setJobAnalysisCache]);
 
   useEffect(() => {
     const loadJobs = () => {
@@ -128,8 +137,13 @@ export default function JobExplorerPage() {
       setJobs(augmentedJobs);
       setIsLoadingJobs(false);
     };
-    loadJobs();
-  }, [jobAnalysisCache]); // Rerun if cache changes (e.g. from another tab, though unlikely for this prototype)
+    if (!isLoadingAuth && currentUser) { // Only load jobs if authenticated
+        loadJobs();
+    } else if (!isLoadingAuth && !currentUser) {
+        setIsLoadingJobs(false); // Stop loading if not authenticated
+    }
+    // Rerun if cache changes or auth state resolves
+  }, [jobAnalysisCache, isLoadingAuth, currentUser]); 
 
 
   const handleViewDetails = (job: JobListing) => {
@@ -137,12 +151,15 @@ export default function JobExplorerPage() {
   };
 
   const handleSaveJob = (job: JobListing) => {
-    const existingApplication = trackedApplications.find(app => app.jobId === job.id);
-    if (existingApplication) {
+    // This still uses localStorage for trackedApplications
+    const existingApplicationIndex = trackedApplications.findIndex(app => app.jobId === job.id);
+    if (existingApplicationIndex > -1) {
       setTrackedApplications(prev => prev.filter(app => app.jobId !== job.id));
       toast({ title: "Job Unsaved", description: `${job.job_title} removed from your tracker.` });
     } else {
+      // For tracked applications, ensure 'id' is a string for Firestore compatibility if/when migrated
       const newApplication: TrackedApplication = {
+        id: job.id.toString() + Date.now().toString(), // Example: Create a unique string ID for the tracked item
         jobId: job.id,
         jobTitle: job.job_title,
         company: job.company,
@@ -183,7 +200,7 @@ export default function JobExplorerPage() {
   };
 
   const handleTriggerAIResumeGeneration = async (jobToGenerateFor: JobListing) => {
-    if (!userProfile || !userProfile.professional_summary || !userProfile.desired_job_role || !userProfile.skills_list_text) {
+    if (!currentUser || !currentUser.professional_summary || !currentUser.desired_job_role || !currentUser.skills_list_text) {
       toast({ title: "Profile Incomplete", description: "Please complete your profile (summary, desired role, skills) to generate materials.", variant: "destructive" });
       return;
     }
@@ -199,7 +216,7 @@ export default function JobExplorerPage() {
 
       const resumeInput: GenerateDocumentInput = {
         jobDescription: jobToGenerateFor.description,
-        userProfile: userProfile.professional_summary, // Using full professional summary as userProfile
+        userProfile: currentUser.professional_summary, 
         pointsToMention: [...(points.keyRequirements || []), ...(points.keySkills || [])],
       };
       const resumeResult = await generateResume(resumeInput);
@@ -215,7 +232,7 @@ export default function JobExplorerPage() {
   };
 
   const handleTriggerAICoverLetterGeneration = async (jobToGenerateFor: JobListing) => {
-    if (!userProfile || !userProfile.professional_summary || !userProfile.desired_job_role || !userProfile.skills_list_text) {
+    if (!currentUser || !currentUser.professional_summary || !currentUser.desired_job_role || !currentUser.skills_list_text) {
       toast({ title: "Profile Incomplete", description: "Please complete your profile (summary, desired role, skills) to generate materials.", variant: "destructive" });
       return;
     }
@@ -231,7 +248,7 @@ export default function JobExplorerPage() {
 
       const coverLetterInput: GenerateDocumentInput = {
         jobDescription: jobToGenerateFor.description,
-        userProfile: userProfile.professional_summary, // Using full professional summary as userProfile
+        userProfile: currentUser.professional_summary,
         pointsToMention: [...(points.keyRequirements || []), ...(points.keySkills || [])],
       };
       const coverLetterResult = await generateCoverLetter(coverLetterInput);
@@ -246,12 +263,16 @@ export default function JobExplorerPage() {
     }
   };
 
-  const isProfileIncompleteForAIFeatures = !userProfile || !userProfile.professional_summary || !userProfile.desired_job_role || !userProfile.skills_list_text;
+  const isProfileIncompleteForAIFeatures = !currentUser || !currentUser.professional_summary || !currentUser.desired_job_role || !currentUser.skills_list_text;
 
-
-  if (isLoadingJobs) {
-    return <FullPageLoading message="Finding best jobs for you..." />;
+  if (isLoadingAuth || isLoadingJobs) {
+    return <FullPageLoading message={isLoadingAuth ? "Authenticating..." : "Finding best jobs for you..."} />;
   }
+  
+  if (!currentUser) { // Should be caught by useEffect redirect, but as a fallback
+    return <FullPageLoading message="Redirecting to login..." />;
+  }
+
 
   return (
     <div className="space-y-8">

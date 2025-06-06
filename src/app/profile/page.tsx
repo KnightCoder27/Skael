@@ -5,8 +5,9 @@ import { useEffect, useState } from 'react';
 import { useForm, type SubmitHandler, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import useLocalStorage from '@/hooks/use-local-storage';
-import type { User, RemotePreference, TrackedApplication } from '@/types';
+import { useAuth } from '@/contexts/AuthContext';
+import { updateUser as updateUserInDb, deleteUser as deleteUserFromDb } from '@/services/userService';
+import type { User, RemotePreference } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -18,12 +19,17 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle } from 'lucide-react';
+import { FullPageLoading } from '@/components/app/loading-spinner';
+import useLocalStorage from '@/hooks/use-local-storage'; // For tracked-applications
+import type { TrackedApplication } from '@/types'; // For tracked-applications
+
 
 const remotePreferenceOptions: RemotePreference[] = ["Remote", "Hybrid", "Onsite", "Any"];
 
+// Schema does not need 'id' or 'joined_date' as these are managed by Firestore/system
 const profileSchema = z.object({
   user_name: z.string().min(2, 'Name should be at least 2 characters.').max(50, 'Name cannot exceed 50 characters.').optional(),
-  email_id: z.string().email('Invalid email address.'),
+  email_id: z.string().email('Invalid email address.'), // Kept for display, but should be read-only
   phone_number: z.string().max(20, 'Phone number cannot exceed 20 characters.').optional().or(z.literal('')),
   location_string: z.string().max(255, 'Preferred Locations cannot exceed 255 characters.').optional().or(z.literal('')),
   country: z.string().max(100, 'Country cannot exceed 100 characters.').optional().or(z.literal('')),
@@ -39,15 +45,14 @@ const profileSchema = z.object({
 type ProfileFormValues = z.infer<typeof profileSchema>;
 
 export default function ProfilePage() {
-  const [userProfile, setUserProfile] = useLocalStorage<User | null>('user-profile', null);
-  const [, setTrackedApplications] = useLocalStorage<TrackedApplication[]>('tracked-applications', []);
+  const { currentUser, setCurrentUser, isLoadingAuth } = useAuth();
+  const [, setTrackedApplications] = useLocalStorage<TrackedApplication[]>('tracked-applications', []); // Keep for now
   const { toast } = useToast();
   const router = useRouter();
-  const [isEmailReadOnly, setIsEmailReadOnly] = useState(false);
-
+  
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
-    defaultValues: {
+    defaultValues: { // Initialize with empty strings or undefined
       user_name: '',
       email_id: '',
       phone_number: '',
@@ -65,40 +70,50 @@ export default function ProfilePage() {
   const { register, handleSubmit, formState: { errors, isSubmitting }, reset, control } = form;
 
   useEffect(() => {
-    // Determine if email should be read-only only on the client after hydration
-    setIsEmailReadOnly(false); // Default to not read-only
-    if (userProfile && userProfile.email_id) {
-        setIsEmailReadOnly(true);
-    }
-
-    if (userProfile) {
+    if (!isLoadingAuth && !currentUser) {
+      // If auth is resolved and there's no user, redirect to auth page
+      toast({ title: "Not Authenticated", description: "Please log in to view your profile.", variant: "destructive" });
+      router.push('/auth');
+    } else if (currentUser) {
       reset({
-        user_name: userProfile.user_name || '',
-        email_id: userProfile.email_id || '',
-        phone_number: userProfile.phone_number || '',
-        location_string: userProfile.location_string || '',
-        country: userProfile.country || '',
-        professional_summary: userProfile.professional_summary || '',
-        desired_job_role: userProfile.desired_job_role || '',
-        experience: userProfile.experience ?? undefined,
-        remote_preference: userProfile.remote_preference ?? undefined,
-        expected_salary: userProfile.expected_salary || '',
-        skills_list_text: userProfile.skills_list_text || '',
-        resume: userProfile.resume || '',
+        user_name: currentUser.user_name || '',
+        email_id: currentUser.email_id, // Email is from currentUser, should be read-only
+        phone_number: currentUser.phone_number || '',
+        location_string: currentUser.location_string || '',
+        country: currentUser.country || '',
+        professional_summary: currentUser.professional_summary || '',
+        desired_job_role: currentUser.desired_job_role || '',
+        experience: currentUser.experience ?? undefined,
+        remote_preference: currentUser.remote_preference ?? undefined,
+        expected_salary: currentUser.expected_salary || '',
+        skills_list_text: currentUser.skills_list_text || '',
+        resume: currentUser.resume || '',
       });
     }
-  }, [userProfile, reset]);
+  }, [currentUser, isLoadingAuth, reset, router, toast]);
 
-  const onSubmit: SubmitHandler<ProfileFormValues> = (data) => {
-    setUserProfile(prevProfile => ({
-      ...(prevProfile || { id: Date.now(), email_id: data.email_id }),
-      ...data,
-      experience: data.experience === null ? undefined : data.experience,
-    }));
-    toast({
-      title: 'Profile Updated',
-      description: 'Your profile information has been saved successfully.',
-    });
+  const onSubmit: SubmitHandler<ProfileFormValues> = async (data) => {
+    if (!currentUser) {
+      toast({ title: "Error", description: "No user session found.", variant: "destructive" });
+      return;
+    }
+    try {
+      // Remove email_id from data to be updated, as it's an identifier and shouldn't change here.
+      const { email_id, ...updateData } = data;
+      
+      await updateUserInDb(currentUser.id, updateData as Partial<Omit<User, 'id'>>);
+      
+      // Update context state
+      setCurrentUser(prev => prev ? { ...prev, ...updateData, experience: updateData.experience === null ? undefined : updateData.experience } : null);
+      
+      toast({
+        title: 'Profile Updated',
+        description: 'Your profile information has been saved successfully.',
+      });
+    } catch (error) {
+      console.error("Error updating profile:", error);
+      toast({ title: "Update Failed", description: "Could not update profile. Please try again.", variant: "destructive" });
+    }
   };
 
   const handleGenerateGeneralResume = () => {
@@ -109,16 +124,32 @@ export default function ProfilePage() {
     toast({ title: "Coming Soon!", description: "Custom cover letter generation will be available soon." });
   };
 
-  const handleDeleteAccountConfirm = () => {
-    setUserProfile(null);
-    setTrackedApplications([]);
-    toast({
-      title: "Account Deleted",
-      description: "Your account data has been removed from this browser.",
-      variant: "destructive",
-    });
-    router.push('/auth');
+  const handleDeleteAccountConfirm = async () => {
+    if (!currentUser) {
+      toast({ title: "Error", description: "No user session found.", variant: "destructive" });
+      return;
+    }
+    try {
+      await deleteUserFromDb(currentUser.id);
+      setCurrentUser(null); // Clear user from context
+      setTrackedApplications([]); // Clear tracked applications from localStorage
+      toast({
+        title: "Account Deleted",
+        description: "Your account data has been removed.",
+        variant: "destructive",
+      });
+      router.push('/auth');
+    } catch (error) {
+      console.error("Error deleting account:", error);
+      toast({ title: "Deletion Failed", description: "Could not delete account. Please try again.", variant: "destructive" });
+    }
   };
+
+  if (isLoadingAuth || (!currentUser && !isLoadingAuth)) {
+    // Show loading spinner while auth state is being determined, or if redirection is about to happen
+    return <FullPageLoading message="Loading profile..." />;
+  }
+
 
   return (
     <div className="space-y-8">
@@ -155,26 +186,28 @@ export default function ProfilePage() {
                   {...register('email_id')}
                   placeholder="you@example.com"
                   className={errors.email_id ? 'border-destructive' : ''}
-                  readOnly={isEmailReadOnly}
+                  readOnly // Email should be read-only after account creation
                 />
                 {errors.email_id && <p className="text-sm text-destructive">{errors.email_id.message}</p>}
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-2">
-                <Label htmlFor="phone_number">Phone Number (Optional)</Label>
+                <Label htmlFor="phone_number">Phone Number</Label>
                 <div className="relative flex items-center">
                     <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input id="phone_number" type="tel" {...register('phone_number')} placeholder="(123) 456-7890" className={`pl-10 ${errors.phone_number ? 'border-destructive' : ''}`} />
                 </div>
+                 <p className="text-xs text-muted-foreground">Optional.</p>
                 {errors.phone_number && <p className="text-sm text-destructive">{errors.phone_number.message}</p>}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="country">Country (Optional)</Label>
+                <Label htmlFor="country">Country</Label>
                 <div className="relative flex items-center">
                     <Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input id="country" {...register('country')} placeholder="e.g., United States" className={`pl-10 ${errors.country ? 'border-destructive' : ''}`} />
                 </div>
+                <p className="text-xs text-muted-foreground">Optional.</p>
                 {errors.country && <p className="text-sm text-destructive">{errors.country.message}</p>}
               </div>
               <div className="space-y-2">
@@ -212,25 +245,27 @@ export default function ProfilePage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                    <Label htmlFor="experience">Years of Professional Experience (Optional)</Label>
+                    <Label htmlFor="experience">Years of Professional Experience</Label>
                     <div className="relative flex items-center">
                         <Briefcase className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                         <Input id="experience" type="number" {...register('experience')} placeholder="e.g., 5" className={`pl-10 ${errors.experience ? 'border-destructive' : ''}`} />
                     </div>
+                    <p className="text-xs text-muted-foreground">Optional.</p>
                     {errors.experience && <p className="text-sm text-destructive">{errors.experience.message}</p>}
                 </div>
                 <div className="space-y-2">
-                    <Label htmlFor="resume">Resume URL (Optional)</Label>
+                    <Label htmlFor="resume">Resume URL</Label>
                      <div className="relative flex items-center">
                         <FileText className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                         <Input id="resume" {...register('resume')} placeholder="https://example.com/your-resume.pdf" className={`pl-10 ${errors.resume ? 'border-destructive' : ''}`} />
                     </div>
+                    <p className="text-xs text-muted-foreground">Optional.</p>
                     {errors.resume && <p className="text-sm text-destructive">{errors.resume.message}</p>}
                 </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="skills_list_text" className="text-base flex items-center"><ListChecks className="mr-2 h-5 w-5 text-primary/80"/>Key Skills (Comma-separated, Optional)</Label>
+              <Label htmlFor="skills_list_text" className="text-base flex items-center"><ListChecks className="mr-2 h-5 w-5 text-primary/80"/>Key Skills</Label>
               <Textarea
                 id="skills_list_text"
                 {...register('skills_list_text')}
@@ -238,7 +273,7 @@ export default function ProfilePage() {
                 rows={3}
                 className={errors.skills_list_text ? 'border-destructive' : ''}
               />
-              <p className="text-xs text-muted-foreground">Enter skills separated by commas. This helps AI find relevant jobs.</p>
+              <p className="text-xs text-muted-foreground">Optional. Enter skills separated by commas. This helps AI find relevant jobs.</p>
               {errors.skills_list_text && <p className="text-sm text-destructive">{errors.skills_list_text.message}</p>}
             </div>
           </CardContent>
@@ -266,13 +301,13 @@ export default function ProfilePage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                    <Label htmlFor="remote_preference">Remote Work Preference (Optional)</Label>
+                    <Label htmlFor="remote_preference">Remote Work Preference</Label>
                     <Controller
                         name="remote_preference"
                         control={control}
                         render={({ field }) => (
                             <Select onValueChange={field.onChange} value={field.value ?? undefined}>
-                                <SelectTrigger className={`relative w-full justify-between pl-10 pr-3 ${errors.remote_preference ? 'border-destructive' : ''}`}>
+                                <SelectTrigger className={`relative w-full justify-start pl-10 pr-3 ${errors.remote_preference ? 'border-destructive' : ''}`}>
                                      <CloudSun className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                                     <SelectValue placeholder="Select preference" />
                                 </SelectTrigger>
@@ -284,14 +319,16 @@ export default function ProfilePage() {
                             </Select>
                         )}
                     />
+                    <p className="text-xs text-muted-foreground">Optional.</p>
                     {errors.remote_preference && <p className="text-sm text-destructive">{errors.remote_preference.message}</p>}
                 </div>
                 <div className="space-y-2">
-                    <Label htmlFor="expected_salary">Expected Salary (Optional)</Label>
+                    <Label htmlFor="expected_salary">Expected Salary</Label>
                      <div className="relative flex items-center">
                         <DollarSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                         <Input id="expected_salary" {...register('expected_salary')} placeholder="e.g., $120,000 USD or 90K EUR" className={`pl-10 ${errors.expected_salary ? 'border-destructive' : ''}`} />
                     </div>
+                    <p className="text-xs text-muted-foreground">Optional.</p>
                     {errors.expected_salary && <p className="text-sm text-destructive">{errors.expected_salary.message}</p>}
                 </div>
             </div>
@@ -368,7 +405,7 @@ export default function ProfilePage() {
           </AlertDialog>
         </CardContent>
         <CardFooter className="text-xs text-muted-foreground pt-4">
-          Deleting your account will remove all your saved information from this application in your current browser.
+          Deleting your account will remove all your saved information from Firestore.
         </CardFooter>
       </Card>
 

@@ -8,8 +8,7 @@ import { Compass, Briefcase, User, LogOut, LogIn, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
-import useLocalStorage from '@/hooks/use-local-storage';
-import type { User as AppUser } from '@/types';
+import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
 
 const navItemsLoggedIn = [
   { href: '/jobs', label: 'Job Listings', icon: Compass },
@@ -20,7 +19,7 @@ const navItemsLoggedIn = [
 export function Header() {
   const pathname = usePathname();
   const router = useRouter();
-  const [userProfile, setUserProfile] = useLocalStorage<AppUser | null>('user-profile', null);
+  const { currentUser, setCurrentUser, isLoadingAuth } = useAuth(); // Use AuthContext
   const [isClient, setIsClient] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
 
@@ -28,27 +27,9 @@ export function Header() {
     setIsClient(true);
   }, []);
 
-  // Effect to re-sync userProfile from localStorage when isClient is true and pathname changes.
-  // This ensures the header reflects login/logout status after navigation.
-  useEffect(() => {
-    if (isClient) {
-      try {
-        const item = window.localStorage.getItem('user-profile');
-        const currentProfileInStorage = item ? JSON.parse(item) : null;
-        
-        // Only update if the in-memory state differs from localStorage.
-        // Comparing stringified versions helps avoid infinite loops if object references change but content is same.
-        if (JSON.stringify(userProfile) !== JSON.stringify(currentProfileInStorage)) {
-          setUserProfile(currentProfileInStorage);
-        }
-      } catch (error) {
-        console.warn("Error re-syncing user-profile in Header on navigation:", error);
-      }
-    }
-  }, [isClient, pathname, userProfile, setUserProfile]); // Added userProfile & setUserProfile to dependencies
-
   const handleLogout = () => {
-    setUserProfile(null); 
+    setCurrentUser(null); 
+    // Potentially call Firebase signOut here if Firebase Auth was integrated
     router.push('/auth'); 
     setIsSheetOpen(false);
   };
@@ -75,13 +56,21 @@ export function Header() {
   );
   
   const renderNavLinks = (isMobileSheet = false) => {
-    if (!isClient) { 
-        // Pre-hydration: Show Login/Register with LogIn icon
+    if (isLoadingAuth && !isClient) { // Show a loading state or simplified view if auth state is loading on server
         return (
-            <NavLink href="/auth" icon={LogIn}>Login / Register</NavLink>
+             <Button variant="ghost" className="p-0 h-auto text-primary" disabled>Loading...</Button>
         );
     }
-    if (userProfile) {
+    if (isLoadingAuth && isClient) { // On client, show loading indicator until auth state is resolved
+        return (
+            <div className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground">
+                <LogIn className="w-5 h-5 animate-pulse" />
+                <span>Loading...</span>
+            </div>
+        );
+    }
+
+    if (currentUser) {
       // User is logged in
       return (
         <>
@@ -107,7 +96,7 @@ export function Header() {
         </>
       );
     } else {
-      // User is logged out (client-side)
+      // User is logged out
       return (
         <NavLink href="/auth" icon={LogIn}>Login / Register</NavLink>
       );
