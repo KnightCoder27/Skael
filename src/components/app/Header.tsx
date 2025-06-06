@@ -4,12 +4,12 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Compass, Briefcase, User, LogOut, LogIn, Menu } from 'lucide-react';
+import { Compass, Briefcase, User, LogOut, LogIn, Menu } from 'lucide-react'; // Ensured LogIn is imported
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import useLocalStorage from '@/hooks/use-local-storage';
-import type { User as AppUser } from '@/types'; // Changed from UserProfileData to AppUser to avoid conflict with Lucide's User
+import type { User as AppUser } from '@/types';
 
 const navItemsLoggedIn = [
   { href: '/jobs', label: 'Job Listings', icon: Compass },
@@ -29,10 +29,9 @@ export function Header() {
   }, []);
 
   const handleLogout = () => {
-    // Simulate logout
-    setUserProfile(null); // Clear profile from local storage
-    router.push('/auth'); // Redirect to login page
-    setIsSheetOpen(false); // Close sheet if open
+    setUserProfile(null); 
+    router.push('/auth'); 
+    setIsSheetOpen(false);
   };
 
   const NavLink = ({ href, children, icon: Icon, onClick }: { href: string; children: React.ReactNode; icon: React.ElementType, onClick?: () => void }) => (
@@ -58,11 +57,13 @@ export function Header() {
   
   const renderNavLinks = (isMobileSheet = false) => {
     if (!isClient) { 
+        // Pre-hydration: Show Login/Register with LogIn icon
         return (
             <NavLink href="/auth" icon={LogIn}>Login / Register</NavLink>
         );
     }
     if (userProfile) {
+      // User is logged in
       return (
         <>
           {navItemsLoggedIn.map((item) => (
@@ -87,6 +88,7 @@ export function Header() {
         </>
       );
     } else {
+      // User is logged out (client-side)
       return (
         <NavLink href="/auth" icon={LogIn}>Login / Register</NavLink>
       );
