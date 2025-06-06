@@ -79,12 +79,11 @@ export default function JobExplorerPage() {
   useEffect(() => {
     const loadJobs = async () => {
       setIsLoadingJobs(true);
-      // Check if professional_summary exists for AI features, not for basic job loading
       setJobs(sampleJobs.map(j => ({...j, matchScore: undefined, matchExplanation: undefined })));
       setIsLoadingJobs(false);
     };
     loadJobs();
-  }, []); // Removed userProfile dependency here, as basic job listing shouldn't depend on profile status. AI enrichment will.
+  }, []);
 
 
   const handleViewDetails = (job: JobListing) => { 
@@ -109,23 +108,31 @@ export default function JobExplorerPage() {
     }
   };
 
-  const handleGenerateMaterials = async (job: JobListing) => { 
+  const openMaterialsModal = (job: JobListing) => {
+    setSelectedJobForMaterials(job);
+    setGeneratedResume(null);
+    setGeneratedCoverLetter(null);
+    setIsLoadingMaterials(false); // Ensure loading is false initially
+    setIsMaterialsModalOpen(true);
+  };
+
+  const handleTriggerAIMaterialsGeneration = async (jobToGenerateFor: JobListing) => {
     if (!userProfile || !userProfile.professional_summary || !userProfile.desired_job_role || !userProfile.skills_list_text) { 
       toast({ title: "Profile Incomplete", description: "Please complete your professional summary, desired job role, and key skills in your profile to generate application materials.", variant: "destructive" });
+      setIsMaterialsModalOpen(false); // Close modal if profile is incomplete
       return;
     }
-    setSelectedJobForMaterials(job);
-    setIsMaterialsModalOpen(true);
+
     setIsLoadingMaterials(true);
-    setGeneratedResume(null);
+    setGeneratedResume(null); // Clear previous materials
     setGeneratedCoverLetter(null);
 
     try {
-      const pointsInput: ExtractJobDescriptionPointsInput = { jobDescription: job.description }; 
+      const pointsInput: ExtractJobDescriptionPointsInput = { jobDescription: jobToGenerateFor.description }; 
       const pointsResult = await extractJobDescriptionPoints(pointsInput);
       
       const materialsInput: GenerateDocumentInput = {
-        jobDescription: job.description, 
+        jobDescription: jobToGenerateFor.description, 
         userProfile: userProfile.professional_summary, 
         pointsToMention: [...(pointsResult.keyRequirements || []), ...(pointsResult.keySkills || [])],
       };
@@ -169,10 +176,10 @@ export default function JobExplorerPage() {
       </header>
 
       {isProfileIncomplete && ( 
-        <Alert variant="default" className="bg-primary/10 border-primary/30 text-primary-dark">
+        <Alert variant="default" className="bg-primary/10 border-primary/30">
           <Info className="h-5 w-5 text-primary" />
-          <AlertTitle className="font-semibold text-primary">Complete Your Profile for Better Matches!</AlertTitle>
-          <AlertDescription>
+          <AlertTitle className="font-semibold text-primary">Complete Your Profile for AI Features!</AlertTitle>
+          <AlertDescription className="text-primary/80">
             AI-powered matching and material generation work best with a complete profile (summary, desired role, and skills). 
             <Button variant="link" asChild className="p-0 h-auto ml-1 text-primary font-semibold">
               <Link href="/profile">Update your profile now.</Link>
@@ -195,7 +202,7 @@ export default function JobExplorerPage() {
               job={job} 
               onViewDetails={handleViewDetails}
               onSaveJob={handleSaveJob}
-              onGenerateMaterials={handleGenerateMaterials}
+              onGenerateMaterials={openMaterialsModal} // Changed to openMaterialsModal
               isSaved={trackedApplications.some(app => app.jobId === job.id)}
             />
           ))}
@@ -206,7 +213,7 @@ export default function JobExplorerPage() {
         job={selectedJobForDetails} 
         isOpen={isDetailsModalOpen} 
         onClose={() => setIsDetailsModalOpen(false)}
-        onGenerateMaterials={handleGenerateMaterials}
+        onGenerateMaterials={openMaterialsModal} // Changed to openMaterialsModal
         isLoadingExplanation={isLoadingExplanation}
       />
 
@@ -216,7 +223,8 @@ export default function JobExplorerPage() {
         resume={generatedResume}
         coverLetter={generatedCoverLetter}
         isLoading={isLoadingMaterials}
-        jobTitle={selectedJobForMaterials?.job_title} 
+        job={selectedJobForMaterials} // Pass the full job object
+        onGenerate={handleTriggerAIMaterialsGeneration} // Pass the generation trigger function
       />
     </div>
   );

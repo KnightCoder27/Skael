@@ -1,13 +1,14 @@
 
 "use client";
 
+import type { JobListing } from '@/types';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { ClipboardCopy, FileText, X } from 'lucide-react';
+import { ClipboardCopy, FileText, X, Wand2 } from 'lucide-react';
 import { LoadingSpinner } from './loading-spinner';
 
 interface ApplicationMaterialsModalProps {
@@ -16,10 +17,11 @@ interface ApplicationMaterialsModalProps {
   resume: string | null;
   coverLetter: string | null;
   isLoading: boolean;
-  jobTitle?: string; // This comes from JobListing.job_title, which is string. No change needed here.
+  job: JobListing | null; 
+  onGenerate: (jobToGenerateFor: JobListing) => Promise<void>;
 }
 
-export function ApplicationMaterialsModal({ isOpen, onClose, resume, coverLetter, isLoading, jobTitle }: ApplicationMaterialsModalProps) {
+export function ApplicationMaterialsModal({ isOpen, onClose, resume, coverLetter, isLoading, job, onGenerate }: ApplicationMaterialsModalProps) {
   const { toast } = useToast();
 
   const handleCopy = (text: string | null, type: 'Resume' | 'Cover Letter') => {
@@ -41,7 +43,7 @@ export function ApplicationMaterialsModal({ isOpen, onClose, resume, coverLetter
           <DialogTitle className="text-2xl font-bold font-headline text-primary flex items-center">
             <FileText className="w-6 h-6 mr-2" /> Application Materials
           </DialogTitle>
-          {jobTitle && <DialogDescription>Generated for: {jobTitle}</DialogDescription>}
+          {job && <DialogDescription>For: {job.job_title}</DialogDescription>}
         </DialogHeader>
 
         {isLoading ? (
@@ -49,7 +51,7 @@ export function ApplicationMaterialsModal({ isOpen, onClose, resume, coverLetter
             <LoadingSpinner size={48} />
             <p className="mt-4 text-lg text-muted-foreground">Generating materials, please wait...</p>
           </div>
-        ) : (
+        ) : resume || coverLetter ? (
           <Tabs defaultValue="resume" className="flex-grow flex flex-col overflow-hidden">
             <div className="px-6 py-3 border-b">
               <TabsList className="grid w-full grid-cols-2">
@@ -95,6 +97,32 @@ export function ApplicationMaterialsModal({ isOpen, onClose, resume, coverLetter
               </div>
             </TabsContent>
           </Tabs>
+        ) : (
+          <div className="flex-grow flex flex-col items-center justify-center p-10 text-center">
+            {job ? (
+              <>
+                <Wand2 className="w-12 h-12 text-primary mb-4" />
+                <h3 className="text-xl font-semibold mb-2">Generate AI Application Materials</h3>
+                <p className="mb-6 text-muted-foreground">
+                  Create a tailored resume and cover letter for the <strong className="text-foreground">{job.job_title}</strong> role at <strong className="text-foreground">{job.company}</strong>.
+                </p>
+                <Button 
+                  onClick={async () => {
+                    if (job) {
+                      await onGenerate(job);
+                    }
+                  }}
+                  disabled={!job} // isLoading is handled by the parent conditional rendering
+                  size="lg"
+                  className="bg-primary hover:bg-primary/90"
+                >
+                  <Wand2 className="mr-2 h-5 w-5" /> Generate Documents
+                </Button>
+              </>
+            ) : (
+              <p className="text-muted-foreground">No job selected for material generation.</p>
+            )}
+          </div>
         )}
 
         <DialogFooter className="p-6 pt-4 border-t">
@@ -106,3 +134,4 @@ export function ApplicationMaterialsModal({ isOpen, onClose, resume, coverLetter
     </Dialog>
   );
 }
+
