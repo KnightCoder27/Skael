@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation'; // Import useRouter
+import { useRouter } from 'next/navigation'; 
 import { useForm, type SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -14,8 +14,8 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { LogIn, UserPlus, Eye, EyeOff, Compass } from 'lucide-react';
-import useLocalStorage from '@/hooks/use-local-storage'; // Import useLocalStorage
-import type { UserProfileData } from '@/types'; // Import UserProfileData type
+import useLocalStorage from '@/hooks/use-local-storage'; 
+import type { User } from '@/types'; // Changed from UserProfileData
 
 // Schemas
 const loginSchema = z.object({
@@ -42,9 +42,9 @@ type RegisterFormValues = z.infer<typeof registerSchema>;
 
 export default function AuthPage() {
   const { toast } = useToast();
-  const router = useRouter(); // Initialize useRouter
+  const router = useRouter(); 
   const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
-  const [, setUserProfile] = useLocalStorage<UserProfileData | null>('user-profile', null); // For setting profile on register
+  const [, setUserProfile] = useLocalStorage<User | null>('user-profile', null); 
   
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
@@ -62,27 +62,38 @@ export default function AuthPage() {
 
   const onLoginSubmit: SubmitHandler<LoginFormValues> = (data) => {
     console.log("Login data:", data);
-    // TODO: Implement actual login logic with Firebase Auth or other provider
-    // For now, simulate login by setting a dummy profile and redirecting
-    setUserProfile({ rawText: `Logged in as ${data.email}`, preferences: "No preferences set yet.", name: "User", email: data.email });
+    // Simulate login by setting a dummy profile and redirecting
+    const loggedInUser: User = {
+      id: Date.now(), // Simulate a unique ID
+      email_id: data.email,
+      user_name: "Demo User", // Or retrieve actual name if previously stored
+      professional_summary: `Logged in as ${data.email}. Profile details can be updated.`,
+      desired_job_role: "No preferences set yet.",
+      // Initialize other User fields as needed
+      skills: [],
+      preferred_locations: [],
+    };
+    setUserProfile(loggedInUser);
     toast({ title: "Login Successful (Simulated)", description: "Redirecting to job listings..." });
-    router.push('/jobs'); // Redirect to Job Listings page
+    router.push('/jobs'); 
   };
 
   const onRegisterSubmit: SubmitHandler<RegisterFormValues> = (data) => {
     console.log("Register data:", data);
-    // TODO: Implement actual registration logic with Firebase Auth or other provider
-    // For now, simulate registration by creating a basic profile and redirecting
-    const newProfile: UserProfileData = {
-      rawText: "", // Empty, user will fill this in profile setup
-      preferences: "", // Empty
-      name: data.name,
-      email: data.email,
-      // location: "" // Location can be added later in profile setup
+    // Simulate registration by creating a basic profile and redirecting
+    const newUserProfile: User = {
+      id: Date.now(), // Simulate a unique ID
+      user_name: data.name,
+      email_id: data.email,
+      professional_summary: "", // Empty, user will fill this in profile setup
+      desired_job_role: "",   // Empty
+      // Initialize other User fields as needed
+      skills: [],
+      preferred_locations: [],
     };
-    setUserProfile(newProfile);
+    setUserProfile(newUserProfile);
     toast({ title: "Registration Successful (Simulated)", description: "Redirecting to profile setup..." });
-    router.push('/profile'); // Redirect to Profile Setup page
+    router.push('/profile'); 
   };
 
   const toggleShowLoginPassword = () => setShowLoginPassword(!showLoginPassword);
@@ -90,7 +101,7 @@ export default function AuthPage() {
   const toggleShowRegisterConfirmPassword = () => setShowRegisterConfirmPassword(!showRegisterConfirmPassword);
 
   return (
-    <div className="flex min-h-[calc(100vh-12rem)] flex-col items-center justify-center p-4"> {/* Adjusted min-h for header/footer */}
+    <div className="flex min-h-[calc(100vh-12rem)] flex-col items-center justify-center p-4">
       <Card className="w-full max-w-md shadow-xl bg-card">
         <Tabs defaultValue="login" className="w-full" onValueChange={(value) => setActiveTab(value as 'login' | 'register')}>
           <CardHeader className="text-center">

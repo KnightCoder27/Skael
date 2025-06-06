@@ -1,20 +1,23 @@
+
 "use client";
 
 import type { TrackedApplication, ApplicationStatus } from '@/types';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableCaption } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Trash2, Edit3, ExternalLink } from 'lucide-react';
+import { Trash2, ExternalLink } from 'lucide-react'; // Removed Edit3 as notes are not implemented
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import Link from 'next/link'; // For linking to job details page if available
-import { sampleJobs } from '@/lib/sample-data'; // To find job URLs
+import Link from 'next/link'; 
+import { sampleJobs } from '@/lib/sample-data'; 
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Briefcase } from 'lucide-react'; 
 
 interface ApplicationTrackerTableProps {
   applications: TrackedApplication[];
-  onUpdateStatus: (jobId: string, status: ApplicationStatus) => void;
-  onDeleteApplication: (jobId: string) => void;
-  // onEditNotes: (jobId: string) => void; // Future enhancement
+  onUpdateStatus: (jobId: number, status: ApplicationStatus) => void;
+  onDeleteApplication: (jobId: number) => void;
+  // onEditNotes: (jobId: number) => void; // Future enhancement
 }
 
 const statusOptions: ApplicationStatus[] = ["Interested", "Saved", "Applied", "Interviewing", "Offer", "Rejected"];
@@ -39,23 +42,30 @@ export function ApplicationTrackerTable({ applications, onUpdateStatus, onDelete
     return new Date(dateString).toLocaleDateString();
   };
 
-  const findJobUrl = (jobId: string): string | undefined => {
+  // JobListing.id is number, TrackedApplication.jobId is number
+  const findJobUrl = (jobId: number): string | undefined => {
     const job = sampleJobs.find(j => j.id === jobId);
     return job?.url;
   };
 
   if (applications.length === 0) {
     return (
-      <div className="text-center py-10 border rounded-lg bg-card">
-        <Briefcase className="mx-auto h-12 w-12 text-muted-foreground" />
-        <h3 className="mt-2 text-xl font-semibold">No Applications Tracked</h3>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Start by exploring jobs and saving the ones you're interested in.
-        </p>
-        <Button asChild className="mt-4">
-          <Link href="/jobs">Explore Jobs</Link>
-        </Button>
-      </div>
+      <Card className="text-center py-10 border rounded-lg bg-card">
+        <CardHeader>
+            <div className="flex justify-center mb-2">
+                <Briefcase className="mx-auto h-12 w-12 text-muted-foreground" />
+            </div>
+            <CardTitle className="text-xl font-semibold">No Applications Tracked</CardTitle>
+        </CardHeader>
+        <CardContent>
+            <CardDescription className="mt-1 text-sm text-muted-foreground">
+            Start by exploring jobs and saving the ones you're interested in.
+            </CardDescription>
+            <Button asChild className="mt-4">
+            <Link href="/jobs">Explore Jobs</Link>
+            </Button>
+        </CardContent>
+      </Card>
     );
   }
   
@@ -106,14 +116,14 @@ export function ApplicationTrackerTable({ applications, onUpdateStatus, onDelete
                   </Button> */}
                   {findJobUrl(app.jobId) && (
                     <Button variant="outline" size="icon" className="h-7 w-7" asChild>
-                       <a href={findJobUrl(app.jobId)} target="_blank" rel="noopener noreferrer">
+                       <a href={findJobUrl(app.jobId)} target="_blank" rel="noopener noreferrer" aria-label="View Original Job Post">
                         <ExternalLink className="h-3.5 w-3.5" /> <span className="sr-only">View Job</span>
                        </a>
                     </Button>
                   )}
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
-                      <Button variant="destructive" size="icon" className="h-7 w-7">
+                      <Button variant="destructive" size="icon" className="h-7 w-7" aria-label="Delete Application">
                         <Trash2 className="h-3.5 w-3.5" /> <span className="sr-only">Delete</span>
                       </Button>
                     </AlertDialogTrigger>
@@ -141,7 +151,3 @@ export function ApplicationTrackerTable({ applications, onUpdateStatus, onDelete
     </Card>
   );
 }
-
-// Need to ensure Card, CardHeader, CardTitle, CardDescription, CardContent are imported if used
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Briefcase } from 'lucide-react'; // For empty state

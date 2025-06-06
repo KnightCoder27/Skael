@@ -1,6 +1,6 @@
+
 "use client";
 
-import { useState, useEffect } from 'react';
 import useLocalStorage from '@/hooks/use-local-storage';
 import type { TrackedApplication, ApplicationStatus } from '@/types';
 import { ApplicationTrackerTable } from '@/components/app/application-tracker-table';
@@ -13,7 +13,7 @@ export default function TrackerPage() {
   const [trackedApplications, setTrackedApplications] = useLocalStorage<TrackedApplication[]>('tracked-applications', []);
   const { toast } = useToast();
 
-  const handleUpdateStatus = (jobId: string, status: ApplicationStatus) => {
+  const handleUpdateStatus = (jobId: number, status: ApplicationStatus) => {
     setTrackedApplications(prevApps =>
       prevApps.map(app =>
         app.jobId === jobId ? { ...app, status, lastUpdated: new Date().toISOString() } : app
@@ -22,7 +22,7 @@ export default function TrackerPage() {
     toast({ title: "Status Updated", description: `Application status changed to ${status}.` });
   };
 
-  const handleDeleteApplication = (jobId: string) => {
+  const handleDeleteApplication = (jobId: number) => {
     setTrackedApplications(prevApps => prevApps.filter(app => app.jobId !== jobId));
     toast({ title: "Application Removed", description: "The application has been removed from your tracker.", variant: "destructive" });
   };

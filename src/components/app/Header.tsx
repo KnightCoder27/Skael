@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import useLocalStorage from '@/hooks/use-local-storage';
-import type { UserProfileData } from '@/types';
+import type { User as AppUser } from '@/types'; // Changed from UserProfileData to AppUser to avoid conflict with Lucide's User
 
 const navItemsLoggedIn = [
   { href: '/jobs', label: 'Job Listings', icon: Compass },
@@ -20,7 +20,7 @@ const navItemsLoggedIn = [
 export function Header() {
   const pathname = usePathname();
   const router = useRouter();
-  const [userProfile, setUserProfile] = useLocalStorage<UserProfileData | null>('user-profile', null);
+  const [userProfile, setUserProfile] = useLocalStorage<AppUser | null>('user-profile', null);
   const [isClient, setIsClient] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
 
@@ -31,7 +31,6 @@ export function Header() {
   const handleLogout = () => {
     // Simulate logout
     setUserProfile(null); // Clear profile from local storage
-    // Potentially clear other auth-related storage if using real auth
     router.push('/auth'); // Redirect to login page
     setIsSheetOpen(false); // Close sheet if open
   };
@@ -58,7 +57,7 @@ export function Header() {
   );
   
   const renderNavLinks = (isMobileSheet = false) => {
-    if (!isClient) { // Don't render auth-dependent links on server or before hydration
+    if (!isClient) { 
         return (
             <NavLink href="/auth" icon={LogIn}>Login / Register</NavLink>
         );

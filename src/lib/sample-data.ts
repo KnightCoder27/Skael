@@ -11,9 +11,9 @@ const sampleTech = (names: string[]): Technology[] =>
 
 export const sampleJobs: JobListing[] = [
   {
-    id: 'job_1', // Kept as string for consistency with previous usage, JobListing.id is number though. Adapt if strict.
+    id: 1, 
     job_title: 'Senior Frontend Engineer',
-    company: 'Innovatech Dynamics', // Raw company name
+    company: 'Innovatech Dynamics', 
     location: 'Remote (US)',
     description: 'Innovatech Dynamics is seeking a highly skilled Senior Frontend Engineer to join our talented remote team. In this role, you will be responsible for designing, developing, and maintaining responsive and performant user interfaces for our flagship AI-driven analytics platform. You will collaborate closely with product managers, UX designers, and backend engineers to deliver exceptional user experiences. Key responsibilities include architecting complex frontend solutions, mentoring junior engineers, and championing best practices in code quality and performance. A strong portfolio showcasing your work with React, TypeScript, Redux/Zustand, and data visualization libraries is highly desirable. Experience with GraphQL and testing frameworks like Jest/React Testing Library is a plus. We offer a competitive salary, comprehensive benefits, and a vibrant, innovative work culture.',
     url: 'https://example.com/job/innovatech-frontend',
@@ -21,15 +21,13 @@ export const sampleJobs: JobListing[] = [
     date_posted: '2024-07-20',
     technologies: sampleTech(['React', 'TypeScript', 'Remote', 'AI', 'Fintech']),
     companyLogo: 'https://placehold.co/100x100.png',
-    // AI related fields
-    matchScore: undefined, // Will be populated by AI
-    matchExplanation: undefined, // Will be populated by AI
-    // Other JobListing fields if needed for sample data
+    matchScore: undefined, 
+    matchExplanation: undefined, 
     remote: true,
     currency: 'USD',
   },
   {
-    id: 'job_2',
+    id: 2,
     job_title: 'AI Product Manager',
     company: 'FutureAI Corp',
     location: 'New York, NY',
@@ -46,7 +44,7 @@ export const sampleJobs: JobListing[] = [
     currency: 'USD',
   },
   {
-    id: 'job_3',
+    id: 3,
     job_title: 'UX/UI Designer (Contract)',
     company: 'Creative Solutions Agency',
     location: 'Austin, TX (Hybrid)',
@@ -64,7 +62,7 @@ export const sampleJobs: JobListing[] = [
     employment_status: 'Contract',
   },
   {
-    id: 'job_4',
+    id: 4,
     job_title: 'Data Scientist - NLP',
     company: 'LingoAnalytics',
     location: 'Boston, MA',
@@ -76,6 +74,6 @@ export const sampleJobs: JobListing[] = [
     matchScore: undefined,
     matchExplanation: undefined,
     remote: false,
-    currency: 'USD', // Assuming salary not specified here means it's missing, not $0
+    currency: 'USD', 
   }
 ];

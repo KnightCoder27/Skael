@@ -70,28 +70,30 @@ export interface Company {
  */
 export interface User {
   id: number;
-  user_name?: string; // Was 'name'
+  user_name?: string; // Was 'name' in UserProfileData
   phone_number?: string;
-  email_id: string; // Was 'email', unique
+  email_id: string; // Was 'email' in UserProfileData, unique
   password?: string; // Should ideally not be stored client-side directly in production
-  desired_job_role?: string;
+  
+  professional_summary?: string; // Was 'rawText' in UserProfileData, for resume/LinkedIn summary
+  desired_job_role?: string; // Partially covers 'preferences' from UserProfileData
+  
   skills?: Technology[]; // Many-to-many with Technologies
   experience?: number; // Years of experience
+  
   preferred_locations?: Location[]; // Many-to-many with Location
+  location_string?: string; // Simple string for current profile form, was 'location' in UserProfileData
+
   remote_preference?: RemotePreference;
-  professional_summary?: string; // Was 'rawText', for resume/LinkedIn summary
+  
   preferred_tier_id?: number; // Foreign Key to Tiers
   // preferred_tier?: Tier;
   expected_salary?: string; // Could be a range or specific amount string
   resume?: string; // File path or URL to resume
   joined_date?: string; // ISO datetime string
 
-  // Fields from old UserProfileData for reference:
-  // rawText: string; (Covered by professional_summary)
-  // preferences: string; (Covered by desired_job_role, skills, preferred_locations, remote_preference, expected_salary)
-  // name?: string; (Covered by user_name)
-  // email?: string; (Covered by email_id)
-  // location?: string; (Covered by preferred_locations - though simple string was also an option)
+  // Other text-based preferences from old UserProfileData can be stored in a generic field if needed
+  // e.g., general_preferences_text?: string; // Was 'preferences' in UserProfileData if desired_job_role isn't enough
 }
 
 /**
@@ -142,7 +144,7 @@ export interface JobListing {
 
   // Fields from old JobOpportunity to retain for AI/UI:
   companyLogo?: string; // Can be derived from company_obj.logo. Kept for easier transition.
-  tags?: string[]; // Could be derived from technologies or matching_words. Kept for easier transition.
+  // tags?: string[]; // This is now covered by technologies. Removed to avoid redundancy.
   matchScore?: number; // AI-generated match score
   matchExplanation?: string; // AI-generated explanation
 }
@@ -156,7 +158,7 @@ export type ApplicationStatus = "Interested" | "Saved" | "Applied" | "Interviewi
  * Represents a job application tracked by the user.
  */
 export interface TrackedApplication {
-  jobId: string | number; // Corresponds to JobListing.id
+  jobId: number; // Corresponds to JobListing.id, which is now number
   jobTitle: string;
   company: string;
   status: ApplicationStatus;
@@ -165,4 +167,3 @@ export interface TrackedApplication {
   lastUpdated: string; // ISO date string
   // jobListing?: JobListing; // Optional: link to the full job listing object for richer display
 }
-
