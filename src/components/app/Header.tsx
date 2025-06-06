@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Compass, Briefcase, User, LogOut, LogIn, Menu } from 'lucide-react'; // Ensured LogIn is imported
+import { Compass, Briefcase, User, LogOut, LogIn, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
@@ -27,6 +27,25 @@ export function Header() {
   useEffect(() => {
     setIsClient(true);
   }, []);
+
+  // Effect to re-sync userProfile from localStorage when isClient is true and pathname changes.
+  // This ensures the header reflects login/logout status after navigation.
+  useEffect(() => {
+    if (isClient) {
+      try {
+        const item = window.localStorage.getItem('user-profile');
+        const currentProfileInStorage = item ? JSON.parse(item) : null;
+        
+        // Only update if the in-memory state differs from localStorage.
+        // Comparing stringified versions helps avoid infinite loops if object references change but content is same.
+        if (JSON.stringify(userProfile) !== JSON.stringify(currentProfileInStorage)) {
+          setUserProfile(currentProfileInStorage);
+        }
+      } catch (error) {
+        console.warn("Error re-syncing user-profile in Header on navigation:", error);
+      }
+    }
+  }, [isClient, pathname, userProfile, setUserProfile]); // Added userProfile & setUserProfile to dependencies
 
   const handleLogout = () => {
     setUserProfile(null); 
