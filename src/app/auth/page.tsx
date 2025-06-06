@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { LogIn, UserPlus, Eye, EyeOff, Compass } from 'lucide-react';
 import useLocalStorage from '@/hooks/use-local-storage'; 
-import type { User } from '@/types'; // Changed from UserProfileData
+import type { User } from '@/types';
 
 // Schemas
 const loginSchema = z.object({
@@ -62,16 +62,43 @@ export default function AuthPage() {
 
   const onLoginSubmit: SubmitHandler<LoginFormValues> = (data) => {
     console.log("Login data:", data);
-    // Simulate login by setting a dummy profile and redirecting
+    // Attempt to retrieve existing profile to preserve name
+    let existingUserProfile: User | null = null;
+    try {
+      const item = window.localStorage.getItem('user-profile');
+      existingUserProfile = item ? JSON.parse(item) : null;
+    } catch (error) {
+      console.warn("Error reading user-profile from localStorage during login:", error);
+    }
+
+    let resolvedUserName: string | undefined;
+    const currentStoredName = existingUserProfile?.user_name;
+
+    if (currentStoredName && currentStoredName.trim() !== "" && currentStoredName !== "Demo User") {
+      resolvedUserName = currentStoredName;
+    } else {
+      // If stored name is empty, whitespace, or "Demo User", generate a new one from email.
+      // This ensures "Demo User" from storage is overridden if it's considered stale.
+      resolvedUserName = `User-${data.email.split('@')[0]}`;
+    }
+
     const loggedInUser: User = {
-      id: Date.now(), // Simulate a unique ID
+      id: existingUserProfile?.id || Date.now(), 
       email_id: data.email,
-      user_name: "Demo User", // Or retrieve actual name if previously stored
-      professional_summary: `Logged in as ${data.email}. Profile details can be updated.`,
-      desired_job_role: "No preferences set yet.",
-      // Initialize other User fields as needed
-      skills: [],
-      preferred_locations: [],
+      user_name: resolvedUserName,
+      professional_summary: existingUserProfile?.professional_summary || `Logged in as ${data.email}. Profile details can be updated.`,
+      desired_job_role: existingUserProfile?.desired_job_role || "No preferences set yet.",
+      skills: existingUserProfile?.skills || [],
+      preferred_locations: existingUserProfile?.preferred_locations || [],
+      // Preserve other fields from existingUserProfile if they exist
+      phone_number: existingUserProfile?.phone_number,
+      location_string: existingUserProfile?.location_string,
+      country: existingUserProfile?.country,
+      experience: existingUserProfile?.experience,
+      remote_preference: existingUserProfile?.remote_preference,
+      expected_salary: existingUserProfile?.expected_salary,
+      skills_list_text: existingUserProfile?.skills_list_text,
+      resume: existingUserProfile?.resume,
     };
     setUserProfile(loggedInUser);
     toast({ title: "Login Successful (Simulated)", description: "Redirecting to job listings..." });
@@ -82,12 +109,11 @@ export default function AuthPage() {
     console.log("Register data:", data);
     // Simulate registration by creating a basic profile and redirecting
     const newUserProfile: User = {
-      id: Date.now(), // Simulate a unique ID
+      id: Date.now(), 
       user_name: data.name,
       email_id: data.email,
-      professional_summary: "", // Empty, user will fill this in profile setup
-      desired_job_role: "",   // Empty
-      // Initialize other User fields as needed
+      professional_summary: "", 
+      desired_job_role: "",   
       skills: [],
       preferred_locations: [],
     };
@@ -300,3 +326,4 @@ export default function AuthPage() {
     </div>
   );
 }
+
