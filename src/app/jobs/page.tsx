@@ -24,11 +24,19 @@ import {
   type GenerateDocumentInput,
 } from '@/ai/flows/resume-cover-letter-generator';
 
+interface JobAnalysisCache {
+  [jobId: number]: {
+    matchScore: number;
+    matchExplanation: string;
+  };
+}
+
 export default function JobExplorerPage() {
   const [jobs, setJobs] = useState<JobListing[]>([]);
   const [isLoadingJobs, setIsLoadingJobs] = useState(true);
   const [userProfile] = useLocalStorage<User | null>('user-profile', null);
   const [trackedApplications, setTrackedApplications] = useLocalStorage<TrackedApplication[]>('tracked-applications', []);
+  const [jobAnalysisCache, setJobAnalysisCache] = useLocalStorage<JobAnalysisCache>('job-ai-analysis-cache', {});
 
   const [selectedJobForDetails, setSelectedJobForDetails] = useState<JobListing | null>(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
@@ -49,46 +57,79 @@ export default function JobExplorerPage() {
   const { toast } = useToast();
 
   const fetchJobDetailsWithAI = useCallback(async (job: JobListing) => {
-    if (!userProfile || !userProfile.professional_summary || !userProfile.desired_job_role || !userProfile.skills_list_text) {
-      setSelectedJobForDetails(job);
-      setIsDetailsModalOpen(true);
+    setSelectedJobForDetails(job); // Set immediately to open modal with basic info
+    setIsDetailsModalOpen(true);
+
+    // Check if analysis is already on the job object (from initial load or previous fetch in this session)
+    if (job.matchScore !== undefined && job.matchExplanation) {
+      // Already have analysis, no need to fetch or load from cache again for modal display
       return;
     }
 
-    setIsLoadingExplanation(true);
-    setSelectedJobForDetails(job);
-    setIsDetailsModalOpen(true);
+    // Check localStorage cache
+    const cachedAnalysis = jobAnalysisCache[job.id];
+    if (cachedAnalysis) {
+      setJobs(prevJobs =>
+        prevJobs.map(j =>
+          j.id === job.id ? { ...j, ...cachedAnalysis } : j
+        )
+      );
+      setSelectedJobForDetails(prevJob => prevJob ? { ...prevJob, ...cachedAnalysis } : null);
+      return;
+    }
+    
+    // If profile is incomplete, don't attempt AI call for explanation
+    if (!userProfile || !userProfile.professional_summary || !userProfile.desired_job_role || !userProfile.skills_list_text) {
+      return; 
+    }
 
+    setIsLoadingExplanation(true);
     try {
       const input: JobMatchExplanationInput = {
         jobDescription: job.description,
         userProfile: userProfile.professional_summary,
         userPreferences: userProfile.desired_job_role || '',
-        userHistory: '',
+        userHistory: '', 
       };
       const explanationResult = await jobMatchExplanation(input);
-      setSelectedJobForDetails(prevJob => prevJob ? {
-        ...prevJob,
-        matchScore: explanationResult.matchScore,
-        matchExplanation: explanationResult.matchExplanation,
-      } : null);
+      
+      // Update jobs state
+      setJobs(prevJobs =>
+        prevJobs.map(j =>
+          j.id === job.id ? { ...j, ...explanationResult } : j
+        )
+      );
+      // Update selected job for modal
+      setSelectedJobForDetails(prevJob => prevJob ? { ...prevJob, ...explanationResult } : null);
+      // Update localStorage cache
+      setJobAnalysisCache(prevCache => ({
+        ...prevCache,
+        [job.id]: explanationResult,
+      }));
+
     } catch (error) {
       console.error("Error fetching AI match explanation:", error);
       toast({ title: "AI Analysis Failed", description: "Could not get AI match explanation.", variant: "destructive" });
     } finally {
       setIsLoadingExplanation(false);
     }
-  }, [userProfile, toast]);
+  }, [userProfile, toast, jobAnalysisCache, setJobAnalysisCache]);
 
   useEffect(() => {
-    const loadJobs = async () => {
+    const loadJobs = () => {
       setIsLoadingJobs(true);
-      // Simulate API call
-      setJobs(sampleJobs.map(j => ({ ...j, matchScore: undefined, matchExplanation: undefined })));
+      const augmentedJobs = sampleJobs.map(job => {
+        const cachedData = jobAnalysisCache[job.id];
+        if (cachedData) {
+          return { ...job, ...cachedData };
+        }
+        return { ...job, matchScore: undefined, matchExplanation: undefined };
+      });
+      setJobs(augmentedJobs);
       setIsLoadingJobs(false);
     };
     loadJobs();
-  }, []);
+  }, [jobAnalysisCache]); // Rerun if cache changes (e.g. from another tab, though unlikely for this prototype)
 
 
   const handleViewDetails = (job: JobListing) => {
@@ -144,7 +185,6 @@ export default function JobExplorerPage() {
   const handleTriggerAIResumeGeneration = async (jobToGenerateFor: JobListing) => {
     if (!userProfile || !userProfile.professional_summary || !userProfile.desired_job_role || !userProfile.skills_list_text) {
       toast({ title: "Profile Incomplete", description: "Please complete your profile (summary, desired role, skills) to generate materials.", variant: "destructive" });
-      // setIsMaterialsModalOpen(false); // Keep modal open for other actions
       return;
     }
     setIsLoadingResume(true);
@@ -159,7 +199,7 @@ export default function JobExplorerPage() {
 
       const resumeInput: GenerateDocumentInput = {
         jobDescription: jobToGenerateFor.description,
-        userProfile: userProfile.professional_summary,
+        userProfile: userProfile.professional_summary, // Using full professional summary as userProfile
         pointsToMention: [...(points.keyRequirements || []), ...(points.keySkills || [])],
       };
       const resumeResult = await generateResume(resumeInput);
@@ -177,7 +217,6 @@ export default function JobExplorerPage() {
   const handleTriggerAICoverLetterGeneration = async (jobToGenerateFor: JobListing) => {
     if (!userProfile || !userProfile.professional_summary || !userProfile.desired_job_role || !userProfile.skills_list_text) {
       toast({ title: "Profile Incomplete", description: "Please complete your profile (summary, desired role, skills) to generate materials.", variant: "destructive" });
-      // setIsMaterialsModalOpen(false); // Keep modal open for other actions
       return;
     }
     setIsLoadingCoverLetter(true);
@@ -192,7 +231,7 @@ export default function JobExplorerPage() {
 
       const coverLetterInput: GenerateDocumentInput = {
         jobDescription: jobToGenerateFor.description,
-        userProfile: userProfile.professional_summary,
+        userProfile: userProfile.professional_summary, // Using full professional summary as userProfile
         pointsToMention: [...(points.keyRequirements || []), ...(points.keySkills || [])],
       };
       const coverLetterResult = await generateCoverLetter(coverLetterInput);
@@ -207,7 +246,7 @@ export default function JobExplorerPage() {
     }
   };
 
-  const isProfileIncomplete = !userProfile || !userProfile.professional_summary || !userProfile.desired_job_role || !userProfile.skills_list_text;
+  const isProfileIncompleteForAIFeatures = !userProfile || !userProfile.professional_summary || !userProfile.desired_job_role || !userProfile.skills_list_text;
 
 
   if (isLoadingJobs) {
@@ -226,12 +265,12 @@ export default function JobExplorerPage() {
         </p>
       </header>
 
-      {isProfileIncomplete && (
+      {isProfileIncompleteForAIFeatures && (
         <Alert variant="default" className="bg-primary/10 border-primary/30">
           <Info className="h-5 w-5 text-primary" />
-          <AlertTitle className="font-semibold text-primary">Complete Your Profile for AI Features!</AlertTitle>
+          <AlertTitle className="font-semibold text-primary">Complete Your Profile for Full AI Features!</AlertTitle>
           <AlertDescription className="text-primary/80">
-            AI-powered matching and material generation work best with a complete profile (summary, desired role, and skills).
+            AI-powered match analysis and material generation require a complete profile (summary, desired role, and skills). Some AI features may be limited.
             <Button variant="link" asChild className="p-0 h-auto ml-1 text-primary font-semibold">
               <Link href="/profile">Update your profile now.</Link>
             </Button>
