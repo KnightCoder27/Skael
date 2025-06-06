@@ -8,7 +8,7 @@ export function MainLayout({ children }: { children: ReactNode }) {
     <div className="flex min-h-screen flex-col bg-background text-foreground">
       <Header />
       <main className="flex-1">
-        <div className="container max-w-screen-2xl mx-auto py-6 sm:py-8 lg:py-10">
+        <div className="container max-w-screen-2xl mx-auto my-4 py-8 sm:py-10 lg:py-12">
           {children}
         </div>
       </main>
