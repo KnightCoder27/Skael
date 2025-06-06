@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import type { JobListing, User, TrackedApplication } from '@/types'; // Updated types
+import type { JobListing, User, TrackedApplication } from '@/types'; 
 import { sampleJobs } from '@/lib/sample-data';
 import useLocalStorage from '@/hooks/use-local-storage';
 import { JobCard } from '@/components/app/job-card';
@@ -13,24 +13,30 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Compass, Info, FileWarning } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import Link from 'next/link'; // Added Link
+import Link from 'next/link'; 
 
 // AI Flow Imports
 import { jobMatchExplanation, type JobMatchExplanationInput, type JobMatchExplanationOutput } from '@/ai/flows/job-match-explanation';
 import { extractJobDescriptionPoints, type ExtractJobDescriptionPointsInput, type ExtractJobDescriptionPointsOutput } from '@/ai/flows/job-description-point-extractor';
-import { generateResumeAndCoverLetter, type GenerateResumeAndCoverLetterInput, type GenerateResumeAndCoverLetterOutput } from '@/ai/flows/resume-cover-letter-generator';
+import { 
+  generateResume, 
+  generateCoverLetter, 
+  type GenerateDocumentInput, // Updated: Using the shared input type
+  type GenerateResumeOutput,
+  type GenerateCoverLetterOutput 
+} from '@/ai/flows/resume-cover-letter-generator';
 
 export default function JobExplorerPage() {
-  const [jobs, setJobs] = useState<JobListing[]>([]); // Updated type
+  const [jobs, setJobs] = useState<JobListing[]>([]); 
   const [isLoadingJobs, setIsLoadingJobs] = useState(true);
-  const [userProfile] = useLocalStorage<User | null>('user-profile', null); // Updated type
+  const [userProfile] = useLocalStorage<User | null>('user-profile', null); 
   const [trackedApplications, setTrackedApplications] = useLocalStorage<TrackedApplication[]>('tracked-applications', []);
   
-  const [selectedJobForDetails, setSelectedJobForDetails] = useState<JobListing | null>(null); // Updated type
+  const [selectedJobForDetails, setSelectedJobForDetails] = useState<JobListing | null>(null); 
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
 
-  const [selectedJobForMaterials, setSelectedJobForMaterials] = useState<JobListing | null>(null); // Updated type
+  const [selectedJobForMaterials, setSelectedJobForMaterials] = useState<JobListing | null>(null); 
   const [isMaterialsModalOpen, setIsMaterialsModalOpen] = useState(false);
   const [isLoadingMaterials, setIsLoadingMaterials] = useState(false);
   const [generatedResume, setGeneratedResume] = useState<string | null>(null);
@@ -38,8 +44,8 @@ export default function JobExplorerPage() {
 
   const { toast } = useToast();
 
-  const fetchJobDetailsWithAI = useCallback(async (job: JobListing) => { // Updated type
-    if (!userProfile || !userProfile.professional_summary) { // Check professional_summary
+  const fetchJobDetailsWithAI = useCallback(async (job: JobListing) => { 
+    if (!userProfile || !userProfile.professional_summary) { 
       setSelectedJobForDetails(job);
       setIsDetailsModalOpen(true);
       return;
@@ -51,9 +57,9 @@ export default function JobExplorerPage() {
 
     try {
       const input: JobMatchExplanationInput = {
-        jobDescription: job.description, // Use job.description
-        userProfile: userProfile.professional_summary, // Use professional_summary
-        userPreferences: userProfile.desired_job_role || '', // Use desired_job_role or similar
+        jobDescription: job.description, 
+        userProfile: userProfile.professional_summary, 
+        userPreferences: userProfile.desired_job_role || '', 
         userHistory: '', 
       };
       const explanationResult = await jobMatchExplanation(input);
@@ -73,7 +79,7 @@ export default function JobExplorerPage() {
   useEffect(() => {
     const loadJobs = async () => {
       setIsLoadingJobs(true);
-      if (userProfile?.professional_summary && sampleJobs.length > 0) { // Check professional_summary
+      if (userProfile?.professional_summary && sampleJobs.length > 0) { 
         setJobs(sampleJobs.map(j => ({...j, matchScore: undefined, matchExplanation: undefined })));
       } else {
         setJobs(sampleJobs);
@@ -84,30 +90,30 @@ export default function JobExplorerPage() {
   }, [userProfile]);
 
 
-  const handleViewDetails = (job: JobListing) => { // Updated type
+  const handleViewDetails = (job: JobListing) => { 
     fetchJobDetailsWithAI(job);
   };
 
-  const handleSaveJob = (job: JobListing) => { // Updated type
+  const handleSaveJob = (job: JobListing) => { 
     const existingApplication = trackedApplications.find(app => app.jobId === job.id);
     if (existingApplication) {
       setTrackedApplications(prev => prev.filter(app => app.jobId !== job.id));
-      toast({ title: "Job Unsaved", description: `${job.job_title} removed from your tracker.` }); // Use job_title
+      toast({ title: "Job Unsaved", description: `${job.job_title} removed from your tracker.` }); 
     } else {
       const newApplication: TrackedApplication = {
         jobId: job.id,
-        jobTitle: job.job_title, // Use job_title
-        company: job.company, // Keep job.company
+        jobTitle: job.job_title, 
+        company: job.company, 
         status: "Saved",
         lastUpdated: new Date().toISOString(),
       };
       setTrackedApplications(prev => [...prev, newApplication]);
-      toast({ title: "Job Saved!", description: `${job.job_title} added to your application tracker.` }); // Use job_title
+      toast({ title: "Job Saved!", description: `${job.job_title} added to your application tracker.` }); 
     }
   };
 
-  const handleGenerateMaterials = async (job: JobListing) => { // Updated type
-    if (!userProfile || !userProfile.professional_summary) { // Check professional_summary
+  const handleGenerateMaterials = async (job: JobListing) => { 
+    if (!userProfile || !userProfile.professional_summary) { 
       toast({ title: "Profile Required", description: "Please complete your profile to generate application materials.", variant: "destructive" });
       return;
     }
@@ -118,18 +124,28 @@ export default function JobExplorerPage() {
     setGeneratedCoverLetter(null);
 
     try {
-      const pointsInput: ExtractJobDescriptionPointsInput = { jobDescription: job.description }; // Use job.description
+      const pointsInput: ExtractJobDescriptionPointsInput = { jobDescription: job.description }; 
       const pointsResult = await extractJobDescriptionPoints(pointsInput);
       
-      const materialsInput: GenerateResumeAndCoverLetterInput = {
-        jobDescription: job.description, // Use job.description
-        userProfile: userProfile.professional_summary, // Use professional_summary
+      const materialsInput: GenerateDocumentInput = { // Using the shared input type
+        jobDescription: job.description, 
+        userProfile: userProfile.professional_summary, 
         pointsToMention: [...(pointsResult.keyRequirements || []), ...(pointsResult.keySkills || [])],
       };
-      const materialsResult = await generateResumeAndCoverLetter(materialsInput);
       
-      setGeneratedResume(materialsResult.resume);
-      setGeneratedCoverLetter(materialsResult.coverLetter);
+      // Call resume and cover letter generation in parallel
+      const [resumeResult, coverLetterResult] = await Promise.all([
+        generateResume(materialsInput),
+        generateCoverLetter(materialsInput)
+      ]);
+      
+      if (resumeResult) {
+        setGeneratedResume(resumeResult.resume);
+      }
+      if (coverLetterResult) {
+        setGeneratedCoverLetter(coverLetterResult.coverLetter);
+      }
+
     } catch (error) {
       console.error("Error generating application materials:", error);
       toast({ title: "Generation Failed", description: "Could not generate application materials.", variant: "destructive" });
@@ -154,7 +170,7 @@ export default function JobExplorerPage() {
         </p>
       </header>
 
-      {!userProfile?.professional_summary && ( // Check professional_summary
+      {!userProfile?.professional_summary && ( 
         <Alert variant="default" className="bg-primary/10 border-primary/30 text-primary-dark">
           <Info className="h-5 w-5 text-primary" />
           <AlertTitle className="font-semibold text-primary">Complete Your Profile for Better Matches!</AlertTitle>
@@ -202,8 +218,9 @@ export default function JobExplorerPage() {
         resume={generatedResume}
         coverLetter={generatedCoverLetter}
         isLoading={isLoadingMaterials}
-        jobTitle={selectedJobForMaterials?.job_title} // Use job_title
+        jobTitle={selectedJobForMaterials?.job_title} 
       />
     </div>
   );
 }
+

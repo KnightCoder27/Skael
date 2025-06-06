@@ -2,56 +2,45 @@
 'use server';
 
 /**
- * @fileOverview Generates a tailored resume and cover letter for a specific job description.
+ * @fileOverview Generates tailored resumes and cover letters for specific job descriptions using separate AI flows.
  *
- * - generateResumeAndCoverLetter - A function that generates a resume and cover letter.
- * - GenerateResumeAndCoverLetterInput - The input type for the generateResumeAndCoverLetter function.
- * - GenerateResumeAndCoverLetterOutput - The return type for the generateResumeAndCoverLetter function.
+ * - generateResume - A function that generates a resume.
+ * - generateCoverLetter - A function that generates a cover letter.
+ * - GenerateDocumentInput - The input type for both generation functions.
+ * - GenerateResumeOutput - The return type for the generateResume function.
+ * - GenerateCoverLetterOutput - The return type for the generateCoverLetter function.
  */
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
-// Define the input schema
-const GenerateResumeAndCoverLetterInputSchema = z.object({
-  jobDescription: z.string().describe('The job description to tailor the resume and cover letter to.'),
+// Define the input schema (shared for both resume and cover letter generation)
+const GenerateDocumentInputSchema = z.object({
+  jobDescription: z.string().describe('The job description to tailor the document to.'),
   userProfile: z.string().describe('The user profile, including skills and experience.'),
-  pointsToMention: z.array(z.string()).describe('An array of points from the job description that should be mentioned in the resume and cover letter.'),
+  pointsToMention: z.array(z.string()).describe('An array of points from the job description that should be mentioned in the document.'),
 });
+export type GenerateDocumentInput = z.infer<typeof GenerateDocumentInputSchema>;
 
-export type GenerateResumeAndCoverLetterInput = z.infer<typeof GenerateResumeAndCoverLetterInputSchema>;
-
-// Define the output schema
-const GenerateResumeAndCoverLetterOutputSchema = z.object({
+// Define the output schema for resume
+const GenerateResumeOutputSchema = z.object({
   resume: z.string().describe('The generated resume.'),
+});
+export type GenerateResumeOutput = z.infer<typeof GenerateResumeOutputSchema>;
+
+// Define the output schema for cover letter
+const GenerateCoverLetterOutputSchema = z.object({
   coverLetter: z.string().describe('The generated cover letter.'),
 });
+export type GenerateCoverLetterOutput = z.infer<typeof GenerateCoverLetterOutputSchema>;
 
-export type GenerateResumeAndCoverLetterOutput = z.infer<typeof GenerateResumeAndCoverLetterOutputSchema>;
 
-// Define the tool to decide which points from the job description should be mentioned
-const decidePointsToMention = ai.defineTool({
-  name: 'decidePointsToMention',
-  description: 'Decides which points from the job description should be mentioned in the resume and cover letter based on the user profile.',
-  inputSchema: z.object({
-    jobDescription: z.string().describe('The job description.'),
-    userProfile: z.string().describe('The user profile.'),
-  }),
-  outputSchema: z.array(z.string()).describe('The points from the job description to mention.'),
-}, async (input) => {
-  //In real implementation, this tool would use an LLM or other logic to determine the points to mention.
-  //For now, we just return the first 3 points from the job description.
-  const points = input.jobDescription.split('. ').slice(0, 3);
-  return points;
-});
-
-// Define the prompt
-const generateResumeAndCoverLetterPrompt = ai.definePrompt({
-  name: 'generateResumeAndCoverLetterPrompt',
-  input: {schema: GenerateResumeAndCoverLetterInputSchema},
-  output: {schema: GenerateResumeAndCoverLetterOutputSchema},
-  tools: [decidePointsToMention],
-  prompt: `You are an expert resume and cover letter writer.
+// Define the prompt for resume generation
+const generateResumePrompt = ai.definePrompt({
+  name: 'generateResumePrompt',
+  input: {schema: GenerateDocumentInputSchema},
+  output: {schema: GenerateResumeOutputSchema},
+  prompt: `You are an expert resume writer.
 
   Based on the following job description:
   {{jobDescription}}
@@ -59,7 +48,7 @@ const generateResumeAndCoverLetterPrompt = ai.definePrompt({
   And the following user profile:
   {{userProfile}}
 
-  Write a resume and cover letter tailored to the job description, highlighting the most relevant skills and experience from the user profile.
+  Write a resume tailored to the job description, highlighting the most relevant skills and experience from the user profile.
 
   The following points from the job description MUST be mentioned:
   {{#each pointsToMention}}
@@ -68,25 +57,68 @@ const generateResumeAndCoverLetterPrompt = ai.definePrompt({
 
   Make sure the resume is ATS-friendly.
 
-  Return the resume and cover letter in the following format:
+  Return the resume in the following JSON format:
   {
-    "resume": "...",
+    "resume": "..."
+  }
+  `,
+});
+
+// Define the prompt for cover letter generation
+const generateCoverLetterPrompt = ai.definePrompt({
+  name: 'generateCoverLetterPrompt',
+  input: {schema: GenerateDocumentInputSchema},
+  output: {schema: GenerateCoverLetterOutputSchema},
+  prompt: `You are an expert cover letter writer.
+
+  Based on the following job description:
+  {{jobDescription}}
+
+  And the following user profile:
+  {{userProfile}}
+
+  Write a cover letter tailored to the job description, highlighting the most relevant skills and experience from the user profile.
+
+  The following points from the job description MUST be mentioned:
+  {{#each pointsToMention}}
+  - {{{this}}}
+  {{/each}}
+
+  The cover letter should be professional, concise, and persuasive.
+
+  Return the cover letter in the following JSON format:
+  {
     "coverLetter": "..."
   }
   `,
 });
 
-// Define the flow
-const generateResumeAndCoverLetterFlow = ai.defineFlow({
-  name: 'generateResumeAndCoverLetterFlow',
-  inputSchema: GenerateResumeAndCoverLetterInputSchema,
-  outputSchema: GenerateResumeAndCoverLetterOutputSchema,
+// Define the flow for resume generation
+const generateResumeFlow = ai.defineFlow({
+  name: 'generateResumeFlow',
+  inputSchema: GenerateDocumentInputSchema,
+  outputSchema: GenerateResumeOutputSchema,
 }, async (input) => {
-  const {output} = await generateResumeAndCoverLetterPrompt(input);
+  const {output} = await generateResumePrompt(input);
   return output!;
 });
 
-// Export the function
-export async function generateResumeAndCoverLetter(input: GenerateResumeAndCoverLetterInput): Promise<GenerateResumeAndCoverLetterOutput> {
-  return generateResumeAndCoverLetterFlow(input);
+// Define the flow for cover letter generation
+const generateCoverLetterFlow = ai.defineFlow({
+  name: 'generateCoverLetterFlow',
+  inputSchema: GenerateDocumentInputSchema,
+  outputSchema: GenerateCoverLetterOutputSchema,
+}, async (input) => {
+  const {output} = await generateCoverLetterPrompt(input);
+  return output!;
+});
+
+// Export the resume generation function
+export async function generateResume(input: GenerateDocumentInput): Promise<GenerateResumeOutput> {
+  return generateResumeFlow(input);
+}
+
+// Export the cover letter generation function
+export async function generateCoverLetter(input: GenerateDocumentInput): Promise<GenerateCoverLetterOutput> {
+  return generateCoverLetterFlow(input);
 }
