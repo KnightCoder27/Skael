@@ -1,7 +1,8 @@
+
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import type { JobOpportunity, UserProfileData, TrackedApplication } from '@/types';
+import type { JobListing, User, TrackedApplication } from '@/types'; // Updated types
 import { sampleJobs } from '@/lib/sample-data';
 import useLocalStorage from '@/hooks/use-local-storage';
 import { JobCard } from '@/components/app/job-card';
@@ -12,23 +13,24 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Compass, Info, FileWarning } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import Link from 'next/link'; // Added Link
 
-// AI Flow Imports (ensure these paths are correct and functions are exported)
+// AI Flow Imports
 import { jobMatchExplanation, type JobMatchExplanationInput, type JobMatchExplanationOutput } from '@/ai/flows/job-match-explanation';
 import { extractJobDescriptionPoints, type ExtractJobDescriptionPointsInput, type ExtractJobDescriptionPointsOutput } from '@/ai/flows/job-description-point-extractor';
 import { generateResumeAndCoverLetter, type GenerateResumeAndCoverLetterInput, type GenerateResumeAndCoverLetterOutput } from '@/ai/flows/resume-cover-letter-generator';
 
 export default function JobExplorerPage() {
-  const [jobs, setJobs] = useState<JobOpportunity[]>([]);
+  const [jobs, setJobs] = useState<JobListing[]>([]); // Updated type
   const [isLoadingJobs, setIsLoadingJobs] = useState(true);
-  const [userProfile] = useLocalStorage<UserProfileData | null>('user-profile', null);
+  const [userProfile] = useLocalStorage<User | null>('user-profile', null); // Updated type
   const [trackedApplications, setTrackedApplications] = useLocalStorage<TrackedApplication[]>('tracked-applications', []);
   
-  const [selectedJobForDetails, setSelectedJobForDetails] = useState<JobOpportunity | null>(null);
+  const [selectedJobForDetails, setSelectedJobForDetails] = useState<JobListing | null>(null); // Updated type
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
 
-  const [selectedJobForMaterials, setSelectedJobForMaterials] = useState<JobOpportunity | null>(null);
+  const [selectedJobForMaterials, setSelectedJobForMaterials] = useState<JobListing | null>(null); // Updated type
   const [isMaterialsModalOpen, setIsMaterialsModalOpen] = useState(false);
   const [isLoadingMaterials, setIsLoadingMaterials] = useState(false);
   const [generatedResume, setGeneratedResume] = useState<string | null>(null);
@@ -36,24 +38,23 @@ export default function JobExplorerPage() {
 
   const { toast } = useToast();
 
-  const fetchJobDetailsWithAI = useCallback(async (job: JobOpportunity) => {
-    if (!userProfile || !userProfile.rawText) {
-      // If no profile, just show job without AI details
+  const fetchJobDetailsWithAI = useCallback(async (job: JobListing) => { // Updated type
+    if (!userProfile || !userProfile.professional_summary) { // Check professional_summary
       setSelectedJobForDetails(job);
       setIsDetailsModalOpen(true);
       return;
     }
 
     setIsLoadingExplanation(true);
-    setSelectedJobForDetails(job); // Show modal immediately with basic info
+    setSelectedJobForDetails(job); 
     setIsDetailsModalOpen(true);
 
     try {
       const input: JobMatchExplanationInput = {
-        jobDescription: job.fullDescription || job.description,
-        userProfile: userProfile.rawText,
-        userPreferences: userProfile.preferences,
-        userHistory: '', // Placeholder for actual user history logic if implemented
+        jobDescription: job.description, // Use job.description
+        userProfile: userProfile.professional_summary, // Use professional_summary
+        userPreferences: userProfile.desired_job_role || '', // Use desired_job_role or similar
+        userHistory: '', 
       };
       const explanationResult = await jobMatchExplanation(input);
       setSelectedJobForDetails(prevJob => prevJob ? {
@@ -64,25 +65,16 @@ export default function JobExplorerPage() {
     } catch (error) {
       console.error("Error fetching AI match explanation:", error);
       toast({ title: "AI Analysis Failed", description: "Could not get AI match explanation.", variant: "destructive" });
-      // Keep existing job data in modal, AI part will be missing
     } finally {
       setIsLoadingExplanation(false);
     }
   }, [userProfile, toast]);
   
   useEffect(() => {
-    // Simulate fetching jobs
     const loadJobs = async () => {
       setIsLoadingJobs(true);
-      // In a real app, fetch jobs from an API
-      // For now, use sampleJobs and optionally enrich with AI scores if profile exists
-      if (userProfile?.rawText && sampleJobs.length > 0) {
-        // Optionally pre-calculate match scores for display on cards (can be slow for many jobs)
-        // For this example, we'll calculate on demand when viewing details to speed up initial load.
-        // If you want to pre-calculate:
-        // const enrichedJobs = await Promise.all(sampleJobs.map(async (job) => { ... fetch AI ... return enrichedJob; }));
-        // setJobs(enrichedJobs);
-        setJobs(sampleJobs.map(j => ({...j, matchScore: undefined, matchExplanation: undefined }))); // Reset AI fields
+      if (userProfile?.professional_summary && sampleJobs.length > 0) { // Check professional_summary
+        setJobs(sampleJobs.map(j => ({...j, matchScore: undefined, matchExplanation: undefined })));
       } else {
         setJobs(sampleJobs);
       }
@@ -92,32 +84,30 @@ export default function JobExplorerPage() {
   }, [userProfile]);
 
 
-  const handleViewDetails = (job: JobOpportunity) => {
+  const handleViewDetails = (job: JobListing) => { // Updated type
     fetchJobDetailsWithAI(job);
   };
 
-  const handleSaveJob = (job: JobOpportunity) => {
+  const handleSaveJob = (job: JobListing) => { // Updated type
     const existingApplication = trackedApplications.find(app => app.jobId === job.id);
     if (existingApplication) {
-      // Unsave - remove from tracked applications
       setTrackedApplications(prev => prev.filter(app => app.jobId !== job.id));
-      toast({ title: "Job Unsaved", description: `${job.title} removed from your tracker.` });
+      toast({ title: "Job Unsaved", description: `${job.job_title} removed from your tracker.` }); // Use job_title
     } else {
-      // Save - add to tracked applications
       const newApplication: TrackedApplication = {
         jobId: job.id,
-        jobTitle: job.title,
-        company: job.company,
+        jobTitle: job.job_title, // Use job_title
+        company: job.company, // Keep job.company
         status: "Saved",
         lastUpdated: new Date().toISOString(),
       };
       setTrackedApplications(prev => [...prev, newApplication]);
-      toast({ title: "Job Saved!", description: `${job.title} added to your application tracker.` });
+      toast({ title: "Job Saved!", description: `${job.job_title} added to your application tracker.` }); // Use job_title
     }
   };
 
-  const handleGenerateMaterials = async (job: JobOpportunity) => {
-    if (!userProfile || !userProfile.rawText) {
+  const handleGenerateMaterials = async (job: JobListing) => { // Updated type
+    if (!userProfile || !userProfile.professional_summary) { // Check professional_summary
       toast({ title: "Profile Required", description: "Please complete your profile to generate application materials.", variant: "destructive" });
       return;
     }
@@ -128,12 +118,12 @@ export default function JobExplorerPage() {
     setGeneratedCoverLetter(null);
 
     try {
-      const pointsInput: ExtractJobDescriptionPointsInput = { jobDescription: job.fullDescription || job.description };
+      const pointsInput: ExtractJobDescriptionPointsInput = { jobDescription: job.description }; // Use job.description
       const pointsResult = await extractJobDescriptionPoints(pointsInput);
       
       const materialsInput: GenerateResumeAndCoverLetterInput = {
-        jobDescription: job.fullDescription || job.description,
-        userProfile: userProfile.rawText,
+        jobDescription: job.description, // Use job.description
+        userProfile: userProfile.professional_summary, // Use professional_summary
         pointsToMention: [...(pointsResult.keyRequirements || []), ...(pointsResult.keySkills || [])],
       };
       const materialsResult = await generateResumeAndCoverLetter(materialsInput);
@@ -164,14 +154,14 @@ export default function JobExplorerPage() {
         </p>
       </header>
 
-      {!userProfile?.rawText && (
+      {!userProfile?.professional_summary && ( // Check professional_summary
         <Alert variant="default" className="bg-primary/10 border-primary/30 text-primary-dark">
           <Info className="h-5 w-5 text-primary" />
           <AlertTitle className="font-semibold text-primary">Complete Your Profile for Better Matches!</AlertTitle>
           <AlertDescription>
             AI-powered matching and material generation work best with a complete profile. 
             <Button variant="link" asChild className="p-0 h-auto ml-1 text-primary font-semibold">
-              <a href="/profile">Update your profile now.</a>
+              <Link href="/profile">Update your profile now.</Link>
             </Button>
           </AlertDescription>
         </Alert>
@@ -212,7 +202,7 @@ export default function JobExplorerPage() {
         resume={generatedResume}
         coverLetter={generatedCoverLetter}
         isLoading={isLoadingMaterials}
-        jobTitle={selectedJobForMaterials?.title}
+        jobTitle={selectedJobForMaterials?.job_title} // Use job_title
       />
     </div>
   );

@@ -1,3 +1,4 @@
+
 "use client";
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -15,7 +16,7 @@ interface ApplicationMaterialsModalProps {
   resume: string | null;
   coverLetter: string | null;
   isLoading: boolean;
-  jobTitle?: string;
+  jobTitle?: string; // This comes from JobListing.job_title, which is string. No change needed here.
 }
 
 export function ApplicationMaterialsModal({ isOpen, onClose, resume, coverLetter, isLoading, jobTitle }: ApplicationMaterialsModalProps) {

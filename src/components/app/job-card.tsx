@@ -2,7 +2,7 @@
 "use client";
 
 import Image from 'next/image';
-import type { JobOpportunity } from '@/types';
+import type { JobListing, Technology } from '@/types'; // Updated type
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -10,19 +10,19 @@ import { MapPin, Briefcase, DollarSign, Percent, Info, Bookmark, FileText } from
 import { cn } from '@/lib/utils';
 
 interface JobCardProps {
-  job: JobOpportunity;
-  onViewDetails: (job: JobOpportunity) => void;
-  onSaveJob: (job: JobOpportunity) => void;
-  onGenerateMaterials: (job: JobOpportunity) => void;
+  job: JobListing; // Updated type
+  onViewDetails: (job: JobListing) => void;
+  onSaveJob: (job: JobListing) => void;
+  onGenerateMaterials: (job: JobListing) => void;
   isSaved?: boolean;
 }
 
 export function JobCard({ job, onViewDetails, onSaveJob, onGenerateMaterials, isSaved }: JobCardProps) {
   const getMatchScoreVariant = () => {
     if (job.matchScore === undefined) return "outline";
-    if (job.matchScore > 75) return "default"; // Uses primary color (Charcoal Blue)
-    if (job.matchScore > 50) return "secondary"; // Uses secondary color (Terra Cotta)
-    return "destructive"; // Uses destructive color (Red)
+    if (job.matchScore > 75) return "default"; 
+    if (job.matchScore > 50) return "secondary"; 
+    return "destructive"; 
   };
 
   return (
@@ -30,9 +30,9 @@ export function JobCard({ job, onViewDetails, onSaveJob, onGenerateMaterials, is
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div>
-            <CardTitle className="text-xl font-bold font-headline text-primary mb-1">{job.title}</CardTitle>
+            <CardTitle className="text-xl font-bold font-headline text-primary mb-1">{job.job_title}</CardTitle> {/* Updated field */}
             <CardDescription className="text-sm text-muted-foreground flex items-center">
-              <Briefcase className="w-4 h-4 mr-1.5" /> {job.company}
+              <Briefcase className="w-4 h-4 mr-1.5" /> {job.company} {/* Kept as job.company for simplicity with sample data */}
             </CardDescription>
           </div>
           {job.companyLogo && (
@@ -52,9 +52,9 @@ export function JobCard({ job, onViewDetails, onSaveJob, onGenerateMaterials, is
       </CardHeader>
       <CardContent className="flex-grow pb-3 space-y-2">
         <p className="text-sm text-foreground/90 line-clamp-3">{job.description}</p>
-        {job.salary && (
-          <div className="text-sm text-accent flex items-center"> {/* Changed text-green-600 to text-accent */}
-            <DollarSign className="w-4 h-4 mr-1.5" /> {job.salary}
+        {job.salary_string && ( // Updated field
+          <div className="text-sm text-accent flex items-center">
+            <DollarSign className="w-4 h-4 mr-1.5" /> {job.salary_string}
           </div>
         )}
         {job.matchScore !== undefined && (

@@ -1,21 +1,21 @@
 
 "use client";
 
-import type { JobOpportunity } from '@/types';
+import type { JobListing, Technology } from '@/types'; // Updated type
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { MapPin, Briefcase, DollarSign, FileText, ExternalLink, Percent, Sparkles } from 'lucide-react';
+import { MapPin, Briefcase, DollarSign, FileText, ExternalLink, Percent, Sparkles, CalendarDays } from 'lucide-react'; // Added CalendarDays
 import { LoadingSpinner } from './loading-spinner';
 import Image from 'next/image';
 
 interface JobDetailsModalProps {
-  job: JobOpportunity | null;
+  job: JobListing | null; // Updated type
   isOpen: boolean;
   onClose: () => void;
-  onGenerateMaterials: (job: JobOpportunity) => void;
+  onGenerateMaterials: (job: JobListing) => void; // Updated type
   isLoadingExplanation?: boolean;
 }
 
@@ -24,9 +24,18 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isL
 
   const getMatchScoreVariant = () => {
     if (job.matchScore === undefined) return "outline";
-    if (job.matchScore > 75) return "default"; // Uses primary color
-    if (job.matchScore > 50) return "secondary"; // Uses secondary color
-    return "destructive"; // Uses destructive color
+    if (job.matchScore > 75) return "default"; 
+    if (job.matchScore > 50) return "secondary"; 
+    return "destructive"; 
+  };
+
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return null;
+    try {
+      return new Date(dateString).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+    } catch (e) {
+      return dateString; // Fallback to original string if date is invalid
+    }
   };
 
   return (
@@ -35,9 +44,9 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isL
         <DialogHeader className="p-6 pb-4 border-b">
           <div className="flex items-start justify-between">
             <div>
-              <DialogTitle className="text-2xl font-bold font-headline text-primary">{job.title}</DialogTitle>
+              <DialogTitle className="text-2xl font-bold font-headline text-primary">{job.job_title}</DialogTitle> {/* Updated field */}
               <DialogDescription className="text-base text-muted-foreground mt-1 flex items-center">
-                <Briefcase className="w-4 h-4 mr-2" /> {job.company}
+                <Briefcase className="w-4 h-4 mr-2" /> {job.company} {/* Kept as job.company */}
               </DialogDescription>
             </div>
             {job.companyLogo && (
@@ -51,14 +60,14 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isL
               />
             )}
           </div>
-          <div className="flex flex-wrap gap-2 items-center text-sm text-muted-foreground mt-2">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 items-center text-sm text-muted-foreground mt-2">
             <span className="flex items-center"><MapPin className="w-4 h-4 mr-1.5" /> {job.location}</span>
-            {job.salary && <span className="flex items-center text-accent"><DollarSign className="w-4 h-4 mr-1.5" /> {job.salary}</span>} {/* Salary uses accent color */}
-            {job.postedDate && <span className="flex items-center"><FileText className="w-4 h-4 mr-1.5" /> Posted: {job.postedDate}</span>}
+            {job.salary_string && <span className="flex items-center text-accent"><DollarSign className="w-4 h-4 mr-1.5" /> {job.salary_string}</span>} {/* Updated field */}
+            {job.date_posted && <span className="flex items-center"><CalendarDays className="w-4 h-4 mr-1.5" /> Posted: {formatDate(job.date_posted)}</span>} {/* Updated field and added formatting */}
           </div>
-          {job.tags && job.tags.length > 0 && (
+          {job.technologies && job.technologies.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
-              {job.tags.map(tag => <Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>)}
+              {job.technologies.map(tech => <Badge key={tech.id} variant="secondary" className="text-xs">{tech.technology_name}</Badge>)} {/* Displaying technology_name */}
             </div>
           )}
         </DialogHeader>
@@ -68,7 +77,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isL
             <div>
               <h3 className="text-lg font-semibold mb-1.5 font-headline">Full Job Description</h3>
               <p className="text-sm text-foreground/90 whitespace-pre-line leading-relaxed">
-                {job.fullDescription || job.description}
+                {job.description} {/* Updated field (assuming fullDescription was merged into description) */}
               </p>
             </div>
 
