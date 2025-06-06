@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { JobOpportunity } from '@/types';
@@ -20,6 +21,13 @@ interface JobDetailsModalProps {
 
 export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isLoadingExplanation }: JobDetailsModalProps) {
   if (!job) return null;
+
+  const getMatchScoreVariant = () => {
+    if (job.matchScore === undefined) return "outline";
+    if (job.matchScore > 75) return "default"; // Uses primary color
+    if (job.matchScore > 50) return "secondary"; // Uses secondary color
+    return "destructive"; // Uses destructive color
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -45,7 +53,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isL
           </div>
           <div className="flex flex-wrap gap-2 items-center text-sm text-muted-foreground mt-2">
             <span className="flex items-center"><MapPin className="w-4 h-4 mr-1.5" /> {job.location}</span>
-            {job.salary && <span className="flex items-center"><DollarSign className="w-4 h-4 mr-1.5" /> {job.salary}</span>}
+            {job.salary && <span className="flex items-center text-accent"><DollarSign className="w-4 h-4 mr-1.5" /> {job.salary}</span>} {/* Salary uses accent color */}
             {job.postedDate && <span className="flex items-center"><FileText className="w-4 h-4 mr-1.5" /> Posted: {job.postedDate}</span>}
           </div>
           {job.tags && job.tags.length > 0 && (
@@ -77,8 +85,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isL
                     <Sparkles className="w-5 h-5 mr-2 text-primary" /> AI Match Analysis
                   </h3>
                   <div className="flex items-center gap-2 mb-2">
-                     <Badge variant={job.matchScore > 75 ? "default" : (job.matchScore > 50 ? "secondary" : "outline")} 
-                           className={job.matchScore > 75 ? "bg-green-600 text-white" : (job.matchScore > 50 ? "bg-yellow-500 text-black" : "border-destructive text-destructive")}>
+                     <Badge variant={getMatchScoreVariant()}>
                       <Percent className="w-4 h-4 mr-1" /> Match Score: {job.matchScore}%
                     </Badge>
                   </div>

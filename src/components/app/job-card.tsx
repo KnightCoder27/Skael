@@ -1,11 +1,12 @@
+
 "use client";
 
 import Image from 'next/image';
-import type { JobOpportunity, TrackedApplication } from '@/types';
+import type { JobOpportunity } from '@/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, Briefcase, DollarSign, Percent, Info, Sparkles, Bookmark, FileText } from 'lucide-react';
+import { MapPin, Briefcase, DollarSign, Percent, Info, Bookmark, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface JobCardProps {
@@ -17,6 +18,13 @@ interface JobCardProps {
 }
 
 export function JobCard({ job, onViewDetails, onSaveJob, onGenerateMaterials, isSaved }: JobCardProps) {
+  const getMatchScoreVariant = () => {
+    if (job.matchScore === undefined) return "outline";
+    if (job.matchScore > 75) return "default"; // Uses primary color (Charcoal Blue)
+    if (job.matchScore > 50) return "secondary"; // Uses secondary color (Terra Cotta)
+    return "destructive"; // Uses destructive color (Red)
+  };
+
   return (
     <Card className="flex flex-col h-full shadow-md hover:shadow-xl transition-all duration-300 ease-in-out transform hover:-translate-y-1 bg-card">
       <CardHeader className="pb-3">
@@ -45,18 +53,13 @@ export function JobCard({ job, onViewDetails, onSaveJob, onGenerateMaterials, is
       <CardContent className="flex-grow pb-3 space-y-2">
         <p className="text-sm text-foreground/90 line-clamp-3">{job.description}</p>
         {job.salary && (
-          <div className="text-sm text-foreground/80 flex items-center">
-            <DollarSign className="w-4 h-4 mr-1.5 text-green-600" /> {job.salary}
+          <div className="text-sm text-accent flex items-center"> {/* Changed text-green-600 to text-accent */}
+            <DollarSign className="w-4 h-4 mr-1.5" /> {job.salary}
           </div>
         )}
         {job.matchScore !== undefined && (
-          <Badge variant={job.matchScore > 75 ? "default" : (job.matchScore > 50 ? "secondary" : "outline")} 
-                 className={cn(
-                   job.matchScore > 75 && "bg-green-500/20 text-green-700 border-green-500/30",
-                   job.matchScore <= 75 && job.matchScore > 50 && "bg-yellow-500/20 text-yellow-700 border-yellow-500/30",
-                   job.matchScore <= 50 && "bg-red-500/20 text-red-700 border-red-500/30",
-                   "py-1 px-2.5"
-                 )}>
+          <Badge variant={getMatchScoreVariant()}
+                 className="py-1 px-2.5">
             <Percent className="w-3.5 h-3.5 mr-1" /> Match: {job.matchScore}%
           </Badge>
         )}
