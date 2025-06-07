@@ -16,12 +16,26 @@ import { useToast } from '@/hooks/use-toast';
 import { LogIn, UserPlus, Eye, EyeOff, Compass } from 'lucide-react';
 import type { User } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
-import { getUserByEmail, createUser as createUserInDb } from '@/services/userService'; 
+
+const USERS_LOCAL_STORAGE_KEY = 'app-users';
+
+// Helper to get users from local storage
+const getLocalUsers = (): User[] => {
+  if (typeof window === 'undefined') return [];
+  const usersJson = localStorage.getItem(USERS_LOCAL_STORAGE_KEY);
+  return usersJson ? JSON.parse(usersJson) : [];
+};
+
+// Helper to save users to local storage
+const saveLocalUsers = (users: User[]) => {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(USERS_LOCAL_STORAGE_KEY, JSON.stringify(users));
+};
 
 // Schemas
 const loginSchema = z.object({
   email: z.string().email({ message: "Invalid email address." }),
-  password: z.string().min(6, { message: "Password must be at least 6 characters." }),
+  password: z.string().min(6, { message: "Password must be at least 6 characters." }), // Password validation remains, but actual check is skipped for local
 });
 type LoginFormValues = z.infer<typeof loginSchema>;
 
@@ -63,38 +77,27 @@ export default function AuthPage() {
 
   const onLoginSubmit: SubmitHandler<LoginFormValues> = async (data) => {
     try {
-      const loginResult = await getUserByEmail(data.email);
+      const users = getLocalUsers();
+      const user = users.find(u => u.email_id.toLowerCase() === data.email.toLowerCase());
 
-      if (!loginResult.success) {
-        toast({ 
-          title: "Login Failed", 
-          description: loginResult.error, 
-          variant: "destructive" 
-        });
-        return;
-      }
-      
-      const user = loginResult.user;
-      if (!user) {
+      // In a real local storage auth, you might compare a hashed password.
+      // For this mock, we'll assume if email exists, login is "successful".
+      if (user) {
+        setCurrentUser(user);
+        toast({ title: "Login Successful", description: "Redirecting to job listings..." });
+        router.push('/jobs');
+      } else {
         toast({ 
           title: "Account Not Found", 
           description: "No account found with this email. Please register or check your email address.", 
           variant: "destructive" 
         });
-        return;
       }
-      
-      // If user is found (and password check would happen here in a real auth system)
-      setCurrentUser(user);
-      toast({ title: "Login Successful", description: "Redirecting to job listings..." });
-      router.push('/jobs');
-
-    } catch (error) { // Catch unexpected errors not handled by the service function's return
-      console.error("Critical login error:", error);
-      const errorMessage = error instanceof Error ? error.message : "An critical unexpected error occurred during login.";
+    } catch (error) {
+      console.error("Error during login:", error);
       toast({ 
         title: "Login Failed", 
-        description: errorMessage, 
+        description: "An unexpected error occurred during login.", 
         variant: "destructive" 
       });
     }
@@ -102,41 +105,38 @@ export default function AuthPage() {
 
   const onRegisterSubmit: SubmitHandler<RegisterFormValues> = async (data) => {
     try {
-      const existingUserResult = await getUserByEmail(data.email);
-      if (!existingUserResult.success) {
-        toast({ title: "Registration Failed", description: `Error checking email: ${existingUserResult.error}`, variant: "destructive" });
-        return;
-      }
-      if (existingUserResult.user) {
+      let users = getLocalUsers();
+      const existingUser = users.find(u => u.email_id.toLowerCase() === data.email.toLowerCase());
+
+      if (existingUser) {
         toast({ title: "Registration Failed", description: "An account with this email already exists.", variant: "destructive" });
         return; 
       }
 
-      const newUserPartial: Omit<User, 'id' | 'joined_date'> = {
+      const newUser: User = {
+        id: Date.now().toString() + Math.random().toString(36).substring(2), // Simple unique ID
         user_name: data.name,
         email_id: data.email,
+        // Password is not stored directly in this simplified local storage model
         professional_summary: "", 
         desired_job_role: "",   
         skills_list_text: "",
         location_string: "",
+        joined_date: new Date().toISOString(),
       };
       
-      const createUserResult = await createUserInDb(newUserPartial);
-      if (!createUserResult.success) {
-        toast({ title: "Registration Failed", description: createUserResult.error, variant: "destructive" });
-        return;
-      }
+      users.push(newUser);
+      saveLocalUsers(users);
       
-      setCurrentUser(createUserResult.user);
+      setCurrentUser(newUser);
       toast({ title: "Registration Successful", description: "Redirecting to profile setup..." });
       router.push('/profile');
 
-    } catch (error) { // Catch unexpected errors not handled by the service function's return
-      console.error("Critical registration error:", error);
-      const errorMessage = error instanceof Error ? error.message : "An critical unexpected error occurred during registration.";
+    } catch (error) {
+      console.error("Error during registration:", error);
       toast({ 
         title: "Registration Failed", 
-        description: errorMessage, 
+        description: "An unexpected error occurred during registration.", 
         variant: "destructive" 
       });
     }

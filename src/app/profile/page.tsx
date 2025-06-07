@@ -6,8 +6,7 @@ import { useForm, type SubmitHandler, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useAuth } from '@/contexts/AuthContext';
-import { updateUser as updateUserInDb, deleteUser as deleteUserFromDb } from '@/services/userService';
-import type { User, RemotePreference } from '@/types';
+import type { User, RemotePreference, TrackedApplication } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -20,16 +19,33 @@ import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle } from 'lucide-react';
 import { FullPageLoading } from '@/components/app/loading-spinner';
-import useLocalStorage from '@/hooks/use-local-storage'; // For tracked-applications
-import type { TrackedApplication } from '@/types'; // For tracked-applications
+import useLocalStorage from '@/hooks/use-local-storage';
+
+const USERS_LOCAL_STORAGE_KEY = 'app-users'; // Same key as in auth page
+const TRACKED_APPS_STORAGE_KEY = 'tracked-applications';
+const JOB_ANALYSIS_CACHE_KEY = 'job-ai-analysis-cache';
+const USER_ACTIVITY_LOG_KEY = 'user-activity-log';
+
+
+// Helper to get users from local storage
+const getLocalUsers = (): User[] => {
+  if (typeof window === 'undefined') return [];
+  const usersJson = localStorage.getItem(USERS_LOCAL_STORAGE_KEY);
+  return usersJson ? JSON.parse(usersJson) : [];
+};
+
+// Helper to save users to local storage
+const saveLocalUsers = (users: User[]) => {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(USERS_LOCAL_STORAGE_KEY, JSON.stringify(users));
+};
 
 
 const remotePreferenceOptions: RemotePreference[] = ["Remote", "Hybrid", "Onsite", "Any"];
 
-// Schema does not need 'id' or 'joined_date' as these are managed by Firestore/system
 const profileSchema = z.object({
   user_name: z.string().min(2, 'Name should be at least 2 characters.').max(50, 'Name cannot exceed 50 characters.').optional(),
-  email_id: z.string().email('Invalid email address.'), // Kept for display, but should be read-only
+  email_id: z.string().email('Invalid email address.'), 
   phone_number: z.string().max(20, 'Phone number cannot exceed 20 characters.').optional().or(z.literal('')),
   location_string: z.string().max(255, 'Preferred Locations cannot exceed 255 characters.').optional().or(z.literal('')),
   country: z.string().max(100, 'Country cannot exceed 100 characters.').optional().or(z.literal('')),
@@ -46,13 +62,12 @@ type ProfileFormValues = z.infer<typeof profileSchema>;
 
 export default function ProfilePage() {
   const { currentUser, setCurrentUser, isLoadingAuth } = useAuth();
-  const [, setTrackedApplications] = useLocalStorage<TrackedApplication[]>('tracked-applications', []); // Keep for now
   const { toast } = useToast();
   const router = useRouter();
   
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
-    defaultValues: { // Initialize with empty strings or undefined
+    defaultValues: { 
       user_name: '',
       email_id: '',
       phone_number: '',
@@ -71,13 +86,12 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (!isLoadingAuth && !currentUser) {
-      // If auth is resolved and there's no user, redirect to auth page
       toast({ title: "Not Authenticated", description: "Please log in to view your profile.", variant: "destructive" });
       router.push('/auth');
     } else if (currentUser) {
       reset({
         user_name: currentUser.user_name || '',
-        email_id: currentUser.email_id, // Email is from currentUser, should be read-only
+        email_id: currentUser.email_id, 
         phone_number: currentUser.phone_number || '',
         location_string: currentUser.location_string || '',
         country: currentUser.country || '',
@@ -98,13 +112,25 @@ export default function ProfilePage() {
       return;
     }
     try {
-      // Remove email_id from data to be updated, as it's an identifier and shouldn't change here.
-      const { email_id, ...updateData } = data;
+      const { email_id, ...updateData } = data; // email_id is identifier, not to be changed here
       
-      await updateUserInDb(currentUser.id, updateData as Partial<Omit<User, 'id'>>);
+      let users = getLocalUsers();
+      const userIndex = users.findIndex(u => u.id === currentUser.id);
+
+      if (userIndex === -1) {
+        toast({ title: "Error", description: "User not found in local store for update.", variant: "destructive" });
+        return;
+      }
       
-      // Update context state
-      setCurrentUser(prev => prev ? { ...prev, ...updateData, experience: updateData.experience === null ? undefined : updateData.experience } : null);
+      const updatedUser: User = {
+        ...users[userIndex],
+        ...updateData,
+        experience: updateData.experience === null ? undefined : updateData.experience,
+      };
+      users[userIndex] = updatedUser;
+      saveLocalUsers(users);
+      
+      setCurrentUser(updatedUser); // Update context and local storage for currentUser session
       
       toast({
         title: 'Profile Updated',
@@ -130,12 +156,23 @@ export default function ProfilePage() {
       return;
     }
     try {
-      await deleteUserFromDb(currentUser.id);
-      setCurrentUser(null); // Clear user from context
-      setTrackedApplications([]); // Clear tracked applications from localStorage
+      let users = getLocalUsers();
+      const updatedUsers = users.filter(u => u.id !== currentUser.id);
+      saveLocalUsers(updatedUsers);
+
+      setCurrentUser(null); // Clear user from context & session local storage
+      
+      // Clear other app-related local storage items
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(TRACKED_APPS_STORAGE_KEY);
+        localStorage.removeItem(JOB_ANALYSIS_CACHE_KEY);
+        localStorage.removeItem(USER_ACTIVITY_LOG_KEY);
+        // Note: USERS_LOCAL_STORAGE_KEY is already updated by saveLocalUsers
+      }
+      
       toast({
         title: "Account Deleted",
-        description: "Your account data has been removed.",
+        description: "Your account data has been removed from this browser.",
         variant: "destructive",
       });
       router.push('/auth');
@@ -146,10 +183,8 @@ export default function ProfilePage() {
   };
 
   if (isLoadingAuth || (!currentUser && !isLoadingAuth)) {
-    // Show loading spinner while auth state is being determined, or if redirection is about to happen
     return <FullPageLoading message="Loading profile..." />;
   }
-
 
   return (
     <div className="space-y-8">
@@ -186,7 +221,7 @@ export default function ProfilePage() {
                   {...register('email_id')}
                   placeholder="you@example.com"
                   className={errors.email_id ? 'border-destructive' : ''}
-                  readOnly // Email should be read-only after account creation
+                  readOnly 
                 />
                 {errors.email_id && <p className="text-sm text-destructive">{errors.email_id.message}</p>}
               </div>
@@ -391,8 +426,7 @@ export default function ProfilePage() {
                 </AlertDialogTitle>
                 <AlertDialogDescription>
                   This action cannot be undone. This will permanently delete your
-                  account data (profile and tracked applications) from this browser.
-                  This is a simulation and no data is stored on a server.
+                  account data from this browser's local storage. This includes your profile, tracked applications, AI analysis cache, and activity logs.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -405,7 +439,7 @@ export default function ProfilePage() {
           </AlertDialog>
         </CardContent>
         <CardFooter className="text-xs text-muted-foreground pt-4">
-          Deleting your account will remove all your saved information from Firestore.
+          Deleting your account will remove all your saved information from this browser's local storage.
         </CardFooter>
       </Card>
 
