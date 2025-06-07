@@ -63,15 +63,25 @@ export default function AuthPage() {
 
   const onLoginSubmit: SubmitHandler<LoginFormValues> = async (data) => {
     try {
-      const user = await getUserByEmail(data.email);
+      const loginResult = await getUserByEmail(data.email);
 
+      if (!loginResult.success) {
+        toast({ 
+          title: "Login Failed", 
+          description: loginResult.error, 
+          variant: "destructive" 
+        });
+        return;
+      }
+      
+      const user = loginResult.user;
       if (!user) {
         toast({ 
           title: "Account Not Found", 
           description: "No account found with this email. Please register or check your email address.", 
           variant: "destructive" 
         });
-        return; // Stop execution if user not found
+        return;
       }
       
       // If user is found (and password check would happen here in a real auth system)
@@ -79,13 +89,12 @@ export default function AuthPage() {
       toast({ title: "Login Successful", description: "Redirecting to job listings..." });
       router.push('/jobs');
 
-    } catch (error) {
-      console.error("Login error:", error);
-      // Check if the error has a message property
-      const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred during login.";
+    } catch (error) { // Catch unexpected errors not handled by the service function's return
+      console.error("Critical login error:", error);
+      const errorMessage = error instanceof Error ? error.message : "An critical unexpected error occurred during login.";
       toast({ 
         title: "Login Failed", 
-        description: errorMessage.includes("fetch user by email") ? "Could not connect to the authentication service." : "An issue occurred. Please try again.", 
+        description: errorMessage, 
         variant: "destructive" 
       });
     }
@@ -93,8 +102,12 @@ export default function AuthPage() {
 
   const onRegisterSubmit: SubmitHandler<RegisterFormValues> = async (data) => {
     try {
-      const existingUser = await getUserByEmail(data.email);
-      if (existingUser) {
+      const existingUserResult = await getUserByEmail(data.email);
+      if (!existingUserResult.success) {
+        toast({ title: "Registration Failed", description: `Error checking email: ${existingUserResult.error}`, variant: "destructive" });
+        return;
+      }
+      if (existingUserResult.user) {
         toast({ title: "Registration Failed", description: "An account with this email already exists.", variant: "destructive" });
         return; 
       }
@@ -106,20 +119,24 @@ export default function AuthPage() {
         desired_job_role: "",   
         skills_list_text: "",
         location_string: "",
-        // Note: A real app would hash the password before saving or use Firebase Auth
       };
-      const registeredUser = await createUserInDb(newUserPartial);
       
-      setCurrentUser(registeredUser);
+      const createUserResult = await createUserInDb(newUserPartial);
+      if (!createUserResult.success) {
+        toast({ title: "Registration Failed", description: createUserResult.error, variant: "destructive" });
+        return;
+      }
+      
+      setCurrentUser(createUserResult.user);
       toast({ title: "Registration Successful", description: "Redirecting to profile setup..." });
       router.push('/profile');
 
-    } catch (error) {
-      console.error("Registration error:", error);
-      const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred during registration.";
+    } catch (error) { // Catch unexpected errors not handled by the service function's return
+      console.error("Critical registration error:", error);
+      const errorMessage = error instanceof Error ? error.message : "An critical unexpected error occurred during registration.";
       toast({ 
         title: "Registration Failed", 
-        description: errorMessage.includes("create user") ? "Could not connect to the registration service." : "Could not create account. Please try again.", 
+        description: errorMessage, 
         variant: "destructive" 
       });
     }
@@ -354,5 +371,3 @@ export default function AuthPage() {
     </div>
   );
 }
-
-    
