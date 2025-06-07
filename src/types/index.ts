@@ -158,3 +158,34 @@ export interface TrackedApplication {
   notes?: string;
   lastUpdated: string; 
 }
+
+// Activity Logging Types
+export type ActivityType = 
+  | "MATCH_ANALYSIS_VIEWED"
+  | "JOB_SAVED"
+  | "JOB_UNSAVED"
+  | "RESUME_GENERATED_FOR_JOB"
+  | "COVER_LETTER_GENERATED_FOR_JOB"
+  | "GENERAL_RESUME_GENERATED" // For profile page
+  | "GENERAL_COVER_LETTER_GENERATED"; // For profile page
+
+export interface UserActivityDetails {
+  matchScore?: number;
+  status?: ApplicationStatus; // For JOB_SAVED/UNSAVED
+  success?: boolean; // For generation tasks
+  // Add other specific details as needed
+}
+
+export interface UserActivityInput {
+  userId: string;
+  activityType: ActivityType;
+  jobId?: number; // JobListing.id
+  jobTitle?: string;
+  company?: string;
+  details?: UserActivityDetails;
+}
+
+export interface UserActivity extends UserActivityInput {
+  id: string; // Firestore Document ID
+  timestamp: string; // ISO datetime string
+}

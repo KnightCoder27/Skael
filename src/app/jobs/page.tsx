@@ -4,8 +4,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { JobListing, User, TrackedApplication } from '@/types';
 import { sampleJobs } from '@/lib/sample-data';
-import useLocalStorage from '@/hooks/use-local-storage'; // Still used for trackedApplications and jobAnalysisCache
-import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
+import useLocalStorage from '@/hooks/use-local-storage'; 
+import { useAuth } from '@/contexts/AuthContext'; 
 import { JobCard } from '@/components/app/job-card';
 import { JobDetailsModal } from '@/components/app/job-details-modal';
 import { ApplicationMaterialsModal } from '@/components/app/application-materials-modal';
@@ -17,7 +17,6 @@ import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
-
 // AI Flow Imports
 import { jobMatchExplanation, type JobMatchExplanationInput, type JobMatchExplanationOutput } from '@/ai/flows/job-match-explanation';
 import { extractJobDescriptionPoints, type ExtractJobDescriptionPointsInput, type ExtractJobDescriptionPointsOutput } from '@/ai/flows/job-description-point-extractor';
@@ -26,6 +25,9 @@ import {
   generateCoverLetter,
   type GenerateDocumentInput,
 } from '@/ai/flows/resume-cover-letter-generator';
+
+// Activity Logging Service
+import { logUserActivity } from '@/services/activityService';
 
 interface JobAnalysisCache {
   [jobId: number]: {
@@ -37,10 +39,9 @@ interface JobAnalysisCache {
 export default function JobExplorerPage() {
   const [jobs, setJobs] = useState<JobListing[]>([]);
   const [isLoadingJobs, setIsLoadingJobs] = useState(true);
-  const { currentUser, isLoadingAuth } = useAuth(); // Use currentUser from AuthContext
+  const { currentUser, isLoadingAuth } = useAuth(); 
   const router = useRouter();
 
-  // These still use localStorage for now
   const [trackedApplications, setTrackedApplications] = useLocalStorage<TrackedApplication[]>('tracked-applications', []);
   const [jobAnalysisCache, setJobAnalysisCache] = useLocalStorage<JobAnalysisCache>('job-ai-analysis-cache', {});
 
@@ -62,7 +63,6 @@ export default function JobExplorerPage() {
 
   const { toast } = useToast();
 
-  // Redirect if not authenticated after loading
   useEffect(() => {
     if (!isLoadingAuth && !currentUser) {
       toast({ title: "Access Denied", description: "Please log in to explore jobs.", variant: "destructive" });
@@ -91,7 +91,6 @@ export default function JobExplorerPage() {
     }
     
     if (!currentUser || !currentUser.professional_summary || !currentUser.desired_job_role || !currentUser.skills_list_text) {
-      // Profile check based on currentUser from AuthContext
       return; 
     }
 
@@ -116,6 +115,18 @@ export default function JobExplorerPage() {
         [job.id]: explanationResult,
       }));
 
+      // Log activity
+      if (currentUser?.id) {
+        logUserActivity({
+          userId: currentUser.id,
+          activityType: "MATCH_ANALYSIS_VIEWED",
+          jobId: job.id,
+          jobTitle: job.job_title,
+          company: job.company,
+          details: { matchScore: explanationResult.matchScore }
+        }).catch(err => console.error("Failed to log MATCH_ANALYSIS_VIEWED activity:", err));
+      }
+
     } catch (error) {
       console.error("Error fetching AI match explanation:", error);
       toast({ title: "AI Analysis Failed", description: "Could not get AI match explanation.", variant: "destructive" });
@@ -137,12 +148,11 @@ export default function JobExplorerPage() {
       setJobs(augmentedJobs);
       setIsLoadingJobs(false);
     };
-    if (!isLoadingAuth && currentUser) { // Only load jobs if authenticated
+    if (!isLoadingAuth && currentUser) { 
         loadJobs();
     } else if (!isLoadingAuth && !currentUser) {
-        setIsLoadingJobs(false); // Stop loading if not authenticated
+        setIsLoadingJobs(false); 
     }
-    // Rerun if cache changes or auth state resolves
   }, [jobAnalysisCache, isLoadingAuth, currentUser]); 
 
 
@@ -151,15 +161,20 @@ export default function JobExplorerPage() {
   };
 
   const handleSaveJob = (job: JobListing) => {
-    // This still uses localStorage for trackedApplications
     const existingApplicationIndex = trackedApplications.findIndex(app => app.jobId === job.id);
+    let activityType: "JOB_SAVED" | "JOB_UNSAVED" = "JOB_SAVED";
+    let toastMessage = `${job.job_title} added to your application tracker.`;
+    let statusToLog: "Saved" | undefined = "Saved";
+
     if (existingApplicationIndex > -1) {
       setTrackedApplications(prev => prev.filter(app => app.jobId !== job.id));
-      toast({ title: "Job Unsaved", description: `${job.job_title} removed from your tracker.` });
+      toastMessage = `${job.job_title} removed from your tracker.`;
+      activityType = "JOB_UNSAVED";
+      statusToLog = undefined; // Or some other indicator for "unsaved"
+      toast({ title: "Job Unsaved", description: toastMessage });
     } else {
-      // For tracked applications, ensure 'id' is a string for Firestore compatibility if/when migrated
       const newApplication: TrackedApplication = {
-        id: job.id.toString() + Date.now().toString(), // Example: Create a unique string ID for the tracked item
+        id: job.id.toString() + Date.now().toString(), 
         jobId: job.id,
         jobTitle: job.job_title,
         company: job.company,
@@ -167,7 +182,19 @@ export default function JobExplorerPage() {
         lastUpdated: new Date().toISOString(),
       };
       setTrackedApplications(prev => [...prev, newApplication]);
-      toast({ title: "Job Saved!", description: `${job.job_title} added to your application tracker.` });
+      toast({ title: "Job Saved!", description: toastMessage });
+    }
+
+    // Log activity
+    if (currentUser?.id) {
+      logUserActivity({
+        userId: currentUser.id,
+        activityType: activityType,
+        jobId: job.id,
+        jobTitle: job.job_title,
+        company: job.company,
+        details: statusToLog ? { status: statusToLog } : {}
+      }).catch(err => console.error(`Failed to log ${activityType} activity:`, err));
     }
   };
 
@@ -222,6 +249,17 @@ export default function JobExplorerPage() {
       const resumeResult = await generateResume(resumeInput);
       if (resumeResult) {
         setGeneratedResume(resumeResult.resume);
+        // Log activity
+        if (currentUser?.id) {
+          logUserActivity({
+            userId: currentUser.id,
+            activityType: "RESUME_GENERATED_FOR_JOB",
+            jobId: jobToGenerateFor.id,
+            jobTitle: jobToGenerateFor.job_title,
+            company: jobToGenerateFor.company,
+            details: { success: true }
+          }).catch(err => console.error("Failed to log RESUME_GENERATED_FOR_JOB activity:", err));
+        }
       }
     } catch (error) {
       console.error("Error generating resume:", error);
@@ -254,6 +292,17 @@ export default function JobExplorerPage() {
       const coverLetterResult = await generateCoverLetter(coverLetterInput);
       if (coverLetterResult) {
         setGeneratedCoverLetter(coverLetterResult.coverLetter);
+         // Log activity
+        if (currentUser?.id) {
+          logUserActivity({
+            userId: currentUser.id,
+            activityType: "COVER_LETTER_GENERATED_FOR_JOB",
+            jobId: jobToGenerateFor.id,
+            jobTitle: jobToGenerateFor.job_title,
+            company: jobToGenerateFor.company,
+            details: { success: true }
+          }).catch(err => console.error("Failed to log COVER_LETTER_GENERATED_FOR_JOB activity:", err));
+        }
       }
     } catch (error) {
       console.error("Error generating cover letter:", error);
@@ -269,7 +318,7 @@ export default function JobExplorerPage() {
     return <FullPageLoading message={isLoadingAuth ? "Authenticating..." : "Finding best jobs for you..."} />;
   }
   
-  if (!currentUser) { // Should be caught by useEffect redirect, but as a fallback
+  if (!currentUser) { 
     return <FullPageLoading message="Redirecting to login..." />;
   }
 
