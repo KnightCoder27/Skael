@@ -6,7 +6,7 @@ import { useForm, type SubmitHandler, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useAuth } from '@/contexts/AuthContext';
-import type { User, RemotePreference, TrackedApplication } from '@/types';
+import type { User, UserUpdateAPI, RemotePreferenceAPI } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -19,126 +19,115 @@ import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle } from 'lucide-react';
 import { FullPageLoading } from '@/components/app/loading-spinner';
-import useLocalStorage from '@/hooks/use-local-storage';
-
-const USERS_LOCAL_STORAGE_KEY = 'app-users'; // Same key as in auth page
-const TRACKED_APPS_STORAGE_KEY = 'tracked-applications';
-const JOB_ANALYSIS_CACHE_KEY = 'job-ai-analysis-cache';
-const USER_ACTIVITY_LOG_KEY = 'user-activity-log';
+import apiClient from '@/lib/apiClient';
+import { auth as firebaseAuth, db } from '@/lib/firebase'; // Import firebaseAuth
+import { deleteUser as deleteFirebaseUser } from 'firebase/auth'; // For deleting Firebase user
+import { AxiosError } from 'axios';
 
 
-// Helper to get users from local storage
-const getLocalUsers = (): User[] => {
-  if (typeof window === 'undefined') return [];
-  const usersJson = localStorage.getItem(USERS_LOCAL_STORAGE_KEY);
-  return usersJson ? JSON.parse(usersJson) : [];
-};
+const remotePreferenceOptions: RemotePreferenceAPI[] = ["Remote", "Hybrid", "Onsite"]; // "Any" might not be directly supported by backend enum
 
-// Helper to save users to local storage
-const saveLocalUsers = (users: User[]) => {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(USERS_LOCAL_STORAGE_KEY, JSON.stringify(users));
-};
-
-
-const remotePreferenceOptions: RemotePreference[] = ["Remote", "Hybrid", "Onsite", "Any"];
-
+// Schema aligned with UserUpdateAPI and User (UserOut from backend)
 const profileSchema = z.object({
-  user_name: z.string().min(2, 'Name should be at least 2 characters.').max(50, 'Name cannot exceed 50 characters.').optional(),
-  email_id: z.string().email('Invalid email address.'), 
-  phone_number: z.string().max(20, 'Phone number cannot exceed 20 characters.').optional().or(z.literal('')),
-  location_string: z.string().max(255, 'Preferred Locations cannot exceed 255 characters.').optional().or(z.literal('')),
-  country: z.string().max(100, 'Country cannot exceed 100 characters.').optional().or(z.literal('')),
-  professional_summary: z.string().min(50, 'Profile summary should be at least 50 characters.').optional().or(z.literal('')),
-  desired_job_role: z.string().min(10, 'Job preferences should be at least 10 characters.').optional().or(z.literal('')),
+  username: z.string().min(2, 'Name should be at least 2 characters.').max(50, 'Name cannot exceed 50 characters.'),
+  email_id: z.string().email('Invalid email address.'), // Readonly, for display
+  phone_number: z.string().max(20, 'Phone number cannot exceed 20 characters.').optional().nullable(),
+  
+  professional_summary: z.string().min(50, 'Profile summary should be at least 50 characters.').optional().nullable(),
+  job_role: z.string().min(10, 'Job preferences should be at least 10 characters.').optional().nullable(), // was desired_job_role
+  
+  skills: z.string().max(500, 'Skills list cannot exceed 500 characters (comma-separated).').optional().nullable(), // For UserUpdateAPI (comma-separated)
+  
   experience: z.coerce.number().int().nonnegative('Experience must be a positive number.').optional().nullable(),
-  remote_preference: z.enum(remotePreferenceOptions).optional(),
-  expected_salary: z.string().max(50, 'Expected salary cannot exceed 50 characters.').optional().or(z.literal('')),
-  skills_list_text: z.string().max(500, 'Skills list cannot exceed 500 characters.').optional().or(z.literal('')),
-  resume: z.string().url('Please enter a valid URL for your resume.').max(255, 'Resume URL cannot exceed 255 characters.').optional().or(z.literal('')),
+  
+  preferred_locations: z.string().max(255, 'Preferred Locations cannot exceed 255 characters (comma-separated).').optional().nullable(), // For UserUpdateAPI
+  
+  remote_preference: z.enum(remotePreferenceOptions).optional().nullable(),
+  expected_salary: z.coerce.number().positive("Expected salary must be a positive number.").optional().nullable(), // API expects number
+  resume: z.string().url('Please enter a valid URL for your resume.').max(255, 'Resume URL cannot exceed 255 characters.').optional().nullable(),
 });
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
 
 export default function ProfilePage() {
-  const { currentUser, setCurrentUser, isLoadingAuth } = useAuth();
+  const { currentUser, firebaseUser, isLoadingAuth, backendUserId, setBackendUser, refetchBackendUser } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
-  
+
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
-    defaultValues: { 
-      user_name: '',
-      email_id: '',
-      phone_number: '',
-      location_string: '',
-      country: '',
-      professional_summary: '',
-      desired_job_role: '',
-      experience: undefined,
-      remote_preference: undefined,
-      expected_salary: '',
-      skills_list_text: '',
-      resume: '',
-    },
+    // Default values will be set by useEffect based on currentUser
   });
   const { register, handleSubmit, formState: { errors, isSubmitting }, reset, control } = form;
 
   useEffect(() => {
-    if (!isLoadingAuth && !currentUser) {
+    if (!isLoadingAuth && !firebaseUser) { // Check firebaseUser for auth status
       toast({ title: "Not Authenticated", description: "Please log in to view your profile.", variant: "destructive" });
       router.push('/auth');
+    } else if (!isLoadingAuth && firebaseUser && !currentUser) {
+        // Firebase user exists, but backend profile might not be loaded yet or doesn't exist
+        // AuthContext should handle fetching it. If it's still null, could mean new user or error.
+        // For new user, profile page can be their first stop.
+        // Let's ensure email is populated from firebaseUser if backend currentUser is not yet there
+        if (firebaseUser.email) {
+             reset({ email_id: firebaseUser.email, username: firebaseUser.displayName || "" });
+        }
     } else if (currentUser) {
       reset({
-        user_name: currentUser.user_name || '',
-        email_id: currentUser.email_id, 
-        phone_number: currentUser.phone_number || '',
-        location_string: currentUser.location_string || '',
-        country: currentUser.country || '',
-        professional_summary: currentUser.professional_summary || '',
-        desired_job_role: currentUser.desired_job_role || '',
-        experience: currentUser.experience ?? undefined,
-        remote_preference: currentUser.remote_preference ?? undefined,
-        expected_salary: currentUser.expected_salary || '',
-        skills_list_text: currentUser.skills_list_text || '',
-        resume: currentUser.resume || '',
+        username: currentUser.username || firebaseUser?.displayName || '',
+        email_id: currentUser.email_id || firebaseUser?.email || '',
+        phone_number: currentUser.phone_number || null,
+        professional_summary: currentUser.professional_summary || null,
+        job_role: currentUser.job_role || null,
+        skills: currentUser.skills?.join(', ') || null, // Convert array to comma-separated string for form
+        experience: currentUser.experience ?? null,
+        preferred_locations: currentUser.preferred_locations?.join(', ') || null, // Convert array to comma-separated for form
+        remote_preference: currentUser.remote_preference as RemotePreferenceAPI || null,
+        expected_salary: currentUser.expected_salary ?? null,
+        resume: currentUser.resume || null,
       });
     }
-  }, [currentUser, isLoadingAuth, reset, router, toast]);
+  }, [currentUser, firebaseUser, isLoadingAuth, reset, router, toast]);
 
   const onSubmit: SubmitHandler<ProfileFormValues> = async (data) => {
-    if (!currentUser) {
-      toast({ title: "Error", description: "No user session found.", variant: "destructive" });
+    if (!backendUserId) {
+      toast({ title: "Error", description: "User session not found. Cannot update profile.", variant: "destructive" });
       return;
     }
-    try {
-      const { email_id, ...updateData } = data; // email_id is identifier, not to be changed here
-      
-      let users = getLocalUsers();
-      const userIndex = users.findIndex(u => u.id === currentUser.id);
+    
+    const updatePayload: UserUpdateAPI = {
+      username: data.username,
+      number: data.phone_number || undefined, // API expects string or undefined
+      desired_job_role: data.job_role || undefined,
+      skills: data.skills || undefined, // Already comma-separated string from form
+      experience: data.experience ?? undefined, // Ensure null becomes undefined if API expects optional fields not nulls
+      preferred_locations: data.preferred_locations || undefined, // Already comma-separated
+      remote_preference: data.remote_preference || undefined,
+      professional_summary: data.professional_summary || undefined,
+      expected_salary: data.expected_salary ?? undefined,
+      resume: data.resume || undefined,
+    };
 
-      if (userIndex === -1) {
-        toast({ title: "Error", description: "User not found in local store for update.", variant: "destructive" });
-        return;
-      }
-      
-      const updatedUser: User = {
-        ...users[userIndex],
-        ...updateData,
-        experience: updateData.experience === null ? undefined : updateData.experience,
-      };
-      users[userIndex] = updatedUser;
-      saveLocalUsers(users);
-      
-      setCurrentUser(updatedUser); // Update context and local storage for currentUser session
-      
+    // Filter out null values if API expects only defined fields
+    const filteredUpdatePayload = Object.fromEntries(
+        Object.entries(updatePayload).filter(([_, v]) => v !== null && v !== undefined)
+    );
+
+
+    try {
+      await apiClient.put(`/users/${backendUserId}`, filteredUpdatePayload);
+      await refetchBackendUser(); // Refetch updated user data
       toast({
         title: 'Profile Updated',
         description: 'Your profile information has been saved successfully.',
       });
     } catch (error) {
       console.error("Error updating profile:", error);
-      toast({ title: "Update Failed", description: "Could not update profile. Please try again.", variant: "destructive" });
+      let errorMessage = "Could not update profile. Please try again.";
+       if (error instanceof AxiosError && error.response) {
+        errorMessage = error.response.data?.detail || error.response.data?.msg || errorMessage;
+      }
+      toast({ title: "Update Failed", description: errorMessage, variant: "destructive" });
     }
   };
 
@@ -151,40 +140,46 @@ export default function ProfilePage() {
   };
 
   const handleDeleteAccountConfirm = async () => {
-    if (!currentUser) {
-      toast({ title: "Error", description: "No user session found.", variant: "destructive" });
+    if (!backendUserId || !firebaseUser) {
+      toast({ title: "Error", description: "User session not found. Cannot delete account.", variant: "destructive" });
       return;
     }
     try {
-      let users = getLocalUsers();
-      const updatedUsers = users.filter(u => u.id !== currentUser.id);
-      saveLocalUsers(updatedUsers);
+      // 1. Delete from custom backend
+      await apiClient.delete(`/users/${backendUserId}`);
+      
+      // 2. Delete from Firebase Authentication
+      await deleteFirebaseUser(firebaseUser); // This will also sign the user out
 
-      setCurrentUser(null); // Clear user from context & session local storage
-      
-      // Clear other app-related local storage items
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem(TRACKED_APPS_STORAGE_KEY);
-        localStorage.removeItem(JOB_ANALYSIS_CACHE_KEY);
-        localStorage.removeItem(USER_ACTIVITY_LOG_KEY);
-        // Note: USERS_LOCAL_STORAGE_KEY is already updated by saveLocalUsers
-      }
-      
+      setBackendUser(null); // Clear user from context
+      // AuthContext's onAuthStateChanged will handle firebaseUser becoming null
+
       toast({
         title: "Account Deleted",
-        description: "Your account data has been removed from this browser.",
+        description: "Your account has been permanently deleted.",
         variant: "destructive",
       });
-      router.push('/auth');
+      router.push('/auth'); // Redirect to auth page
     } catch (error) {
       console.error("Error deleting account:", error);
-      toast({ title: "Deletion Failed", description: "Could not delete account. Please try again.", variant: "destructive" });
+      let errorMessage = "Could not delete account. Please try again.";
+       if (error instanceof AxiosError && error.response) {
+        errorMessage = error.response.data?.detail || error.response.data?.msg || "Failed to delete account from backend.";
+      } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
+        errorMessage = "Failed to delete Firebase account. You might need to re-authenticate.";
+        // If Firebase deletion fails, the backend deletion might need to be rolled back or handled.
+      }
+      toast({ title: "Deletion Failed", description: errorMessage, variant: "destructive" });
     }
   };
 
-  if (isLoadingAuth || (!currentUser && !isLoadingAuth)) {
+  if (isLoadingAuth || (!firebaseUser && !isLoadingAuth)) { // Show loading if auth state is loading or if no firebase user yet
     return <FullPageLoading message="Loading profile..." />;
   }
+  
+  // If firebaseUser exists but currentUser (backend profile) is null, it might be a new user or loading
+  // The form is still useful for a new user to fill out their profile for the first time.
+  // Form default values are set from currentUser or firebaseUser in useEffect.
 
   return (
     <div className="space-y-8">
@@ -209,9 +204,9 @@ export default function ProfilePage() {
           <CardContent className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
-                <Label htmlFor="user_name">Full Name</Label>
-                <Input id="user_name" {...register('user_name')} placeholder="Your Full Name" className={errors.user_name ? 'border-destructive' : ''} />
-                {errors.user_name && <p className="text-sm text-destructive">{errors.user_name.message}</p>}
+                <Label htmlFor="username">Full Name</Label>
+                <Input id="username" {...register('username')} placeholder="Your Full Name" className={errors.username ? 'border-destructive' : ''} />
+                {errors.username && <p className="text-sm text-destructive">{errors.username.message}</p>}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="email_id">Email Address</Label>
@@ -221,12 +216,12 @@ export default function ProfilePage() {
                   {...register('email_id')}
                   placeholder="you@example.com"
                   className={errors.email_id ? 'border-destructive' : ''}
-                  readOnly 
+                  readOnly
                 />
                 {errors.email_id && <p className="text-sm text-destructive">{errors.email_id.message}</p>}
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6"> {/* Reduced to 2 for phone and locations string for now */}
               <div className="space-y-2">
                 <Label htmlFor="phone_number">Phone Number</Label>
                 <div className="relative flex items-center">
@@ -237,22 +232,13 @@ export default function ProfilePage() {
                 {errors.phone_number && <p className="text-sm text-destructive">{errors.phone_number.message}</p>}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="country">Country</Label>
-                <div className="relative flex items-center">
-                    <Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input id="country" {...register('country')} placeholder="e.g., United States" className={`pl-10 ${errors.country ? 'border-destructive' : ''}`} />
-                </div>
-                <p className="text-xs text-muted-foreground">Optional.</p>
-                {errors.country && <p className="text-sm text-destructive">{errors.country.message}</p>}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="location_string">Preferred Locations</Label>
+                <Label htmlFor="preferred_locations">Preferred Locations (comma-separated)</Label>
                  <div className="relative flex items-center">
                     <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input id="location_string" {...register('location_string')} placeholder="e.g., New York, Remote, London" className={`pl-10 ${errors.location_string ? 'border-destructive' : ''}`} />
+                    <Input id="preferred_locations" {...register('preferred_locations')} placeholder="e.g., New York, Remote, London" className={`pl-10 ${errors.preferred_locations ? 'border-destructive' : ''}`} />
                 </div>
-                <p className="text-xs text-muted-foreground">Optional. Enter cities or "Remote", separated by commas.</p>
-                {errors.location_string && <p className="text-sm text-destructive">{errors.location_string.message}</p>}
+                <p className="text-xs text-muted-foreground">Optional. Enter cities or "Remote".</p>
+                {errors.preferred_locations && <p className="text-sm text-destructive">{errors.preferred_locations.message}</p>}
               </div>
             </div>
           </CardContent>
@@ -267,12 +253,12 @@ export default function ProfilePage() {
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="professional_summary" className="text-base flex items-center"><BookUser className="mr-2 h-5 w-5 text-primary/80"/>Professional Summary / Resume Text</Label>
+              <Label htmlFor="professional_summary" className="text-base flex items-center"><BookUser className="mr-2 h-5 w-5 text-primary/80"/>Professional Summary</Label>
               <Textarea
                 id="professional_summary"
                 {...register('professional_summary')}
-                placeholder="Paste your full resume text or a detailed LinkedIn profile summary here. The more detail, the better the AI matching!"
-                rows={15}
+                placeholder="A detailed summary of your professional background, achievements, and career goals."
+                rows={8}
                 className={errors.professional_summary ? 'border-destructive' : ''}
               />
               {errors.professional_summary && <p className="text-sm text-destructive">{errors.professional_summary.message}</p>}
@@ -300,16 +286,16 @@ export default function ProfilePage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="skills_list_text" className="text-base flex items-center"><ListChecks className="mr-2 h-5 w-5 text-primary/80"/>Key Skills</Label>
+              <Label htmlFor="skills" className="text-base flex items-center"><ListChecks className="mr-2 h-5 w-5 text-primary/80"/>Key Skills (comma-separated)</Label>
               <Textarea
-                id="skills_list_text"
-                {...register('skills_list_text')}
+                id="skills"
+                {...register('skills')}
                 placeholder="e.g., React, Node.js, Python, Project Management, UI/UX Design"
                 rows={3}
-                className={errors.skills_list_text ? 'border-destructive' : ''}
+                className={errors.skills ? 'border-destructive' : ''}
               />
-              <p className="text-xs text-muted-foreground">Optional. Enter skills separated by commas. This helps AI find relevant jobs.</p>
-              {errors.skills_list_text && <p className="text-sm text-destructive">{errors.skills_list_text.message}</p>}
+              <p className="text-xs text-muted-foreground">Optional. This helps AI find relevant jobs.</p>
+              {errors.skills && <p className="text-sm text-destructive">{errors.skills.message}</p>}
             </div>
           </CardContent>
 
@@ -323,15 +309,15 @@ export default function ProfilePage() {
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="desired_job_role" className="text-base">My Ideal Job Role & Preferences</Label>
+              <Label htmlFor="job_role" className="text-base">My Ideal Job Role & Preferences</Label>
               <Textarea
-                id="desired_job_role"
-                {...register('desired_job_role')}
+                id="job_role"
+                {...register('job_role')}
                 placeholder="e.g., Senior Frontend Developer specializing in e-commerce, interested in mid-size tech companies..."
                 rows={5}
-                className={errors.desired_job_role ? 'border-destructive' : ''}
+                className={errors.job_role ? 'border-destructive' : ''}
               />
-              {errors.desired_job_role && <p className="text-sm text-destructive">{errors.desired_job_role.message}</p>}
+              {errors.job_role && <p className="text-sm text-destructive">{errors.job_role.message}</p>}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -358,12 +344,12 @@ export default function ProfilePage() {
                     {errors.remote_preference && <p className="text-sm text-destructive">{errors.remote_preference.message}</p>}
                 </div>
                 <div className="space-y-2">
-                    <Label htmlFor="expected_salary">Expected Salary</Label>
+                    <Label htmlFor="expected_salary">Expected Salary (Numeric)</Label>
                      <div className="relative flex items-center">
                         <DollarSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                        <Input id="expected_salary" {...register('expected_salary')} placeholder="e.g., $120,000 USD or 90K EUR" className={`pl-10 ${errors.expected_salary ? 'border-destructive' : ''}`} />
+                        <Input id="expected_salary" type="number" {...register('expected_salary')} placeholder="e.g., 120000" className={`pl-10 ${errors.expected_salary ? 'border-destructive' : ''}`} />
                     </div>
-                    <p className="text-xs text-muted-foreground">Optional.</p>
+                    <p className="text-xs text-muted-foreground">Optional. Enter as a number (e.g., 120000 for $120,000).</p>
                     {errors.expected_salary && <p className="text-sm text-destructive">{errors.expected_salary.message}</p>}
                 </div>
             </div>
@@ -385,19 +371,19 @@ export default function ProfilePage() {
             <Wand2 className="mr-2 h-6 w-6 text-primary" /> Global AI Document Tools
           </CardTitle>
           <CardDescription>
-            Generate general application materials based on your saved profile or for any job description.
+            Generate general application materials based on your saved profile or for any job description. (Functionality to be connected to backend API)
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 sm:space-y-0 sm:flex sm:gap-4">
-          <Button onClick={handleGenerateGeneralResume} variant="outline" size="lg" className="w-full sm:w-auto">
+          <Button onClick={handleGenerateGeneralResume} variant="outline" size="lg" className="w-full sm:w-auto" disabled>
             <FileText className="mr-2 h-5 w-5" /> Generate General Resume
           </Button>
-          <Button onClick={handleGenerateCustomCoverLetter} variant="outline" size="lg" className="w-full sm:w-auto">
+          <Button onClick={handleGenerateCustomCoverLetter} variant="outline" size="lg" className="w-full sm:w-auto" disabled>
             <FileText className="mr-2 h-5 w-5" /> Generate Cover Letter for any JD
           </Button>
         </CardContent>
          <CardFooter className="text-xs text-muted-foreground pt-4">
-          These tools use your saved profile information. Ensure your profile is up-to-date for best results.
+          These tools will use your saved profile information. Ensure your profile is up-to-date for best results.
         </CardFooter>
       </Card>
 
@@ -425,8 +411,7 @@ export default function ProfilePage() {
                    <AlertTriangle className="mr-2 h-5 w-5 text-destructive" /> Are you absolutely sure?
                 </AlertDialogTitle>
                 <AlertDialogDescription>
-                  This action cannot be undone. This will permanently delete your
-                  account data from this browser's local storage. This includes your profile, tracked applications, AI analysis cache, and activity logs.
+                  This action cannot be undone. This will permanently delete your account from our backend and Firebase Authentication.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -439,7 +424,7 @@ export default function ProfilePage() {
           </AlertDialog>
         </CardContent>
         <CardFooter className="text-xs text-muted-foreground pt-4">
-          Deleting your account will remove all your saved information from this browser's local storage.
+          Deleting your account will remove all your saved information.
         </CardFooter>
       </Card>
 

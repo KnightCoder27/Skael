@@ -2,141 +2,118 @@
 /**
  * Enum for specifying remote work preferences.
  */
-export type RemotePreference = "Remote" | "Hybrid" | "Onsite" | "Any";
+export type RemotePreferenceAPI = "Remote" | "Hybrid" | "Onsite"; // As per backend guide
 
 /**
- * Represents a geographical location.
+ * Represents a geographical location (simplified for now).
  */
 export interface Location {
-  id: number; // Kept as number, assuming these are predefined or managed elsewhere
   name: string;
 }
 
 /**
- * Represents a technology or skill.
+ * Represents a technology or skill (simplified for now).
  */
 export interface Technology {
-  id: number; // Kept as number for sample data consistency
-  technology_name: string;
-  technology_slug: string;
-  category?: string;
-  category_slug?: string;
-  logo?: string;
-  logo_thumbnail?: string;
-  one_liner?: string;
-  url?: string;
-  description?: string;
+  name: string;
 }
 
 /**
- * Represents a company tier.
- */
-export interface Tier {
-  id: string; // Firestore IDs are strings
-  company_id: string; // Assuming Company ID will also be string
-  tier_rank?: string;
-}
-
-/**
- * Represents a company.
- */
-export interface Company {
-  id: string; // Firestore IDs are strings
-  api_company_id?: string;
-  company_name: string;
-  company_domain: string;
-  industry?: string;
-  country?: string;
-  country_code?: string;
-  url?: string;
-  long_description?: string;
-  linkedin_url?: string;
-  linkedin_id?: string;
-  logo?: string;
-  industry_id?: string;
-  tiers?: Tier[];
-  fetched_date?: string;
-}
-
-/**
- * Represents a user of the application.
- * Firestore document ID will be used as the 'id'.
+ * Represents a user of the application, aligned with backend's UserOut.
+ * The 'id' is the backend's database ID.
  */
 export interface User {
-  id: string; // Firestore Document ID
-  user_name?: string;
-  phone_number?: string;
-  email_id: string; // Should be unique
-  
-  professional_summary?: string;
-  desired_job_role?: string;
-  
-  // skills?: Technology[]; // For simplicity, keeping skills as text for now if not deeply integrated
-  skills_list_text?: string;
-
-  experience?: number;
-  
-  // preferred_locations?: Location[]; // For simplicity, keeping locations as text
-  location_string?: string;
-  country?: string;
-
-  remote_preference?: RemotePreference;
-  
-  preferred_tier_id?: string;
-  expected_salary?: string;
-  resume?: string; // URL
-  joined_date?: string; // ISO datetime string (when profile created in Firestore)
+  id: number; // Backend ID (number)
+  username: string;
+  email_id: string;
+  phone_number?: string | null;
+  job_role?: string | null; // Was desired_job_role
+  skills?: string[]; // Was skills_list_text (now array of strings)
+  experience?: number | null;
+  preferred_locations?: string[]; // Was location_string (now array of strings)
+  remote_preference?: RemotePreferenceAPI | string | null; // Allow string for flexibility from API
+  professional_summary?: string | null;
+  expected_salary?: number | null; // Was string
+  resume?: string | null; // URL
+  joined_date?: string; // ISO datetime string
+  // Fields removed: preferred_tier_id, country (if not in UserOut)
 }
 
+// API Request/Response types from the guide
+
+export interface UserIn { // For POST /users/ (registration)
+  username: string;
+  email: string;
+  number: string;
+  password: string;
+}
+
+export interface UserLogin { // For POST /users/login
+  email: string;
+  password: string;
+}
+
+export interface UserLoginResponse {
+  msg: string;
+  user_id: number; // Backend User ID
+}
+
+export interface UserRegistrationResponse {
+  msg: string;
+  id: number; // Backend User ID
+}
+
+
+export interface UserUpdateAPI { // For PUT /users/{id}
+  username?: string;
+  number?: string;
+  desired_job_role?: string;
+  skills?: string; // Comma-separated string of skill names
+  experience?: number;
+  preferred_locations?: string; // Comma-separated string of location names
+  remote_preference?: RemotePreferenceAPI;
+  professional_summary?: string;
+  expected_salary?: number;
+  resume?: string; // File path or URL
+}
+
+
 /**
- * Represents a job listing.
- * Assuming JobListing data is static or from another source for now, not in Firestore.
+ * Represents a job listing, partially aligned with JobListingResponse from backend.
+ * Needs further alignment if we fetch jobs from backend.
  */
 export interface JobListing {
-  id: number; // Keeping as number for sample data
-  unique_input_id?: string; 
-  api_id?: string; 
-  job_title: string; 
-  url?: string; 
-  date_posted?: string; 
-  employment_status?: string;
-  
-  company: string; 
-  company_domain?: string; 
-  // company_obj_id?: string; // If linking to Company collection
-  // company_obj?: Company; 
-
-  final_url?: string;
-  source_url?: string;
-  location: string; 
+  id: number; // Keeping as number
+  job_title: string;
+  company: string;
+  location: string;
+  description: string;
+  url?: string;
+  salary_string?: string;
+  date_posted?: string;
+  technologies?: Technology[]; // Simplified for now
+  companyLogo?: string;
+  matchScore?: number;
+  matchExplanation?: string;
   remote?: boolean;
   hybrid?: boolean;
-  
-  salary_string?: string; 
-  min_salary?: number;
-  max_salary?: number;
-  currency?: string; 
-
-  country?: string;
-  seniority?: string;
-  discovered_at?: string; 
-  
-  description: string; 
-  reposted?: boolean;
-  date_reposted?: string; 
-  country_code?: string; 
-  job_expired?: boolean;
-  
-  industry_id?: string; 
-  fetched_data?: string; 
-  matching_phrase?: string[];
-  matching_words?: string[];
-
-  technologies?: Technology[]; 
-
-  companyLogo?: string; 
-  matchScore?: number; 
-  matchExplanation?: string; 
+  currency?: string;
+  employment_status?: string; // From backend
+  api_id?: string | null; // From backend
+  company_domain?: string | null; // From backend
+  company_obj_id?: number | null; // From backend
+  final_url?: string | null; // From backend
+  source_url?: string | null; // From backend
+  min_salary?: number | null; // From backend
+  max_salary?: number | null; // From backend
+  seniority?: string | null; // From backend
+  discovered_at?: string; // From backend
+  reposted?: boolean | null; // From backend
+  date_reposted?: string | null; // From backend
+  country_code?: string | null; // From backend
+  job_expired?: boolean | null; // From backend
+  industry_id?: string | null; // From backend
+  // 'fetched_data' and 'matching_phrase'/'matching_words' from backend guide are not directly mapped here yet.
 }
 
 /**
@@ -146,37 +123,68 @@ export type ApplicationStatus = "Interested" | "Saved" | "Applied" | "Interviewi
 
 /**
  * Represents a job application tracked by the user.
- * These will be stored in a subcollection under the user.
+ * This will eventually be managed by backend API.
  */
 export interface TrackedApplication {
-  id: string; // Firestore Document ID for the tracked application
-  jobId: number; // ID from the JobListing (sample data)
+  id: string; // Could be backend activity ID or a composite ID
+  jobId: number;
   jobTitle: string;
   company: string;
   status: ApplicationStatus;
-  appliedDate?: string; 
+  appliedDate?: string;
   notes?: string;
-  lastUpdated: string; 
+  lastUpdated: string;
 }
 
-// Activity Logging Types
-export type ActivityType = 
+// Activity Logging Types for backend
+export interface ActivityIn {
+  user_id: number;
+  job_id?: number | null;
+  action_type: string;
+  metadata?: { [key: string]: any } | null;
+}
+
+export interface ActivityLogResponse {
+  msg: string;
+  activity_id: string;
+}
+
+// For Job Analysis
+export interface AnalyzeResult {
+  score: number;
+  explanation: string;
+}
+
+// For Resumes
+export interface ResumeIn {
+  user_id: number;
+  job_id?: number | null;
+  source: string;
+  content: string;
+}
+
+export interface ResumeGenerateResponse {
+  msg: string;
+  resume_id: string;
+}
+
+// This type was for local storage and might be deprecated or changed
+export type ActivityType =
   | "MATCH_ANALYSIS_VIEWED"
   | "JOB_SAVED"
   | "JOB_UNSAVED"
   | "RESUME_GENERATED_FOR_JOB"
   | "COVER_LETTER_GENERATED_FOR_JOB"
-  | "GENERAL_RESUME_GENERATED" // For profile page
-  | "GENERAL_COVER_LETTER_GENERATED"; // For profile page
+  | "GENERAL_RESUME_GENERATED"
+  | "GENERAL_COVER_LETTER_GENERATED";
 
-// Simplified activity structure for local storage
 export interface LocalUserActivity {
-  id: string; // Unique ID for the activity log entry
+  id: string;
   type: ActivityType;
-  timestamp: string; // ISO datetime string
-  userId?: string; // Optional: if you want to associate with currentUser.id
+  timestamp: string;
+  userId?: number; // Changed from string to number
   jobId?: number;
   jobTitle?: string;
   company?: string;
-  details?: { [key: string]: any }; // Generic details
+  details?: { [key: string]: any };
 }

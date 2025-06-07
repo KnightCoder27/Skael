@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation'; 
+import { useRouter } from 'next/navigation';
 import { useForm, type SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -14,28 +14,17 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { LogIn, UserPlus, Eye, EyeOff, Compass } from 'lucide-react';
-import type { User } from '@/types';
+import type { User, UserIn, UserLogin as UserLoginType, UserLoginResponse, UserRegistrationResponse } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
+import apiClient from '@/lib/apiClient';
+import { auth as firebaseAuth } from '@/lib/firebase';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { AxiosError } from 'axios';
 
-const USERS_LOCAL_STORAGE_KEY = 'app-users';
-
-// Helper to get users from local storage
-const getLocalUsers = (): User[] => {
-  if (typeof window === 'undefined') return [];
-  const usersJson = localStorage.getItem(USERS_LOCAL_STORAGE_KEY);
-  return usersJson ? JSON.parse(usersJson) : [];
-};
-
-// Helper to save users to local storage
-const saveLocalUsers = (users: User[]) => {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(USERS_LOCAL_STORAGE_KEY, JSON.stringify(users));
-};
-
-// Schemas
+// Schemas for form validation
 const loginSchema = z.object({
   email: z.string().email({ message: "Invalid email address." }),
-  password: z.string().min(6, { message: "Password must be at least 6 characters." }), // Password validation remains, but actual check is skipped for local
+  password: z.string().min(1, { message: "Password is required." }), // Min 1 for API, Firebase has own rules
 });
 type LoginFormValues = z.infer<typeof loginSchema>;
 
@@ -57,10 +46,10 @@ type RegisterFormValues = z.infer<typeof registerSchema>;
 
 export default function AuthPage() {
   const { toast } = useToast();
-  const router = useRouter(); 
-  const { setCurrentUser } = useAuth();
+  const router = useRouter();
+  const { setBackendUser, refetchBackendUser } = useAuth();
   const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
-  
+
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const [showRegisterConfirmPassword, setShowRegisterConfirmPassword] = useState(false);
@@ -77,67 +66,80 @@ export default function AuthPage() {
 
   const onLoginSubmit: SubmitHandler<LoginFormValues> = async (data) => {
     try {
-      const users = getLocalUsers();
-      const user = users.find(u => u.email_id.toLowerCase() === data.email.toLowerCase());
+      // 1. Login with custom backend
+      const backendLoginPayload: UserLoginType = { email: data.email, password: data.password };
+      const backendResponse = await apiClient.post<UserLoginResponse>('/users/login', backendLoginPayload);
+      const backendUserId = backendResponse.data.user_id;
 
-      // In a real local storage auth, you might compare a hashed password.
-      // For this mock, we'll assume if email exists, login is "successful".
-      if (user) {
-        setCurrentUser(user);
-        toast({ title: "Login Successful", description: "Redirecting to job listings..." });
-        router.push('/jobs');
-      } else {
-        toast({ 
-          title: "Account Not Found", 
-          description: "No account found with this email. Please register or check your email address.", 
-          variant: "destructive" 
-        });
+      // 2. Login with Firebase Auth
+      await signInWithEmailAndPassword(firebaseAuth, data.email, data.password);
+      
+      // 3. Fetch full user profile from backend and set in context
+      // The AuthContext's onAuthStateChanged will handle fetching the profile
+      // But we can store the backendUserId temporarily to ensure it's picked up
+      if (typeof window !== 'undefined') {
+         localStorage.setItem('pendingLoginBackendId', backendUserId.toString());
       }
+      await refetchBackendUser(); // Trigger fetch if backendUserId is already set or use the pending one
+
+      toast({ title: "Login Successful", description: "Redirecting to job listings..." });
+      router.push('/jobs');
+
     } catch (error) {
       console.error("Error during login:", error);
-      toast({ 
-        title: "Login Failed", 
-        description: "An unexpected error occurred during login.", 
-        variant: "destructive" 
+      let errorMessage = "An unexpected error occurred during login.";
+      if (error instanceof AxiosError && error.response) {
+        errorMessage = error.response.data?.detail || error.response.data?.msg || "Login failed. Please check your credentials.";
+      } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
+        errorMessage = "Firebase authentication failed. Please check your credentials or network.";
+      }
+      toast({
+        title: "Login Failed",
+        description: errorMessage,
+        variant: "destructive"
       });
     }
   };
 
   const onRegisterSubmit: SubmitHandler<RegisterFormValues> = async (data) => {
     try {
-      let users = getLocalUsers();
-      const existingUser = users.find(u => u.email_id.toLowerCase() === data.email.toLowerCase());
-
-      if (existingUser) {
-        toast({ title: "Registration Failed", description: "An account with this email already exists.", variant: "destructive" });
-        return; 
-      }
-
-      const newUser: User = {
-        id: Date.now().toString() + Math.random().toString(36).substring(2), // Simple unique ID
-        user_name: data.name,
-        email_id: data.email,
-        // Password is not stored directly in this simplified local storage model
-        professional_summary: "", 
-        desired_job_role: "",   
-        skills_list_text: "",
-        location_string: "",
-        joined_date: new Date().toISOString(),
+      // 1. Register with custom backend
+      const backendRegisterPayload: UserIn = {
+        username: data.name,
+        email: data.email,
+        number: "", // Not collected in form, send empty or make optional in backend
+        password: data.password,
       };
+      const backendRegisterResponse = await apiClient.post<UserRegistrationResponse>('/users/', backendRegisterPayload);
+      const newBackendUserId = backendRegisterResponse.data.id;
+
+      // 2. Register with Firebase Auth
+      const firebaseUserCredential = await createUserWithEmailAndPassword(firebaseAuth, data.email, data.password);
+      await updateProfile(firebaseUserCredential.user, { displayName: data.name });
       
-      users.push(newUser);
-      saveLocalUsers(users);
-      
-      setCurrentUser(newUser);
+      // 3. Fetch full user profile from backend and set in context
+       if (typeof window !== 'undefined') {
+         localStorage.setItem('pendingLoginBackendId', newBackendUserId.toString());
+      }
+      await refetchBackendUser();
+
+
       toast({ title: "Registration Successful", description: "Redirecting to profile setup..." });
-      router.push('/profile');
+      // router.push('/profile'); // Redirect to profile to complete details
+       router.push('/jobs'); // Or redirect to jobs if profile is minimal initially
 
     } catch (error) {
       console.error("Error during registration:", error);
-      toast({ 
-        title: "Registration Failed", 
-        description: "An unexpected error occurred during registration.", 
-        variant: "destructive" 
+      let errorMessage = "An unexpected error occurred during registration.";
+       if (error instanceof AxiosError && error.response) {
+        errorMessage = error.response.data?.detail || error.response.data?.msg ||  "Registration failed. This email might already be in use.";
+      } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
+        errorMessage = (error as any).message || "Firebase registration failed. The email might be already in use or password is too weak.";
+      }
+      toast({
+        title: "Registration Failed",
+        description: errorMessage,
+        variant: "destructive"
       });
     }
   };
@@ -158,7 +160,7 @@ export default function AuthPage() {
                 {activeTab === 'login' ? 'Welcome Back!' : 'Create an Account'}
             </CardTitle>
             <CardDescription>
-                {activeTab === 'login' ? 'Sign in to access your career dashboard.' : 'Join Job Hunter AI to find your path.'}
+                {activeTab === 'login' ? 'Sign in to access your career dashboard.' : 'Join Career Compass AI to find your path.'}
             </CardDescription>
             <TabsList className="grid w-full grid-cols-2 mt-6 bg-muted">
               <TabsTrigger value="login">Login</TabsTrigger>
@@ -223,18 +225,12 @@ export default function AuthPage() {
                 </Button>
                  <p className="text-center text-sm text-muted-foreground">
                     Don't have an account?{" "}
-                    <Button variant="link" className="p-0 h-auto text-primary" onClick={() => { 
-                        const currentRegisterTab = document.querySelector('[data-state="active"][role="tab"][aria-selected="true"]');
-                        if (currentRegisterTab && currentRegisterTab.getAttribute('data-value') === 'register') {
-                             registerForm.reset();
-                             loginForm.reset();
-                        } else {
-                            const trigger = document.querySelector('button[role="tab"][data-value="register"]') as HTMLButtonElement | null;
-                            trigger?.click();
-                        }
-                         setActiveTab('register'); 
-                         loginForm.reset(); 
-                         registerForm.reset();
+                    <Button variant="link" className="p-0 h-auto text-primary" onClick={() => {
+                        const trigger = document.querySelector('button[role="tab"][data-value="register"]') as HTMLButtonElement | null;
+                        trigger?.click();
+                        setActiveTab('register');
+                        loginForm.reset();
+                        registerForm.reset();
                       }}
                     >
                         Register here
@@ -347,17 +343,11 @@ export default function AuthPage() {
                 </p>
                  <p className="text-center text-sm text-muted-foreground">
                     Already have an account?{" "}
-                     <Button variant="link" className="p-0 h-auto text-primary" onClick={() => { 
-                        const currentLoginTab = document.querySelector('[data-state="active"][role="tab"][aria-selected="true"]');
-                        if (currentLoginTab && currentLoginTab.getAttribute('data-value') === 'login') {
-                            loginForm.reset();
-                            registerForm.reset();
-                        } else {
-                            const trigger = document.querySelector('button[role="tab"][data-value="login"]') as HTMLButtonElement | null;
-                            trigger?.click();
-                        }
-                        setActiveTab('login'); 
-                        registerForm.reset(); 
+                     <Button variant="link" className="p-0 h-auto text-primary" onClick={() => {
+                        const trigger = document.querySelector('button[role="tab"][data-value="login"]') as HTMLButtonElement | null;
+                        trigger?.click();
+                        setActiveTab('login');
+                        registerForm.reset();
                         loginForm.reset();
                      }}>
                         Login here
