@@ -169,23 +169,14 @@ export type ActivityType =
   | "GENERAL_RESUME_GENERATED" // For profile page
   | "GENERAL_COVER_LETTER_GENERATED"; // For profile page
 
-export interface UserActivityDetails {
-  matchScore?: number;
-  status?: ApplicationStatus; // For JOB_SAVED/UNSAVED
-  success?: boolean; // For generation tasks
-  // Add other specific details as needed
-}
-
-export interface UserActivityInput {
-  userId: string;
-  activityType: ActivityType;
-  jobId?: number; // JobListing.id
+// Simplified activity structure for local storage
+export interface LocalUserActivity {
+  id: string; // Unique ID for the activity log entry
+  type: ActivityType;
+  timestamp: string; // ISO datetime string
+  userId?: string; // Optional: if you want to associate with currentUser.id
+  jobId?: number;
   jobTitle?: string;
   company?: string;
-  details?: UserActivityDetails;
-}
-
-export interface UserActivity extends UserActivityInput {
-  id: string; // Firestore Document ID
-  timestamp: string; // ISO datetime string
+  details?: { [key: string]: any }; // Generic details
 }

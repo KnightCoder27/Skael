@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import type { JobListing, User, TrackedApplication } from '@/types';
+import type { JobListing, User, TrackedApplication, LocalUserActivity, ActivityType } from '@/types';
 import { sampleJobs } from '@/lib/sample-data';
 import useLocalStorage from '@/hooks/use-local-storage'; 
 import { useAuth } from '@/contexts/AuthContext'; 
@@ -26,9 +26,6 @@ import {
   type GenerateDocumentInput,
 } from '@/ai/flows/resume-cover-letter-generator';
 
-// Activity Logging Service
-import { logUserActivity } from '@/services/activityService';
-
 interface JobAnalysisCache {
   [jobId: number]: {
     matchScore: number;
@@ -44,6 +41,8 @@ export default function JobExplorerPage() {
 
   const [trackedApplications, setTrackedApplications] = useLocalStorage<TrackedApplication[]>('tracked-applications', []);
   const [jobAnalysisCache, setJobAnalysisCache] = useLocalStorage<JobAnalysisCache>('job-ai-analysis-cache', {});
+  const [localUserActivities, setLocalUserActivities] = useLocalStorage<LocalUserActivity[]>('user-activity-log', []);
+
 
   const [selectedJobForDetails, setSelectedJobForDetails] = useState<JobListing | null>(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
@@ -69,6 +68,16 @@ export default function JobExplorerPage() {
       router.push('/auth');
     }
   }, [isLoadingAuth, currentUser, router, toast]);
+
+  const addLocalActivity = useCallback((activityData: Omit<LocalUserActivity, 'id' | 'timestamp'>) => {
+    const newActivity: LocalUserActivity = {
+      id: Date.now().toString() + Math.random().toString(36).substring(2), // Simple unique ID
+      timestamp: new Date().toISOString(),
+      userId: currentUser?.id, // Optionally associate with current user
+      ...activityData,
+    };
+    setLocalUserActivities(prevActivities => [newActivity, ...prevActivities]);
+  }, [setLocalUserActivities, currentUser]);
 
 
   const fetchJobDetailsWithAI = useCallback(async (job: JobListing) => {
@@ -115,17 +124,14 @@ export default function JobExplorerPage() {
         [job.id]: explanationResult,
       }));
 
-      // Log activity
-      if (currentUser?.id) {
-        logUserActivity({
-          userId: currentUser.id,
-          activityType: "MATCH_ANALYSIS_VIEWED",
-          jobId: job.id,
-          jobTitle: job.job_title,
-          company: job.company,
-          details: { matchScore: explanationResult.matchScore }
-        }).catch(err => console.error("Failed to log MATCH_ANALYSIS_VIEWED activity:", err));
-      }
+      // Log activity locally
+      addLocalActivity({
+        type: "MATCH_ANALYSIS_VIEWED",
+        jobId: job.id,
+        jobTitle: job.job_title,
+        company: job.company,
+        details: { matchScore: explanationResult.matchScore }
+      });
 
     } catch (error) {
       console.error("Error fetching AI match explanation:", error);
@@ -133,7 +139,7 @@ export default function JobExplorerPage() {
     } finally {
       setIsLoadingExplanation(false);
     }
-  }, [currentUser, toast, jobAnalysisCache, setJobAnalysisCache]);
+  }, [currentUser, toast, jobAnalysisCache, setJobAnalysisCache, addLocalActivity]);
 
   useEffect(() => {
     const loadJobs = () => {
@@ -162,7 +168,7 @@ export default function JobExplorerPage() {
 
   const handleSaveJob = (job: JobListing) => {
     const existingApplicationIndex = trackedApplications.findIndex(app => app.jobId === job.id);
-    let activityType: "JOB_SAVED" | "JOB_UNSAVED" = "JOB_SAVED";
+    let activityType: ActivityType = "JOB_SAVED";
     let toastMessage = `${job.job_title} added to your application tracker.`;
     let statusToLog: "Saved" | undefined = "Saved";
 
@@ -170,7 +176,7 @@ export default function JobExplorerPage() {
       setTrackedApplications(prev => prev.filter(app => app.jobId !== job.id));
       toastMessage = `${job.job_title} removed from your tracker.`;
       activityType = "JOB_UNSAVED";
-      statusToLog = undefined; // Or some other indicator for "unsaved"
+      statusToLog = undefined; 
       toast({ title: "Job Unsaved", description: toastMessage });
     } else {
       const newApplication: TrackedApplication = {
@@ -185,17 +191,14 @@ export default function JobExplorerPage() {
       toast({ title: "Job Saved!", description: toastMessage });
     }
 
-    // Log activity
-    if (currentUser?.id) {
-      logUserActivity({
-        userId: currentUser.id,
-        activityType: activityType,
+    // Log activity locally
+    addLocalActivity({
+        type: activityType,
         jobId: job.id,
         jobTitle: job.job_title,
         company: job.company,
         details: statusToLog ? { status: statusToLog } : {}
-      }).catch(err => console.error(`Failed to log ${activityType} activity:`, err));
-    }
+    });
   };
 
   const openMaterialsModal = (job: JobListing) => {
@@ -249,17 +252,14 @@ export default function JobExplorerPage() {
       const resumeResult = await generateResume(resumeInput);
       if (resumeResult) {
         setGeneratedResume(resumeResult.resume);
-        // Log activity
-        if (currentUser?.id) {
-          logUserActivity({
-            userId: currentUser.id,
-            activityType: "RESUME_GENERATED_FOR_JOB",
+        // Log activity locally
+        addLocalActivity({
+            type: "RESUME_GENERATED_FOR_JOB",
             jobId: jobToGenerateFor.id,
             jobTitle: jobToGenerateFor.job_title,
             company: jobToGenerateFor.company,
             details: { success: true }
-          }).catch(err => console.error("Failed to log RESUME_GENERATED_FOR_JOB activity:", err));
-        }
+        });
       }
     } catch (error) {
       console.error("Error generating resume:", error);
@@ -292,17 +292,14 @@ export default function JobExplorerPage() {
       const coverLetterResult = await generateCoverLetter(coverLetterInput);
       if (coverLetterResult) {
         setGeneratedCoverLetter(coverLetterResult.coverLetter);
-         // Log activity
-        if (currentUser?.id) {
-          logUserActivity({
-            userId: currentUser.id,
-            activityType: "COVER_LETTER_GENERATED_FOR_JOB",
+         // Log activity locally
+        addLocalActivity({
+            type: "COVER_LETTER_GENERATED_FOR_JOB",
             jobId: jobToGenerateFor.id,
             jobTitle: jobToGenerateFor.job_title,
             company: jobToGenerateFor.company,
             details: { success: true }
-          }).catch(err => console.error("Failed to log COVER_LETTER_GENERATED_FOR_JOB activity:", err));
-        }
+        });
       }
     } catch (error) {
       console.error("Error generating cover letter:", error);
