@@ -84,14 +84,14 @@
       previews = {
         web = {
           command = ["npm" "run" "dev" "--" "--port" "$PORT" "--hostname" "0.0.0.0"];
+          # command = ["npm" "run" "dev" "--" "--port" "5000" "--hostname" "0.0.0.0"];
           manager = "web";
         };
         
-        backend = { # Add this new preview configuration
-          command = ["uvicorn" "src.backend.main:app" "--host" "0.0.0.0" "--port" "8080"]; # Assuming your main file is main.py and app is the FastAPI instance
-          manager = "web"; # Or "web-https" if you need HTTPS
-        # external = true; # This makes the preview accessible externally
-        };
+        # web = { # Add this new preview configuration
+        #   command = ["uvicorn" "src.backend.main:app" "--host" "0.0.0.0" "--port" "8080"]; # Assuming your main file is main.py and app is the FastAPI instance
+        #   manager = "web"; # Or "web-https" if you need HTTPS
+        # };
 
       };
     };

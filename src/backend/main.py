@@ -8,7 +8,7 @@ from src.backend.db.jobs import router as jobs_router
 from src.backend.db.resume import router as resume_router
 from src.backend.db.activities import router as activities_router
 
-load_dotenv(dotenv_path=".env.local")
+load_dotenv(dotenv_path=".env")
 
 app = FastAPI()
 
