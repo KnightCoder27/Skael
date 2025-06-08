@@ -78,6 +78,7 @@ export default function AuthPage() {
       if (!backendUserId && backendUserId !== 0) { // Check for null or undefined, allow 0 if it's a valid ID
         throw new Error("Backend login did not return a valid user ID.");
       }
+      
       authContext.setInternalPendingBackendId(backendUserId);
       console.log("AuthPage: Set internalPendingBackendId in AuthContext for login:", backendUserId);
 
@@ -91,7 +92,7 @@ export default function AuthPage() {
 
     } catch (error) {
       console.error("AuthPage: Error during login:", error);
-      authContext.setInternalPendingBackendId(null);
+      authContext.setInternalPendingBackendId(null); 
 
       let errorMessage = "An unexpected error occurred during login.";
       if (error instanceof AxiosError && error.response) {
@@ -140,8 +141,8 @@ export default function AuthPage() {
         number: "", // Assuming number is optional or handled differently
         password: data.password,
       };
-      // Using /users/register as requested
-      const backendRegisterResponse = await apiClient.post<UserRegistrationResponse>('/users/register', backendRegisterPayload);
+      // Using /users/ as per backend guide and router config
+      const backendRegisterResponse = await apiClient.post<UserRegistrationResponse>('/users/', backendRegisterPayload);
       newBackendUserId = backendRegisterResponse.data.id;
       console.log("AuthPage: Backend registration successful. New Backend User ID:", newBackendUserId);
 
@@ -151,7 +152,7 @@ export default function AuthPage() {
 
       authContext.setInternalPendingBackendId(newBackendUserId);
       console.log("AuthPage: Set internalPendingBackendId in AuthContext for registration:", newBackendUserId);
-
+      
       // 2. Register with Firebase Auth (this will trigger onAuthStateChanged in AuthContext)
       console.log("AuthPage: Attempting Firebase user creation for:", data.email);
       const firebaseUserCredential = await createUserWithEmailAndPassword(firebaseAuth, data.email, data.password);
@@ -163,13 +164,15 @@ export default function AuthPage() {
 
     } catch (error) {
       console.error("AuthPage: Error during registration:", error);
-      authContext.setInternalPendingBackendId(null);
+      authContext.setInternalPendingBackendId(null); 
 
       let errorMessage = "An unexpected error occurred during registration.";
        if (error instanceof AxiosError && error.response) {
         errorMessage = error.response.data?.detail || error.response.data?.msg ||  "Registration failed with backend. This email might already be in use.";
          if (error.response.status === 400 && (error.response.data?.detail?.toLowerCase().includes("email already registered") || error.response.data?.msg?.toLowerCase().includes("email already registered"))) {
             registerForm.setError("email", { type: "manual", message: "This email is already registered with our system." });
+        } else if (error.response.status === 405) {
+            errorMessage = "Registration endpoint not found or method not allowed by backend. Please contact support.";
         }
       } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
         const firebaseError = error as any;
