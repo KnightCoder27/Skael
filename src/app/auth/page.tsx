@@ -68,16 +68,20 @@ export default function AuthPage() {
     loginForm.clearErrors();
     try {
       // 1. Login with custom backend
+      console.log("Attempting backend login for:", data.email);
       const backendLoginPayload: UserLoginType = { email: data.email, password: data.password };
       const backendResponse = await apiClient.post<UserLoginResponse>('/users/login', backendLoginPayload);
       const backendUserId = backendResponse.data.user_id;
+      console.log("Backend login successful. Backend User ID:", backendUserId);
 
       // 2. Login with Firebase Auth
+      console.log("Attempting Firebase sign-in for:", data.email);
       await signInWithEmailAndPassword(firebaseAuth, data.email, data.password);
+      console.log("Firebase sign-in successful for:", data.email);
       
-      // 3. Store backendUserId for AuthContext to pick up after Firebase auth state change
       if (typeof window !== 'undefined') {
          localStorage.setItem('pendingLoginBackendId', backendUserId.toString());
+         console.log("Stored pendingLoginBackendId:", backendUserId);
       }
 
       toast({ title: "Login Successful", description: "Redirecting to job listings..." });
@@ -87,7 +91,7 @@ export default function AuthPage() {
       console.error("Error during login:", error);
       let errorMessage = "An unexpected error occurred during login.";
       if (error instanceof AxiosError && error.response) {
-        errorMessage = error.response.data?.detail || error.response.data?.msg || "Login failed. Please check your credentials.";
+        errorMessage = error.response.data?.detail || error.response.data?.msg || "Login failed with backend. Please check your credentials.";
          if (error.response.status === 401) { 
           loginForm.setError("password", { type: "manual", message: "Invalid email or password (backend)." });
         }
@@ -97,7 +101,10 @@ export default function AuthPage() {
         console.error("Firebase Auth Error Message:", firebaseError.message);
         const firebaseErrorCode = firebaseError.code;
 
-        if (firebaseErrorCode === 'auth/user-not-found' || firebaseErrorCode === 'auth/wrong-password' || firebaseErrorCode === 'auth/invalid-credential') {
+        if (firebaseErrorCode === 'auth/invalid-credential') {
+          errorMessage = "Firebase: Invalid credentials. Please ensure your email and password are correct and that your account was fully created with Firebase.";
+          loginForm.setError("password", { type: "manual", message: errorMessage });
+        } else if (firebaseErrorCode === 'auth/user-not-found' || firebaseErrorCode === 'auth/wrong-password') {
           errorMessage = "Invalid email or password (Firebase).";
           loginForm.setError("password", { type: "manual", message: errorMessage });
         } else if (firebaseErrorCode === 'auth/network-request-failed') {
@@ -110,7 +117,7 @@ export default function AuthPage() {
           errorMessage = `Firebase authentication failed: ${firebaseError.message} (Code: ${firebaseError.code})`;
         }
       }
-      // Show general toast if not specific field error already set
+      
       if (!loginForm.formState.errors.password && !loginForm.formState.errors.email) { 
         toast({
             title: "Login Failed",
@@ -125,6 +132,7 @@ export default function AuthPage() {
     registerForm.clearErrors();
     try {
       // 1. Register with custom backend
+      console.log("Attempting backend registration for:", data.email);
       const backendRegisterPayload: UserIn = {
         username: data.name,
         email: data.email,
@@ -133,13 +141,18 @@ export default function AuthPage() {
       };
       const backendRegisterResponse = await apiClient.post<UserRegistrationResponse>('/users/register', backendRegisterPayload);
       const newBackendUserId = backendRegisterResponse.data.id;
+      console.log("Backend registration successful. New Backend User ID:", newBackendUserId);
 
       // 2. Register with Firebase Auth
+      console.log("Attempting Firebase user creation for:", data.email);
       const firebaseUserCredential = await createUserWithEmailAndPassword(firebaseAuth, data.email, data.password);
+      console.log("Firebase user successfully created:", firebaseUserCredential.user.uid);
       await updateProfile(firebaseUserCredential.user, { displayName: data.name });
+      console.log("Firebase profile updated with display name:", data.name);
       
        if (typeof window !== 'undefined') {
          localStorage.setItem('pendingLoginBackendId', newBackendUserId.toString());
+         console.log("Stored pendingLoginBackendId for new user:", newBackendUserId);
       }
 
       toast({ title: "Registration Successful", description: "Redirecting..." });
@@ -163,7 +176,7 @@ export default function AuthPage() {
             errorMessage = "This email is already in use with Firebase Authentication.";
             registerForm.setError("email", { type: "manual", message: errorMessage });
         } else if (firebaseErrorCode === 'auth/weak-password') {
-            errorMessage = "Firebase: Password is too weak (must be at least 6 characters).";
+            errorMessage = "Firebase: Password is too weak (must be at least 6 characters by default).";
             registerForm.setError("password", { type: "manual", message: errorMessage });
         } else if (firebaseErrorCode === 'auth/network-request-failed') {
             errorMessage = "Network error connecting to Firebase. Please check your connection or if the domain is authorized in your Firebase project.";
@@ -175,7 +188,7 @@ export default function AuthPage() {
             errorMessage = `Firebase registration failed: ${firebaseError.message} (Code: ${firebaseError.code})`;
         }
       }
-      // Show general toast if not specific field error already set
+      
       if (!registerForm.formState.errors.email && !registerForm.formState.errors.password) {
         toast({
             title: "Registration Failed",
