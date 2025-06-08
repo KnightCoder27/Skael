@@ -75,9 +75,7 @@ export default function AuthPage() {
       console.log("Backend login successful. Backend User ID:", backendUserId);
 
       // 2. Login with Firebase Auth
-      console.log("Attempting Firebase sign-in for:", data.email);
       await signInWithEmailAndPassword(firebaseAuth, data.email, data.password);
-      console.log("Firebase sign-in successful for:", data.email);
       
       if (typeof window !== 'undefined') {
          localStorage.setItem('pendingLoginBackendId', backendUserId.toString());
@@ -97,14 +95,9 @@ export default function AuthPage() {
         }
       } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
         const firebaseError = error as any;
-        console.error("Firebase Auth Error Code:", firebaseError.code);
-        console.error("Firebase Auth Error Message:", firebaseError.message);
         const firebaseErrorCode = firebaseError.code;
 
-        if (firebaseErrorCode === 'auth/invalid-credential') {
-          errorMessage = "Firebase: Invalid credentials. Please ensure your email and password are correct and that your account was fully created with Firebase.";
-          loginForm.setError("password", { type: "manual", message: errorMessage });
-        } else if (firebaseErrorCode === 'auth/user-not-found' || firebaseErrorCode === 'auth/wrong-password') {
+        if (firebaseErrorCode === 'auth/user-not-found' || firebaseErrorCode === 'auth/wrong-password' || firebaseErrorCode === 'auth/invalid-credential') {
           errorMessage = "Invalid email or password (Firebase).";
           loginForm.setError("password", { type: "manual", message: errorMessage });
         } else if (firebaseErrorCode === 'auth/network-request-failed') {
@@ -144,11 +137,8 @@ export default function AuthPage() {
       console.log("Backend registration successful. New Backend User ID:", newBackendUserId);
 
       // 2. Register with Firebase Auth
-      console.log("Attempting Firebase user creation for:", data.email);
       const firebaseUserCredential = await createUserWithEmailAndPassword(firebaseAuth, data.email, data.password);
-      console.log("Firebase user successfully created:", firebaseUserCredential.user.uid);
       await updateProfile(firebaseUserCredential.user, { displayName: data.name });
-      console.log("Firebase profile updated with display name:", data.name);
       
        if (typeof window !== 'undefined') {
          localStorage.setItem('pendingLoginBackendId', newBackendUserId.toString());
@@ -168,8 +158,6 @@ export default function AuthPage() {
         }
       } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
         const firebaseError = error as any;
-        console.error("Firebase Auth Error Code:", firebaseError.code);
-        console.error("Firebase Auth Error Message:", firebaseError.message);
         const firebaseErrorCode = firebaseError.code;
 
         if (firebaseErrorCode === 'auth/email-already-in-use') {
