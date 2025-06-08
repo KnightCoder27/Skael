@@ -14,7 +14,7 @@ from src.backend.models.models import get_db, JobListing
 # API_KEY = os.getenv("THEIRSTACK_API_KEY")
 
 # --- Configuration ---
-API_KEY = os.os.environ.get("THEIRSTACK_API_KEY")
+API_KEY = os.environ.get("THEIRSTACK_API_KEY")
 BASE_URL = "https://api.theirstack.com/v1"
 JOBS_SEARCH_ENDPOINT = f"{BASE_URL}/jobs/search"
 
