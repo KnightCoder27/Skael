@@ -10,7 +10,7 @@ from src.backend.db.activities import router as activities_router
 from fastapi.middleware.cors import CORSMiddleware
 
 
-load_dotenv()
+# load_dotenv()
 app = FastAPI()
 
 
