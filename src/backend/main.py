@@ -33,7 +33,7 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     # Initialize Firebase Admin SDK
-    cred_path = os.getenv("FIREBASE_ADMIN_CREDENTIALS")
+    cred_path = os.os.environ.get("FIREBASE_ADMIN_CREDENTIALS")
     if cred_path and os.path.exists(cred_path):
         try:
             cred = credentials.Certificate(cred_path)
