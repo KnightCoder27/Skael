@@ -10,7 +10,7 @@ import apiClient from '@/lib/apiClient';
 import { useToast } from '@/hooks/use-toast';
 
 const CURRENT_BACKEND_USER_STORAGE_KEY = 'currentBackendUser';
-const PENDING_LOGIN_BACKEND_ID_KEY = 'pendingLoginBackendId'; // Still used as a fallback
+// const PENDING_LOGIN_BACKEND_ID_KEY = 'pendingLoginBackendId'; // No longer used for setting, only for cleanup if present
 
 interface AuthContextType {
   currentUser: User | null;
@@ -19,7 +19,7 @@ interface AuthContextType {
   backendUserId: number | null;
   setBackendUser: (user: User | null) => void;
   refetchBackendUser: () => Promise<void>;
-  setInternalPendingBackendId: (id: number | null) => void; // New function
+  setInternalPendingBackendId: (id: number | null) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -29,7 +29,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [backendUserId, setBackendUserIdState] = useState<number | null>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
-  const [internalPendingBackendId, setInternalPendingBackendIdState] = useState<number | null>(null); // New state
+  const [internalPendingBackendId, setInternalPendingBackendIdState] = useState<number | null>(null);
   const { toast } = useToast();
 
   const setInternalPendingBackendId = useCallback((id: number | null) => {
@@ -75,7 +75,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
       } catch (error) {
         console.warn("AuthContext: Error reading currentBackendUser from localStorage on mount:", error);
-        window.localStorage.removeItem(CURRENT_BACKEND_USER_STORAGE_KEY);
+        if (typeof window !== 'undefined') window.localStorage.removeItem(CURRENT_BACKEND_USER_STORAGE_KEY);
       }
     }
 
@@ -90,27 +90,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (fbUser) {
         console.log("AuthContext: Firebase user is present (fbUser.uid:", fbUser.uid, ")");
 
-        // 1. Prioritize internal context state for pending ID
         if (internalPendingBackendId !== null) {
           console.log(`AuthContext: Using internalPendingBackendId: ${internalPendingBackendId} to fetch profile.`);
           idToFetch = internalPendingBackendId;
           setInternalPendingBackendId(null); // Clear after use
-        } else {
-          // 2. Fallback to localStorage for pending ID (e.g., after page refresh during auth flow)
-          const pendingIdStrFromStorage = typeof window !== 'undefined' ? localStorage.getItem(PENDING_LOGIN_BACKEND_ID_KEY) : null;
-          if (pendingIdStrFromStorage) {
-            const parsedPendingId = parseInt(pendingIdStrFromStorage, 10);
-            if (!isNaN(parsedPendingId)) {
-              console.log(`AuthContext: Found pendingLoginBackendId in localStorage: ${parsedPendingId}. Using it to fetch profile.`);
-              idToFetch = parsedPendingId;
-            } else {
-              console.error("AuthContext: Invalid pendingLoginBackendId found in localStorage (NaN).");
+        } 
+        // Fallback to localStorage for PENDING_LOGIN_BACKEND_ID_KEY if it exists (e.g. page refresh during auth flow)
+        // This is less critical now with internal state but can be a safety net.
+        else if (typeof window !== 'undefined') {
+            const pendingIdStrFromStorage = localStorage.getItem('pendingLoginBackendId'); // Keep key name consistent if needed
+            if (pendingIdStrFromStorage) {
+                const parsedPendingId = parseInt(pendingIdStrFromStorage, 10);
+                if (!isNaN(parsedPendingId)) {
+                    console.log(`AuthContext: Found pendingLoginBackendId in localStorage: ${parsedPendingId}. Using it to fetch profile.`);
+                    idToFetch = parsedPendingId;
+                } else {
+                    console.error("AuthContext: Invalid pendingLoginBackendId found in localStorage (NaN).");
+                }
+                localStorage.removeItem('pendingLoginBackendId'); // Clean up after reading
+                console.log("AuthContext: Removed pendingLoginBackendId from localStorage after reading.");
             }
-            // Always remove from localStorage after reading, regardless of validity
-            if (typeof window !== 'undefined') localStorage.removeItem(PENDING_LOGIN_BACKEND_ID_KEY);
-            console.log("AuthContext: Removed pendingLoginBackendId from localStorage.");
-          }
         }
+
 
         if (idToFetch !== null) {
           await fetchBackendUserProfile(idToFetch, fbUser);
@@ -130,18 +131,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setInternalPendingBackendId(null); // Clear internal pending ID on logout
         if (typeof window !== 'undefined') {
           window.localStorage.removeItem(CURRENT_BACKEND_USER_STORAGE_KEY);
-          localStorage.removeItem(PENDING_LOGIN_BACKEND_ID_KEY); // Ensure this is also cleared
+          window.localStorage.removeItem('pendingLoginBackendId'); // Ensure this is also cleared on logout
         }
       }
       setIsLoadingAuth(false);
-      console.log("AuthContext: setIsLoadingAuth(false). Final state:", { currentUserId: currentUser?.id, fbUserId: fbUser?.uid, isLoadingAuth: false, internalPendingBackendId, backendUserIdFromState: backendUserId });
+      console.log("AuthContext: setIsLoadingAuth(false). Final state:", { currentUserId: currentUser?.id, fbUserId: fbUser?.uid, isLoadingAuth: false, internalPendingBackendIdState: internalPendingBackendId, backendUserIdFromState: backendUserId });
     });
 
     return () => {
       console.log("AuthContext: Unsubscribing from onAuthStateChanged.");
       unsubscribe();
     };
-  }, [fetchBackendUserProfile, internalPendingBackendId, backendUserId, currentUser]); // Added internalPendingBackendId and other relevant states
+  }, [fetchBackendUserProfile, internalPendingBackendId, backendUserId, currentUser, setInternalPendingBackendId]);
 
   const setBackendUserContext = (user: User | null) => {
     console.log("AuthContext: setBackendUserContext (manual override) called with:", user);
@@ -164,6 +165,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setIsLoadingAuth(false);
     } else {
       console.warn("AuthContext: refetchBackendUser called but backendUserId is null or no Firebase user is authenticated. BackendUserId:", backendUserId, "Firebase User:", currentFbUser);
+      // If no backendUserId, but there's a Firebase user, maybe we should try to find a pendingId or clear state?
+      // For now, just setting isLoadingAuth to false if no action can be taken.
+      if (!backendUserId && currentFbUser) {
+          // If there's a firebase user but no backendUserId, implies a fresh session or incomplete previous login.
+          // The onAuthStateChanged listener should handle this logic.
+          console.log("AuthContext: refetchBackendUser - Firebase user exists, but no backendUserId. onAuthStateChanged should handle profile loading if needed.");
+      }
       setIsLoadingAuth(false);
     }
   };
@@ -182,3 +190,4 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
+
