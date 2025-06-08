@@ -47,7 +47,7 @@ type RegisterFormValues = z.infer<typeof registerSchema>;
 export default function AuthPage() {
   const { toast } = useToast();
   const router = useRouter();
-  const { setBackendUser } = useAuth(); // Removed refetchBackendUser, AuthContext handles it
+  const { setBackendUser } = useAuth();
   const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
 
   const [showLoginPassword, setShowLoginPassword] = useState(false);
@@ -79,7 +79,6 @@ export default function AuthPage() {
       if (typeof window !== 'undefined') {
          localStorage.setItem('pendingLoginBackendId', backendUserId.toString());
       }
-      // AuthContext's onAuthStateChanged will handle fetching the profile
 
       toast({ title: "Login Successful", description: "Redirecting to job listings..." });
       router.push('/jobs');
@@ -89,19 +88,30 @@ export default function AuthPage() {
       let errorMessage = "An unexpected error occurred during login.";
       if (error instanceof AxiosError && error.response) {
         errorMessage = error.response.data?.detail || error.response.data?.msg || "Login failed. Please check your credentials.";
-         if (error.response.status === 401) { // Unauthorized
-          loginForm.setError("password", { type: "manual", message: "Invalid email or password." });
+         if (error.response.status === 401) { 
+          loginForm.setError("password", { type: "manual", message: "Invalid email or password (backend)." });
         }
       } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
-        const firebaseErrorCode = (error as any).code;
+        const firebaseError = error as any;
+        console.error("Firebase Auth Error Code:", firebaseError.code);
+        console.error("Firebase Auth Error Message:", firebaseError.message);
+        const firebaseErrorCode = firebaseError.code;
+
         if (firebaseErrorCode === 'auth/user-not-found' || firebaseErrorCode === 'auth/wrong-password' || firebaseErrorCode === 'auth/invalid-credential') {
-          errorMessage = "Invalid email or password.";
+          errorMessage = "Invalid email or password (Firebase).";
           loginForm.setError("password", { type: "manual", message: errorMessage });
+        } else if (firebaseErrorCode === 'auth/network-request-failed') {
+          errorMessage = "Network error connecting to Firebase. Please check your connection or if the domain is authorized in your Firebase project.";
+        } else if (firebaseErrorCode === 'auth/operation-not-allowed') {
+          errorMessage = "Firebase operation not allowed. This often means the current domain is not authorized in your Firebase project settings (Authentication -> Settings -> Authorized domains).";
+        }  else if (firebaseErrorCode === 'auth/invalid-api-key') {
+          errorMessage = "Invalid Firebase API Key. Please check your Firebase project configuration.";
         } else {
-          errorMessage = "Firebase authentication failed. Please try again.";
+          errorMessage = `Firebase authentication failed: ${firebaseError.message} (Code: ${firebaseError.code})`;
         }
       }
-      if (!loginForm.formState.errors.password) { // Show general toast if not specific field error
+      // Show general toast if not specific field error already set
+      if (!loginForm.formState.errors.password && !loginForm.formState.errors.email) { 
         toast({
             title: "Login Failed",
             description: errorMessage,
@@ -118,21 +128,19 @@ export default function AuthPage() {
       const backendRegisterPayload: UserIn = {
         username: data.name,
         email: data.email,
-        number: "", // Not collected in form, send empty or make optional in backend
+        number: "", 
         password: data.password,
       };
-      const backendRegisterResponse = await apiClient.post<UserRegistrationResponse>('/users/', backendRegisterPayload);
+      const backendRegisterResponse = await apiClient.post<UserRegistrationResponse>('/users/register', backendRegisterPayload);
       const newBackendUserId = backendRegisterResponse.data.id;
 
       // 2. Register with Firebase Auth
       const firebaseUserCredential = await createUserWithEmailAndPassword(firebaseAuth, data.email, data.password);
       await updateProfile(firebaseUserCredential.user, { displayName: data.name });
       
-      // 3. Store backendUserId for AuthContext to pick up
        if (typeof window !== 'undefined') {
          localStorage.setItem('pendingLoginBackendId', newBackendUserId.toString());
       }
-      // AuthContext's onAuthStateChanged will handle fetching the profile
 
       toast({ title: "Registration Successful", description: "Redirecting..." });
       router.push('/jobs'); 
@@ -141,22 +149,33 @@ export default function AuthPage() {
       console.error("Error during registration:", error);
       let errorMessage = "An unexpected error occurred during registration.";
        if (error instanceof AxiosError && error.response) {
-        errorMessage = error.response.data?.detail || error.response.data?.msg ||  "Registration failed. This email might already be in use with our system.";
-         if (error.response.status === 400 && errorMessage.toLowerCase().includes("email already registered")) {
+        errorMessage = error.response.data?.detail || error.response.data?.msg ||  "Registration failed with backend. This email might already be in use.";
+         if (error.response.status === 400 && (error.response.data?.detail?.toLowerCase().includes("email already registered") || error.response.data?.msg?.toLowerCase().includes("email already registered"))) {
             registerForm.setError("email", { type: "manual", message: "This email is already registered with our system." });
         }
       } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
-        const firebaseErrorCode = (error as any).code;
+        const firebaseError = error as any;
+        console.error("Firebase Auth Error Code:", firebaseError.code);
+        console.error("Firebase Auth Error Message:", firebaseError.message);
+        const firebaseErrorCode = firebaseError.code;
+
         if (firebaseErrorCode === 'auth/email-already-in-use') {
             errorMessage = "This email is already in use with Firebase Authentication.";
             registerForm.setError("email", { type: "manual", message: errorMessage });
         } else if (firebaseErrorCode === 'auth/weak-password') {
-            errorMessage = "Password is too weak.";
+            errorMessage = "Firebase: Password is too weak (must be at least 6 characters).";
             registerForm.setError("password", { type: "manual", message: errorMessage });
+        } else if (firebaseErrorCode === 'auth/network-request-failed') {
+            errorMessage = "Network error connecting to Firebase. Please check your connection or if the domain is authorized in your Firebase project.";
+        } else if (firebaseErrorCode === 'auth/operation-not-allowed') {
+            errorMessage = "Firebase operation not allowed. This often means the current domain is not authorized in your Firebase project settings (Authentication -> Settings -> Authorized domains).";
+        } else if (firebaseErrorCode === 'auth/invalid-api-key') {
+            errorMessage = "Invalid Firebase API Key. Please check your Firebase project configuration.";
         } else {
-            errorMessage = "Firebase registration failed. Please try again.";
+            errorMessage = `Firebase registration failed: ${firebaseError.message} (Code: ${firebaseError.code})`;
         }
       }
+      // Show general toast if not specific field error already set
       if (!registerForm.formState.errors.email && !registerForm.formState.errors.password) {
         toast({
             title: "Registration Failed",
@@ -252,8 +271,8 @@ export default function AuthPage() {
                         const trigger = document.querySelector('button[role="tab"][data-value="register"]') as HTMLButtonElement | null;
                         trigger?.click();
                         setActiveTab('register');
-                        loginForm.reset(); // Clear login form errors and values
-                        registerForm.reset(); // Clear register form errors and values
+                        loginForm.reset(); 
+                        registerForm.reset(); 
                       }}
                     >
                         Register here
@@ -370,8 +389,8 @@ export default function AuthPage() {
                         const trigger = document.querySelector('button[role="tab"][data-value="login"]') as HTMLButtonElement | null;
                         trigger?.click();
                         setActiveTab('login');
-                        registerForm.reset(); // Clear register form errors and values
-                        loginForm.reset(); // Clear login form errors and values
+                        registerForm.reset(); 
+                        loginForm.reset(); 
                      }}>
                         Login here
                     </Button>
@@ -384,5 +403,3 @@ export default function AuthPage() {
     </div>
   );
 }
-
-    

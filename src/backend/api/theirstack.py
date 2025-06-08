@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from src.backend.models.models import get_db, JobListing
 
 
-load_dotenv(dotenv_path=".env")
+load_dotenv(dotenv_path=".env") 
 
 API_KEY = os.getenv("THEIRSTACK_API_KEY")
 
