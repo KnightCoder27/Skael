@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { LogIn, UserPlus, Eye, EyeOff, Compass } from 'lucide-react';
 import type { UserIn, UserLogin as UserLoginType, UserLoginResponse, UserRegistrationResponse } from '@/types';
-// import { useAuth } from '@/contexts/AuthContext'; // No longer directly setting backendUser from here
+import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
 import apiClient from '@/lib/apiClient';
 import { auth as firebaseAuth } from '@/lib/firebase';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile }from 'firebase/auth';
@@ -47,7 +47,7 @@ type RegisterFormValues = z.infer<typeof registerSchema>;
 export default function AuthPage() {
   const { toast } = useToast();
   const router = useRouter();
-  // const { setBackendUser } = useAuth(); // AuthContext will handle fetching based on Firebase state and pendingLoginBackendId
+  const { setInternalPendingBackendId } = useAuth(); // Get the new setter from AuthContext
   const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
 
   const [showLoginPassword, setShowLoginPassword] = useState(false);
@@ -75,13 +75,19 @@ export default function AuthPage() {
       backendUserId = backendResponse.data.user_id;
       console.log("AuthPage: Backend login successful. Backend User ID:", backendUserId);
 
-      // IMPORTANT: Store backendUserId for AuthContext to pick up *before* Firebase auth triggers onAuthStateChanged
-      if (typeof window !== 'undefined' && backendUserId) {
-         localStorage.setItem('pendingLoginBackendId', backendUserId.toString());
-         console.log("AuthPage: Stored pendingLoginBackendId for login:", backendUserId);
-      } else if (!backendUserId) {
+      if (!backendUserId) {
         throw new Error("Backend login did not return a user ID.");
       }
+
+      // Set internal pending ID in AuthContext BEFORE Firebase auth call
+      setInternalPendingBackendId(backendUserId);
+      console.log("AuthPage: Set internalPendingBackendId in AuthContext:", backendUserId);
+      // Also set in localStorage as a fallback (e.g. if AuthContext isn't fully ready or for refresh scenarios)
+      if (typeof window !== 'undefined') {
+         localStorage.setItem('pendingLoginBackendId', backendUserId.toString());
+         console.log("AuthPage: Stored pendingLoginBackendId in localStorage as fallback:", backendUserId);
+      }
+
 
       // 2. Login with Firebase Auth (this will trigger onAuthStateChanged in AuthContext)
       console.log("AuthPage: Attempting Firebase login for:", data.email);
@@ -93,7 +99,7 @@ export default function AuthPage() {
 
     } catch (error) {
       console.error("AuthPage: Error during login:", error);
-      // Clear pending ID if Firebase step fails
+      setInternalPendingBackendId(null); // Clear pending ID on error
       if (typeof window !== 'undefined') localStorage.removeItem('pendingLoginBackendId');
       
       let errorMessage = "An unexpected error occurred during login.";
@@ -105,8 +111,9 @@ export default function AuthPage() {
       } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
         const firebaseError = error as any;
         const firebaseErrorCode = firebaseError.code;
+        console.error("AuthPage: Firebase login error code:", firebaseErrorCode, "message:", firebaseError.message);
 
-        if (firebaseErrorCode === 'auth/user-not-found' || firebaseErrorCode === 'auth/wrong-password' || firebaseErrorCode === 'auth/invalid-credential') {
+        if (firebaseErrorCode === 'auth/invalid-credential' || firebaseErrorCode === 'auth/user-not-found' || firebaseErrorCode === 'auth/wrong-password') {
           errorMessage = "Firebase: Invalid credentials. Please ensure your email and password are correct and that your account was fully created with Firebase.";
           loginForm.setError("password", { type: "manual", message: errorMessage });
         } else if (firebaseErrorCode === 'auth/network-request-failed') {
@@ -118,7 +125,6 @@ export default function AuthPage() {
         } else {
           errorMessage = `Firebase authentication failed: ${firebaseError.message} (Code: ${firebaseError.code})`;
         }
-        console.error("AuthPage: Firebase login error:", firebaseErrorCode, firebaseError.message);
       }
       
       if (!loginForm.formState.errors.password && !loginForm.formState.errors.email) { 
@@ -140,33 +146,38 @@ export default function AuthPage() {
       const backendRegisterPayload: UserIn = {
         username: data.name,
         email: data.email,
-        number: "", // TODO: Collect phone number if needed by backend
+        number: "", 
         password: data.password,
       };
-      const backendRegisterResponse = await apiClient.post<UserRegistrationResponse>('/users/', backendRegisterPayload); // Corrected endpoint from /users/register
+      const backendRegisterResponse = await apiClient.post<UserRegistrationResponse>('/users/', backendRegisterPayload); 
       newBackendUserId = backendRegisterResponse.data.id;
       console.log("AuthPage: Backend registration successful. New Backend User ID:", newBackendUserId);
 
-      // IMPORTANT: Store backendUserId for AuthContext to pick up *before* Firebase auth triggers onAuthStateChanged
-      if (typeof window !== 'undefined' && newBackendUserId) {
-         localStorage.setItem('pendingLoginBackendId', newBackendUserId.toString());
-         console.log("AuthPage: Stored pendingLoginBackendId for registration:", newBackendUserId);
-      } else if (!newBackendUserId) {
+      if (!newBackendUserId) {
           throw new Error("Backend registration did not return a user ID.");
+      }
+
+      // Set internal pending ID in AuthContext BEFORE Firebase auth call
+      setInternalPendingBackendId(newBackendUserId);
+      console.log("AuthPage: Set internalPendingBackendId in AuthContext for registration:", newBackendUserId);
+      // Also set in localStorage as a fallback
+      if (typeof window !== 'undefined') {
+         localStorage.setItem('pendingLoginBackendId', newBackendUserId.toString());
+         console.log("AuthPage: Stored pendingLoginBackendId in localStorage as fallback for registration:", newBackendUserId);
       }
 
       // 2. Register with Firebase Auth (this will trigger onAuthStateChanged in AuthContext)
       console.log("AuthPage: Attempting Firebase user creation for:", data.email);
       const firebaseUserCredential = await createUserWithEmailAndPassword(firebaseAuth, data.email, data.password);
       await updateProfile(firebaseUserCredential.user, { displayName: data.name });
-      console.log("AuthPage: Firebase user creation and profile update successful for:", data.email);
+      console.log("AuthPage: Firebase user creation and profile update successful for:", data.email, "Firebase UID:", firebaseUserCredential.user.uid);
       
       toast({ title: "Registration Successful", description: "Redirecting..." });
       router.push('/jobs'); 
 
     } catch (error) {
       console.error("AuthPage: Error during registration:", error);
-      // Clear pending ID if Firebase step fails
+      setInternalPendingBackendId(null); // Clear pending ID on error
       if (typeof window !== 'undefined') localStorage.removeItem('pendingLoginBackendId');
 
       let errorMessage = "An unexpected error occurred during registration.";
@@ -178,6 +189,7 @@ export default function AuthPage() {
       } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
         const firebaseError = error as any;
         const firebaseErrorCode = firebaseError.code;
+        console.error("AuthPage: Firebase registration error code:", firebaseErrorCode, "message:", firebaseError.message);
 
         if (firebaseErrorCode === 'auth/email-already-in-use') {
             errorMessage = "This email is already in use with Firebase Authentication.";
@@ -194,7 +206,6 @@ export default function AuthPage() {
         } else {
             errorMessage = `Firebase registration failed: ${firebaseError.message} (Code: ${firebaseError.code})`;
         }
-        console.error("AuthPage: Firebase registration error:", firebaseErrorCode, firebaseError.message);
       }
       
       if (!registerForm.formState.errors.email && !registerForm.formState.errors.password) {
