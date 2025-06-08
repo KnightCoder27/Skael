@@ -35,7 +35,7 @@ interface JobAnalysisCache {
 
 export default function JobExplorerPage() {
   const [jobs, setJobs] = useState<JobListing[]>([]);
-  const [isLoadingJobs, setIsLoadingJobs] = useState(true);
+  const [isLoadingJobsState, setIsLoadingJobsState] = useState(true); // Renamed to avoid conflict if AuthContext had 'isLoadingJobs'
   const { currentUser, isLoadingAuth } = useAuth(); 
   const router = useRouter();
 
@@ -59,40 +59,36 @@ export default function JobExplorerPage() {
   const [extractedJobPoints, setExtractedJobPoints] = useState<ExtractJobDescriptionPointsOutput | null>(null);
   const [jobForExtractedPoints, setJobForExtractedPoints] = useState<JobListing | null>(null);
 
-  const [hasAuthInitiallyLoaded, setHasAuthInitiallyLoaded] = useState(false);
-
-
   const { toast } = useToast();
 
   useEffect(() => {
-    // If authentication is still loading, don't do anything yet.
-    if (isLoadingAuth) {
-      return;
+    console.log("JobExplorerPage: Auth state check. isLoadingAuth:", isLoadingAuth, "currentUser:", currentUser);
+    if (!isLoadingAuth) { // AuthContext has finished its initial loading/resolution
+      if (!currentUser) { // AuthContext determined no user is logged in (or profile fetch failed)
+        toast({ title: "Access Denied", description: "Please log in to explore jobs.", variant: "destructive" });
+        router.push('/auth');
+      } else {
+        // User is authenticated, proceed to load jobs if not already loaded
+        setIsLoadingJobsState(true); // Assume we might need to load/filter jobs
+        const augmentedJobs = sampleJobs.map(job => {
+          const cachedData = jobAnalysisCache[job.id];
+          if (cachedData) {
+            return { ...job, ...cachedData };
+          }
+          return { ...job, matchScore: undefined, matchExplanation: undefined };
+        });
+        setJobs(augmentedJobs);
+        setIsLoadingJobsState(false);
+      }
     }
+  }, [isLoadingAuth, currentUser, router, toast, jobAnalysisCache]); // jobAnalysisCache added to re-augment if it changes
 
-    // At this point, isLoadingAuth is false.
-    // If this is the first time isLoadingAuth became false, mark it.
-    if (!hasAuthInitiallyLoaded) {
-      setHasAuthInitiallyLoaded(true);
-      // On this very first pass after isLoadingAuth is false,
-      // currentUser might still be in the process of being set by AuthContext.
-      // So, we don't redirect yet. The effect will run again if currentUser changes or hasAuthInitiallyLoaded changes.
-      return;
-    }
-
-    // If auth has initially loaded (isLoadingAuth was false at least once and hasAuthInitiallyLoaded is true)
-    // AND there's still no currentUser, then it's an access denied situation.
-    if (hasAuthInitiallyLoaded && !currentUser) {
-      toast({ title: "Access Denied", description: "Please log in to explore jobs.", variant: "destructive" });
-      router.push('/auth');
-    }
-  }, [isLoadingAuth, currentUser, router, toast, hasAuthInitiallyLoaded]);
 
   const addLocalActivity = useCallback((activityData: Omit<LocalUserActivity, 'id' | 'timestamp'>) => {
     const newActivity: LocalUserActivity = {
       id: Date.now().toString() + Math.random().toString(36).substring(2), // Simple unique ID
       timestamp: new Date().toISOString(),
-      userId: currentUser?.id, // Optionally associate with current user
+      userId: currentUser?.id, 
       ...activityData,
     };
     setLocalUserActivities(prevActivities => [newActivity, ...prevActivities]);
@@ -118,7 +114,7 @@ export default function JobExplorerPage() {
       return;
     }
     
-    if (!currentUser || !currentUser.professional_summary || !currentUser.skills) {
+    if (!currentUser || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0) {
       toast({ title: "Profile Incomplete", description: "AI analysis requires your professional summary and skills in your profile.", variant: "destructive" });
       return; 
     }
@@ -144,7 +140,6 @@ export default function JobExplorerPage() {
         [job.id]: explanationResult,
       }));
 
-      // Log activity locally
       addLocalActivity({
         type: "MATCH_ANALYSIS_VIEWED",
         jobId: job.id,
@@ -160,27 +155,6 @@ export default function JobExplorerPage() {
       setIsLoadingExplanation(false);
     }
   }, [currentUser, toast, jobAnalysisCache, setJobAnalysisCache, addLocalActivity]);
-
-  useEffect(() => {
-    const loadJobs = () => {
-      setIsLoadingJobs(true);
-      const augmentedJobs = sampleJobs.map(job => {
-        const cachedData = jobAnalysisCache[job.id];
-        if (cachedData) {
-          return { ...job, ...cachedData };
-        }
-        return { ...job, matchScore: undefined, matchExplanation: undefined };
-      });
-      setJobs(augmentedJobs);
-      setIsLoadingJobs(false);
-    };
-    // Only load jobs if auth is not loading AND a user is present (or initial auth load attempt passed)
-    if (!isLoadingAuth && (currentUser || hasAuthInitiallyLoaded)) { 
-        loadJobs();
-    } else if (!isLoadingAuth && !currentUser && hasAuthInitiallyLoaded) { // User explicitly not logged in after initial check
-        setIsLoadingJobs(false); // Don't load jobs, user will be redirected by other effect
-    }
-  }, [jobAnalysisCache, isLoadingAuth, currentUser, hasAuthInitiallyLoaded]); 
 
 
   const handleViewDetails = (job: JobListing) => {
@@ -212,7 +186,6 @@ export default function JobExplorerPage() {
       toast({ title: "Job Saved!", description: toastMessage });
     }
 
-    // Log activity locally
     addLocalActivity({
         type: activityType,
         jobId: job.id,
@@ -251,7 +224,7 @@ export default function JobExplorerPage() {
   };
 
   const handleTriggerAIResumeGeneration = async (jobToGenerateFor: JobListing) => {
-    if (!currentUser || !currentUser.professional_summary || !currentUser.skills) {
+    if (!currentUser || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0) {
       toast({ title: "Profile Incomplete", description: "Please complete your profile (summary, skills) to generate materials.", variant: "destructive" });
       return;
     }
@@ -273,7 +246,6 @@ export default function JobExplorerPage() {
       const resumeResult = await generateResume(resumeInput);
       if (resumeResult) {
         setGeneratedResume(resumeResult.resume);
-        // Log activity locally
         addLocalActivity({
             type: "RESUME_GENERATED_FOR_JOB",
             jobId: jobToGenerateFor.id,
@@ -291,7 +263,7 @@ export default function JobExplorerPage() {
   };
 
   const handleTriggerAICoverLetterGeneration = async (jobToGenerateFor: JobListing) => {
-    if (!currentUser || !currentUser.professional_summary || !currentUser.skills) {
+    if (!currentUser || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0) {
       toast({ title: "Profile Incomplete", description: "Please complete your profile (summary, skills) to generate materials.", variant: "destructive" });
       return;
     }
@@ -313,7 +285,6 @@ export default function JobExplorerPage() {
       const coverLetterResult = await generateCoverLetter(coverLetterInput);
       if (coverLetterResult) {
         setGeneratedCoverLetter(coverLetterResult.coverLetter);
-         // Log activity locally
         addLocalActivity({
             type: "COVER_LETTER_GENERATED_FOR_JOB",
             jobId: jobToGenerateFor.id,
@@ -330,15 +301,16 @@ export default function JobExplorerPage() {
     }
   };
 
-  const isProfileIncompleteForAIFeatures = !currentUser || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0;
+  const isProfileIncompleteForAIFeatures = currentUser && (!currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0);
 
-  if (isLoadingAuth || (!hasAuthInitiallyLoaded && isLoadingJobs)) {
-    return <FullPageLoading message={isLoadingAuth ? "Authenticating..." : "Finding best jobs for you..."} />;
+  if (isLoadingAuth || (!currentUser && !isLoadingAuth) ) { // If still loading auth, or auth finished but no user (will be redirected)
+    return <FullPageLoading message={isLoadingAuth ? "Authenticating..." : "Redirecting..."} />;
   }
   
-  // This will be caught by the useEffect for redirection if !currentUser after initial load
-  if (!currentUser && hasAuthInitiallyLoaded) { 
-    return <FullPageLoading message="Redirecting to login..." />;
+  // At this point, !isLoadingAuth and currentUser is available.
+  // If isLoadingJobsState is true, it means we are fetching/processing jobs after auth is confirmed.
+  if (isLoadingJobsState && currentUser) {
+    return <FullPageLoading message="Finding best jobs for you..." />;
   }
 
 
@@ -354,7 +326,7 @@ export default function JobExplorerPage() {
         </p>
       </header>
 
-      {isProfileIncompleteForAIFeatures && currentUser && ( // Only show if currentUser exists but profile is incomplete
+      {isProfileIncompleteForAIFeatures && (
         <Alert variant="default" className="bg-primary/10 border-primary/30">
           <Info className="h-5 w-5 text-primary" />
           <AlertTitle className="font-semibold text-primary">Complete Your Profile for Full AI Features!</AlertTitle>
@@ -367,7 +339,7 @@ export default function JobExplorerPage() {
         </Alert>
       )}
 
-      {jobs.length === 0 && hasAuthInitiallyLoaded && currentUser ? ( // Show only if auth loaded, user exists, but no jobs
+      {jobs.length === 0 && !isLoadingJobsState && currentUser ? ( 
         <div className="text-center py-12">
           <FileWarning className="mx-auto h-12 w-12 text-muted-foreground" />
           <h3 className="mt-2 text-xl font-semibold">No Jobs Found</h3>
