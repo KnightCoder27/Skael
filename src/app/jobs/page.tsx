@@ -4,8 +4,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { JobListing, User, TrackedApplication, LocalUserActivity, ActivityType } from '@/types';
 import { sampleJobs } from '@/lib/sample-data';
-import useLocalStorage from '@/hooks/use-local-storage'; 
-import { useAuth } from '@/contexts/AuthContext'; 
+import useLocalStorage from '@/hooks/use-local-storage';
+import { useAuth } from '@/contexts/AuthContext';
 import { JobCard } from '@/components/app/job-card';
 import { JobDetailsModal } from '@/components/app/job-details-modal';
 import { ApplicationMaterialsModal } from '@/components/app/application-materials-modal';
@@ -35,8 +35,8 @@ interface JobAnalysisCache {
 
 export default function JobExplorerPage() {
   const [jobs, setJobs] = useState<JobListing[]>([]);
-  const [isLoadingJobsState, setIsLoadingJobsState] = useState(true); // Renamed to avoid conflict if AuthContext had 'isLoadingJobs'
-  const { currentUser, isLoadingAuth } = useAuth(); 
+  const [isLoadingJobsState, setIsLoadingJobsState] = useState(true);
+  const { currentUser, isLoadingAuth } = useAuth();
   const router = useRouter();
 
   const [trackedApplications, setTrackedApplications] = useLocalStorage<TrackedApplication[]>('tracked-applications', []);
@@ -50,26 +50,28 @@ export default function JobExplorerPage() {
 
   const [selectedJobForMaterials, setSelectedJobForMaterials] = useState<JobListing | null>(null);
   const [isMaterialsModalOpen, setIsMaterialsModalOpen] = useState(false);
-  
+
   const [isLoadingResume, setIsLoadingResume] = useState(false);
   const [isLoadingCoverLetter, setIsLoadingCoverLetter] = useState(false);
   const [generatedResume, setGeneratedResume] = useState<string | null>(null);
   const [generatedCoverLetter, setGeneratedCoverLetter] = useState<string | null>(null);
-  
+
   const [extractedJobPoints, setExtractedJobPoints] = useState<ExtractJobDescriptionPointsOutput | null>(null);
   const [jobForExtractedPoints, setJobForExtractedPoints] = useState<JobListing | null>(null);
 
   const { toast } = useToast();
 
   useEffect(() => {
-    console.log("JobExplorerPage: Auth state check. isLoadingAuth:", isLoadingAuth, "currentUser:", currentUser);
-    if (!isLoadingAuth) { // AuthContext has finished its initial loading/resolution
-      if (!currentUser) { // AuthContext determined no user is logged in (or profile fetch failed)
+    console.log(`JobExplorerPage Effect: isLoadingAuth=${isLoadingAuth}, currentUser.id=${currentUser?.id}`);
+    if (!isLoadingAuth) {
+      if (!currentUser) {
+        console.log("JobExplorerPage: Access Denied. isLoadingAuth is false, currentUser is null. Redirecting to /auth.");
         toast({ title: "Access Denied", description: "Please log in to explore jobs.", variant: "destructive" });
         router.push('/auth');
       } else {
-        // User is authenticated, proceed to load jobs if not already loaded
-        setIsLoadingJobsState(true); // Assume we might need to load/filter jobs
+        // User is authenticated, proceed to load jobs
+        console.log(`JobExplorerPage: Access Granted. isLoadingAuth is false, currentUser.id=${currentUser.id}. Loading jobs.`);
+        setIsLoadingJobsState(true); 
         const augmentedJobs = sampleJobs.map(job => {
           const cachedData = jobAnalysisCache[job.id];
           if (cachedData) {
@@ -79,16 +81,19 @@ export default function JobExplorerPage() {
         });
         setJobs(augmentedJobs);
         setIsLoadingJobsState(false);
+        console.log("JobExplorerPage: Jobs processed.");
       }
+    } else {
+        console.log("JobExplorerPage: Still loading auth (isLoadingAuth is true).");
     }
-  }, [isLoadingAuth, currentUser, router, toast, jobAnalysisCache]); // jobAnalysisCache added to re-augment if it changes
+  }, [isLoadingAuth, currentUser, router, toast, jobAnalysisCache]);
 
 
   const addLocalActivity = useCallback((activityData: Omit<LocalUserActivity, 'id' | 'timestamp'>) => {
     const newActivity: LocalUserActivity = {
-      id: Date.now().toString() + Math.random().toString(36).substring(2), // Simple unique ID
+      id: Date.now().toString() + Math.random().toString(36).substring(2), 
       timestamp: new Date().toISOString(),
-      userId: currentUser?.id, 
+      userId: currentUser?.id,
       ...activityData,
     };
     setLocalUserActivities(prevActivities => [newActivity, ...prevActivities]);
@@ -113,10 +118,10 @@ export default function JobExplorerPage() {
       setSelectedJobForDetails(prevJob => prevJob ? { ...prevJob, ...cachedAnalysis } : null);
       return;
     }
-    
+
     if (!currentUser || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0) {
       toast({ title: "Profile Incomplete", description: "AI analysis requires your professional summary and skills in your profile.", variant: "destructive" });
-      return; 
+      return;
     }
 
     setIsLoadingExplanation(true);
@@ -125,10 +130,10 @@ export default function JobExplorerPage() {
         jobDescription: job.description,
         userProfile: currentUser.professional_summary || '',
         userPreferences: currentUser.job_role || '',
-        userHistory: '', 
+        userHistory: '',
       };
       const explanationResult = await jobMatchExplanation(input);
-      
+
       setJobs(prevJobs =>
         prevJobs.map(j =>
           j.id === job.id ? { ...j, ...explanationResult } : j
@@ -171,11 +176,11 @@ export default function JobExplorerPage() {
       setTrackedApplications(prev => prev.filter(app => app.jobId !== job.id));
       toastMessage = `${job.job_title} removed from your tracker.`;
       activityType = "JOB_UNSAVED";
-      statusToLog = undefined; 
+      statusToLog = undefined;
       toast({ title: "Job Unsaved", description: toastMessage });
     } else {
       const newApplication: TrackedApplication = {
-        id: job.id.toString() + Date.now().toString(), 
+        id: job.id.toString() + Date.now().toString(),
         jobId: job.id,
         jobTitle: job.job_title,
         company: job.company,
@@ -240,7 +245,7 @@ export default function JobExplorerPage() {
 
       const resumeInput: GenerateDocumentInput = {
         jobDescription: jobToGenerateFor.description,
-        userProfile: currentUser.professional_summary || '', 
+        userProfile: currentUser.professional_summary || '',
         pointsToMention: [...(points.keyRequirements || []), ...(points.keySkills || [])],
       };
       const resumeResult = await generateResume(resumeInput);
@@ -303,12 +308,15 @@ export default function JobExplorerPage() {
 
   const isProfileIncompleteForAIFeatures = currentUser && (!currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0);
 
-  if (isLoadingAuth || (!currentUser && !isLoadingAuth) ) { // If still loading auth, or auth finished but no user (will be redirected)
-    return <FullPageLoading message={isLoadingAuth ? "Authenticating..." : "Redirecting..."} />;
+
+  if (isLoadingAuth) {
+    return <FullPageLoading message="Authenticating & loading jobs..." />;
   }
-  
-  // At this point, !isLoadingAuth and currentUser is available.
-  // If isLoadingJobsState is true, it means we are fetching/processing jobs after auth is confirmed.
+
+  if (!currentUser) {
+    return <FullPageLoading message="Verifying session..." />;
+  }
+
   if (isLoadingJobsState && currentUser) {
     return <FullPageLoading message="Finding best jobs for you..." />;
   }
@@ -339,7 +347,7 @@ export default function JobExplorerPage() {
         </Alert>
       )}
 
-      {jobs.length === 0 && !isLoadingJobsState && currentUser ? ( 
+      {jobs.length === 0 && !isLoadingJobsState ? (
         <div className="text-center py-12">
           <FileWarning className="mx-auto h-12 w-12 text-muted-foreground" />
           <h3 className="mt-2 text-xl font-semibold">No Jobs Found</h3>
@@ -383,3 +391,5 @@ export default function JobExplorerPage() {
   );
 }
 
+
+    
