@@ -6,12 +6,18 @@ import datetime
 import enum
 import os
 import uuid
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # import contextlib
 
 # --- Database Setup ---
 # Replace with your PostgreSQL connection string
 DATABASE_URL = os.getenv("DATABASE_URL")
-engine = create_engine(DATABASE_URL)
+
+
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 
 Base = declarative_base()
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -277,7 +283,7 @@ def create_all_tables():
 if __name__ == "__main__":
     # Example of creating tables
     # Call this function once to set up your database schema
-    create_all_tables()
+    # create_all_tables()
 
     # Example of opening a session (for FastAPI dependency injection)
     # def get_db():
