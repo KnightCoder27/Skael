@@ -46,3 +46,9 @@ next-env.d.ts
 firebase-debug.log
 firestore-debug.log
 Firebase_admin_sdk.json
+
+# python
+__pycache__
+__pycache__/*
+__pycache__/
+*.py[cod]

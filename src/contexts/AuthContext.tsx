@@ -3,148 +3,195 @@
 
 import type { User } from '@/types';
 import React, { createContext, useContext, useState, useEffect, type ReactNode, useCallback } from 'react';
-import { auth as firebaseAuth } from '@/lib/firebase'; // Firebase Auth instance
+import { auth as firebaseAuth } from '@/lib/firebase'; 
 import type { User as FirebaseUser } from 'firebase/auth';
 import { onAuthStateChanged } from 'firebase/auth';
 import apiClient from '@/lib/apiClient';
-import { useToast } from '@/hooks/use-toast'; // Import useToast
+import { useToast } from '@/hooks/use-toast';
 
 const CURRENT_BACKEND_USER_STORAGE_KEY = 'currentBackendUser';
-const PENDING_LOGIN_BACKEND_ID_KEY = 'pendingLoginBackendId';
-
 
 interface AuthContextType {
-  currentUser: User | null; 
-  firebaseUser: FirebaseUser | null; 
+  currentUser: User | null;
+  firebaseUser: FirebaseUser | null;
   isLoadingAuth: boolean;
-  backendUserId: number | null; 
-  setBackendUser: (user: User | null) => void; 
+  backendUserId: number | null;
+  setBackendUser: (user: User | null) => void;
   refetchBackendUser: () => Promise<void>;
+  setInternalPendingBackendId: (id: number | null) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [currentUser, _setCurrentUser] = useState<User | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [backendUserId, setBackendUserIdState] = useState<number | null>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
-  const { toast } = useToast(); // Initialize toast
+  const [internalPendingBackendId, setInternalPendingBackendIdState] = useState<number | null>(null);
+  const [authResolutionAttempted, setAuthResolutionAttempted] = useState(false);
+  const { toast } = useToast();
 
-  const fetchBackendUserProfile = useCallback(async (id: number) => {
-    if (!firebaseAuth.currentUser) {
-      console.warn("Attempted to fetch backend user profile, but no Firebase user is authenticated.");
-      _setCurrentUser(null);
-      setBackendUserIdState(null);
-      window.localStorage.removeItem(CURRENT_BACKEND_USER_STORAGE_KEY);
-      return;
-    }
+  const setInternalPendingBackendId = useCallback((id: number | null) => {
+    console.log("AuthContext: setInternalPendingBackendId called with ID:", id);
+    setInternalPendingBackendIdState(id);
+  }, []);
+
+  const fetchBackendUserProfile = useCallback(async (idToFetch: number, fbUserForToken: FirebaseUser) => {
+    console.log(`AuthContext: Fetching backend user profile for ID: ${idToFetch} using Firebase user: ${fbUserForToken.uid}`);
     try {
-      console.log(`AuthContext: Fetching backend user profile for ID: ${id}`);
-      const response = await apiClient.get<User>(`/users/${id}`); // User interface from your types
-      _setCurrentUser(response.data);
-      setBackendUserIdState(id); 
-      window.localStorage.setItem(CURRENT_BACKEND_USER_STORAGE_KEY, JSON.stringify(response.data));
+      const token = await fbUserForToken.getIdToken(true);
+
+      if (!token) {
+        console.error("AuthContext: Failed to retrieve Firebase ID token for backend request (token is falsy). Aborting profile fetch.");
+        toast({ title: "Authentication Error", description: "Could not retrieve a valid session token. Please try logging in again.", variant: "destructive" });
+        setCurrentUser(null);
+        setBackendUserIdState(null);
+        if (typeof window !== 'undefined') window.localStorage.removeItem(CURRENT_BACKEND_USER_STORAGE_KEY);
+        return;
+      }
+      
+      console.log(`AuthContext: Retrieved Firebase ID token for GET /users/${idToFetch}. Token length: ${token.length}, Starts with: ${token.substring(0, 20)}...`);
+      
+      const headersForCall = {
+        Authorization: `Bearer ${token}`
+      };
+      console.log("AuthContext: Headers for GET /users/id call:", JSON.stringify(headersForCall));
+
+      const response = await apiClient.get<User>(`/users/${idToFetch}`, { headers: headersForCall });
+      
+      setCurrentUser(response.data);
+      setBackendUserIdState(idToFetch);
+      if (typeof window !== 'undefined') window.localStorage.setItem(CURRENT_BACKEND_USER_STORAGE_KEY, JSON.stringify(response.data));
+      console.log("AuthContext: Backend user profile fetched and set:", response.data);
     } catch (error) {
-      console.error(`AuthContext: Failed to fetch backend user profile for ID ${id}:`, error);
-      _setCurrentUser(null);
-      setBackendUserIdState(null);
-      window.localStorage.removeItem(CURRENT_BACKEND_USER_STORAGE_KEY);
-      toast({ title: "Session Error", description: "Could not load your profile. Please log in again.", variant: "destructive" });
-      // Consider signing out Firebase user if backend profile is critical and fetch fails
-      // await firebaseAuth.signOut(); 
+      console.error(`AuthContext: Failed to fetch backend user profile for ID ${idToFetch}:`, error);
+      toast({ title: "Session Error", description: `Could not load your profile data. ${error instanceof Error ? error.message : ''}`, variant: "destructive" });
+      setCurrentUser(null);
+      setBackendUserIdState(null); 
+      if (typeof window !== 'undefined') window.localStorage.removeItem(CURRENT_BACKEND_USER_STORAGE_KEY);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toast]); // Added toast to dependency array
+  }, [toast]);
+
 
   useEffect(() => {
-    try {
-      const storedBackendUser = window.localStorage.getItem(CURRENT_BACKEND_USER_STORAGE_KEY);
-      if (storedBackendUser) {
-        const parsedUser: User = JSON.parse(storedBackendUser);
-        _setCurrentUser(parsedUser);
-        if (parsedUser && typeof parsedUser.id === 'number') {
-          setBackendUserIdState(parsedUser.id);
+    console.log("AuthContext: Main useEffect running. Current state:", { isLoadingAuth, fbUserUid: firebaseUser?.uid, currentUserId: currentUser?.id, backendUserIdFromState: backendUserId, internalPendingBackendId });
+    
+    if (typeof window !== 'undefined' && !currentUser && !internalPendingBackendId) {
+      try {
+        const storedBackendUser = window.localStorage.getItem(CURRENT_BACKEND_USER_STORAGE_KEY);
+        if (storedBackendUser) {
+          const parsedUser: User = JSON.parse(storedBackendUser);
+          setCurrentUser(parsedUser);
+          if (parsedUser && typeof parsedUser.id === 'number') {
+            setBackendUserIdState(parsedUser.id);
+          }
+          console.log("AuthContext: Initialized currentUser from localStorage:", parsedUser);
         }
+      } catch (error) {
+        console.warn("AuthContext: Error reading currentBackendUser from localStorage on mount:", error);
+        if (typeof window !== 'undefined') window.localStorage.removeItem(CURRENT_BACKEND_USER_STORAGE_KEY);
       }
-    } catch (error) {
-      console.warn("Error reading currentBackendUser from localStorage:", error);
-      window.localStorage.removeItem(CURRENT_BACKEND_USER_STORAGE_KEY);
     }
-
+    
+    console.log("AuthContext: Setting up onAuthStateChanged listener.");
     const unsubscribe = onAuthStateChanged(firebaseAuth, async (fbUser) => {
-      setIsLoadingAuth(true);
-      setFirebaseUser(fbUser);
+      console.log("AuthContext: onAuthStateChanged triggered. Firebase user (fbUser):", fbUser?.uid);
+      setAuthResolutionAttempted(false); // Reset for new auth state change
+      // setIsLoadingAuth(true); // Keep true until authResolutionAttempted effect handles it
 
       if (fbUser) {
-        console.log("AuthContext: Firebase user detected.", fbUser.uid);
-        const pendingIdStr = localStorage.getItem(PENDING_LOGIN_BACKEND_ID_KEY);
-        if (pendingIdStr) {
-          const pendingId = parseInt(pendingIdStr, 10);
-          localStorage.removeItem(PENDING_LOGIN_BACKEND_ID_KEY); 
-          if (!isNaN(pendingId)) {
-            console.log(`AuthContext: pendingLoginBackendId found: ${pendingId}. Fetching profile.`);
-            await fetchBackendUserProfile(pendingId);
-          } else {
-            console.error("AuthContext: Invalid pendingLoginBackendId found in localStorage.");
-            _setCurrentUser(null);
-            setBackendUserIdState(null);
-            window.localStorage.removeItem(CURRENT_BACKEND_USER_STORAGE_KEY);
-          }
+        setFirebaseUser(fbUser);
+        console.log("AuthContext: Firebase user is present (fbUser.uid:", fbUser.uid, ")");
+        
+        let idToFetchProfileFor: number | null = null;
+        let usedInternalPendingId = false;
+
+        if (internalPendingBackendId !== null && !isNaN(internalPendingBackendId)) {
+          console.log(`AuthContext: Using internalPendingBackendId: ${internalPendingBackendId} to fetch profile.`);
+          idToFetchProfileFor = internalPendingBackendId;
+          setInternalPendingBackendId(null); 
+          usedInternalPendingId = true;
         } else if (backendUserId && (!currentUser || currentUser.id !== backendUserId)) {
-          console.log(`AuthContext: backendUserId ${backendUserId} exists, currentUser mismatched or null. Re-fetching profile.`);
-          await fetchBackendUserProfile(backendUserId);
-        } else if (currentUser && currentUser.id === backendUserId) {
-          console.log("AuthContext: currentUser matches backendUserId from localStorage. No immediate fetch.");
+           console.log(`AuthContext: No internal pending ID. Existing backendUserId (${backendUserId}) found. Re-fetching profile if currentUser is stale/mismatched.`);
+           idToFetchProfileFor = backendUserId;
+        } else if (currentUser && currentUser.id === backendUserId && backendUserId !== null) {
+           console.log(`AuthContext: No internal pending ID. User profile (ID: ${currentUser.id}) already loaded and consistent with backendUserId (${backendUserId}). No immediate fetch needed.`);
         } else {
-           if (!currentUser && !backendUserId) {
-             console.warn("AuthContext: Firebase user session exists, but no backend user ID information available to fetch profile. User might need to complete backend login/registration linkage.");
-             _setCurrentUser(null);
-             setBackendUserIdState(null);
-             window.localStorage.removeItem(CURRENT_BACKEND_USER_STORAGE_KEY);
-           }
+          console.log("AuthContext: Firebase user detected, but no pending ID (internal) and no clear existing backendUserId/currentUser to act upon. Current state:", { backendUserId, currentUserId: currentUser?.id });
         }
+
+        if (idToFetchProfileFor !== null && !isNaN(idToFetchProfileFor)) {
+          await fetchBackendUserProfile(idToFetchProfileFor, fbUser);
+        } else {
+           console.log("AuthContext: No profile fetch triggered by onAuthStateChanged internal logic this time.");
+        }
+
       } else {
-        console.log("AuthContext: No Firebase user detected (logout).");
-        _setCurrentUser(null);
+        console.log("AuthContext: No Firebase user (logout). Clearing user state.");
+        setFirebaseUser(null);
+        setCurrentUser(null);
         setBackendUserIdState(null);
-        window.localStorage.removeItem(CURRENT_BACKEND_USER_STORAGE_KEY);
-        localStorage.removeItem(PENDING_LOGIN_BACKEND_ID_KEY); 
+        setInternalPendingBackendId(null); 
+        if (typeof window !== 'undefined') {
+          window.localStorage.removeItem(CURRENT_BACKEND_USER_STORAGE_KEY);
+        }
       }
-      setIsLoadingAuth(false);
+      setAuthResolutionAttempted(true);
+      console.log("AuthContext: onAuthStateChanged processing finished. authResolutionAttempted set to true.");
     });
 
     return () => {
       console.log("AuthContext: Unsubscribing from onAuthStateChanged.");
       unsubscribe();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchBackendUserProfile]); // fetchBackendUserProfile is now memoized with useCallback
+  }, [fetchBackendUserProfile, internalPendingBackendId, backendUserId, currentUser]); 
 
-  const setBackendUser = (user: User | null) => {
-    _setCurrentUser(user);
+  useEffect(() => {
+    if (authResolutionAttempted) {
+      setIsLoadingAuth(false);
+      console.log("AuthContext: authResolutionAttempted is true, setting isLoadingAuth to false. Final states:", { currentUser: currentUser?.id, firebaseUser: firebaseUser?.uid, backendUserId });
+    } else {
+      setIsLoadingAuth(true);
+       console.log("AuthContext: authResolutionAttempted is false, setting isLoadingAuth to true.");
+    }
+  }, [authResolutionAttempted, currentUser, firebaseUser, backendUserId]);
+
+
+  const setBackendUserContext = (user: User | null) => {
+    console.log("AuthContext: setBackendUserContext (manual override) called with:", user);
+    setCurrentUser(user);
     if (user) {
       setBackendUserIdState(user.id);
-      window.localStorage.setItem(CURRENT_BACKEND_USER_STORAGE_KEY, JSON.stringify(user));
+      if (typeof window !== 'undefined') window.localStorage.setItem(CURRENT_BACKEND_USER_STORAGE_KEY, JSON.stringify(user));
     } else {
       setBackendUserIdState(null);
-      window.localStorage.removeItem(CURRENT_BACKEND_USER_STORAGE_KEY);
+      if (typeof window !== 'undefined') window.localStorage.removeItem(CURRENT_BACKEND_USER_STORAGE_KEY);
     }
   };
 
   const refetchBackendUser = async () => {
-    if (backendUserId) {
+    const currentFbUser = firebaseAuth.currentUser; 
+    if (backendUserId && currentFbUser) {
       console.log("AuthContext: refetchBackendUser called. Fetching profile for backendUserId:", backendUserId);
+      setAuthResolutionAttempted(false); // Indicate a new resolution attempt is starting
       setIsLoadingAuth(true);
-      await fetchBackendUserProfile(backendUserId);
-      setIsLoadingAuth(false);
+      await fetchBackendUserProfile(backendUserId, currentFbUser); 
+      setAuthResolutionAttempted(true); // Signal completion
+      // isLoadingAuth will be set to false by the dedicated useEffect
     } else {
-        console.warn("AuthContext: refetchBackendUser called without a known backendUserId.");
+      console.warn("AuthContext: refetchBackendUser called but backendUserId is null or no Firebase user is authenticated. BackendUserId:", backendUserId, "Firebase User:", currentFbUser);
+      if (!currentFbUser) {
+         setCurrentUser(null); 
+         setBackendUserIdState(null);
+         if (typeof window !== 'undefined') window.localStorage.removeItem(CURRENT_BACKEND_USER_STORAGE_KEY);
+         setAuthResolutionAttempted(true); // Still, mark resolution as attempted (for logout case)
+      }
     }
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, firebaseUser, isLoadingAuth, backendUserId, setBackendUser, refetchBackendUser }}>
+    <AuthContext.Provider value={{ currentUser, firebaseUser, isLoadingAuth, backendUserId, setBackendUser: setBackendUserContext, refetchBackendUser, setInternalPendingBackendId }}>
       {children}
     </AuthContext.Provider>
   );
@@ -158,4 +205,3 @@ export const useAuth = (): AuthContextType => {
   return context;
 };
 
-    

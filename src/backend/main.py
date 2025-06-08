@@ -7,10 +7,28 @@ import os
 from src.backend.db.jobs import router as jobs_router
 from src.backend.db.resume import router as resume_router
 from src.backend.db.activities import router as activities_router
+from fastapi.middleware.cors import CORSMiddleware
 
-load_dotenv(dotenv_path=".env")
 
+load_dotenv()
 app = FastAPI()
+
+
+origins = [
+    "http://localhost:9002",
+    "http://127.0.0.1:9002",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.on_event("startup")
 async def startup_event():
