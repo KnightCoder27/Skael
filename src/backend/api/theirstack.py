@@ -9,12 +9,12 @@ from sqlalchemy.orm import Session
 from src.backend.models.models import get_db, JobListing
 
 
-load_dotenv(dotenv_path=".env")
+# load_dotenv(dotenv_path=".env")
 
-API_KEY = os.getenv("THEIRSTACK_API_KEY")
+# API_KEY = os.getenv("THEIRSTACK_API_KEY")
 
 # --- Configuration ---
-API_KEY = os.getenv("THEIRSTACK_API_KEY")
+API_KEY = os.os.environ.get("THEIRSTACK_API_KEY")
 BASE_URL = "https://api.theirstack.com/v1"
 JOBS_SEARCH_ENDPOINT = f"{BASE_URL}/jobs/search"
 
