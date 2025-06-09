@@ -34,8 +34,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isLoggingOut, setIsLoggingOutState] = useState(false);
   const { toast } = useToast();
 
-  const setIsLoggingOut = useCallback((loggingOut: boolean) => {
-    console.log("AuthContext: setIsLoggingOut called with:", loggingOut);
+  const setIsLoggingOutContext = useCallback((loggingOut: boolean) => {
+    console.log("AuthContext: setIsLoggingOutContext called with:", loggingOut);
     setIsLoggingOutState(loggingOut);
   }, []);
 
@@ -68,10 +68,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setBackendUserContext(null);
         return;
       }
-      
+
       const headersForCall = { Authorization: `Bearer ${token}` };
       const response = await apiClient.get<User>(`/users/${idToFetch}`, { headers: headersForCall });
-      
+
       setBackendUserContext(response.data);
       console.log("AuthContext: Backend user profile fetched and set:", response.data);
     } catch (error) {
@@ -84,16 +84,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     console.log("AuthContext: Setting up onAuthStateChanged listener.");
-    
     const unsubscribe = onAuthStateChanged(firebaseAuth, async (fbUser) => {
-      console.log(`AuthContext: --- onAuthStateChanged START --- FB User: ${fbUser?.uid}, Current pendingBackendIdRef: ${pendingBackendIdRef.current}, isLoggingOut: ${isLoggingOut}`);
+      console.log(`AuthContext: --- onAuthStateChanged START --- FB User: ${fbUser?.uid}, Current pendingBackendIdRef: ${pendingBackendIdRef.current}, isLoggingOut (from context state): ${isLoggingOut}`);
       setIsLoadingAuth(true);
       console.log("AuthContext: isLoadingAuth SET TO TRUE (start of onAuthStateChanged callback)");
 
       if (fbUser) {
         setFirebaseUser(fbUser);
-        // setIsLoggingOutState(false); // Reset if a user is confirmed, ensuring it's false during login/session persistence
-        // console.log("AuthContext: isLoggingOut SET TO FALSE (Firebase user is present)");
+        // If a Firebase user is detected, it implies we are not in the middle of a user-initiated logout process
+        // that is still waiting to navigate. Or, if we are, this fbUser means the logout didn't fully complete on Firebase's side,
+        // or it's a new login. In either case, if a user is present, 'isLoggingOut' should be false.
+        // However, setIsLoggingOut is now primarily managed by Header.tsx for initiating logout.
+        // We might still want to ensure it's false if a user session is confirmed here and `isLoggingOut` was somehow true.
+        if (isLoggingOut) { // If context still thinks we are logging out but Firebase provides a user
+          console.log("AuthContext: Firebase user present, but isLoggingOut was true. Setting to false.");
+          setIsLoggingOutState(false);
+        }
 
 
         const idFromPendingRef = pendingBackendIdRef.current;
@@ -103,24 +109,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           await fetchBackendUserProfile(idFromPendingRef, fbUser);
           pendingBackendIdRef.current = null;
           console.log("AuthContext: Cleared pendingBackendIdRef after fetch attempt.");
-        } else if (backendUserId !== null && currentUser?.id === backendUserId && currentUser?.email_id === fbUser.email) {
+        } else if (currentUser?.email_id === fbUser.email && backendUserId === currentUser?.id) {
            console.log(`AuthContext: No pending ID. Backend user profile (ID: ${currentUser.id}) already loaded and consistent for fbUser: ${fbUser.uid}.`);
         } else if (backendUserId !== null) {
           console.log(`AuthContext: No pending ID. Existing backendUserId (${backendUserId}) found. Re-fetching for newly confirmed fbUser: ${fbUser.uid}.`);
           await fetchBackendUserProfile(backendUserId, fbUser);
         } else {
-          console.log(`AuthContext: Firebase user ${fbUser.uid} detected, but no clear path to determine backend user ID yet (no pending ID in ref, no existing session backendId). currentUser is:`, currentUser);
+          console.log(`AuthContext: Firebase user ${fbUser.uid} detected, but no clear path to determine backend user ID yet.`);
         }
-      } else { 
-        console.log("AuthContext: No Firebase user (logout/no session). Clearing all user states.");
+      } else {
+        // User is signed out
+        console.log("AuthContext: No Firebase user (logout/no session). Clearing Firebase user and related state.");
         setFirebaseUser(null);
-        setBackendUserContext(null);
+        setBackendUserContext(null); // This clears currentUser, backendUserId, and localStorage
         pendingBackendIdRef.current = null;
-        
-        setTimeout(() => {
-            setIsLoggingOutState(false);
-            console.log("AuthContext: isLoggingOut SET TO FALSE (delayed after Firebase user is null)");
-        }, 100);
+        // Header.tsx is now responsible for setting isLoggingOut to false *after* navigation.
+        // AuthContext does not reset isLoggingOut here to allow guarded pages to see it as true during the transition.
+        console.log("AuthContext: User states cleared. isLoggingOut flag is not changed here.");
       }
       setIsLoadingAuth(false);
       console.log(`AuthContext: --- onAuthStateChanged END --- FB User: ${fbUser?.uid}, isLoadingAuth: false`);
@@ -130,7 +135,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       console.log("AuthContext: Unsubscribing from onAuthStateChanged.");
       unsubscribe();
     };
-  }, [fetchBackendUserProfile, setBackendUserContext, isLoggingOut]);
+  // Dependencies: fetchBackendUserProfile and functions from useState/useRef are stable.
+  // backendUserId, currentUser, and isLoggingOut are states that, if changed from outside this effect,
+  // might warrant a re-evaluation or re-subscription, though onAuthStateChanged itself is the main event source.
+  }, [fetchBackendUserProfile, backendUserId, currentUser, isLoggingOut, setBackendUserContext]);
 
 
   const refetchBackendUser = async () => {
@@ -138,13 +146,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (backendUserId !== null && currentFbUser) {
       console.log("AuthContext: refetchBackendUser called. Fetching profile for backendUserId:", backendUserId);
       setIsLoadingAuth(true);
-      console.log("AuthContext: isLoadingAuth SET TO TRUE (start of refetchBackendUser)");
       await fetchBackendUserProfile(backendUserId, currentFbUser);
       setIsLoadingAuth(false);
-      console.log("AuthContext: isLoadingAuth SET TO FALSE (end of refetchBackendUser)");
     } else {
-      console.warn("AuthContext: refetchBackendUser called but backendUserId is null or no Firebase user is authenticated. BackendUserId:", backendUserId, "Firebase User (from state):", currentFbUser?.uid);
-      if (!currentFbUser) { 
+      console.warn("AuthContext: refetchBackendUser called but backendUserId is null or no Firebase user.");
+      if (!currentFbUser) {
          setBackendUserContext(null);
       }
       if (isLoadingAuth) setIsLoadingAuth(false);
@@ -152,16 +158,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ 
-        currentUser, 
-        firebaseUser, 
-        isLoadingAuth, 
-        backendUserId, 
-        setBackendUser: setBackendUserContext, 
-        refetchBackendUser, 
-        setPendingBackendIdForFirebaseAuth, 
-        isLoggingOut, 
-        setIsLoggingOut 
+    <AuthContext.Provider value={{
+        currentUser,
+        firebaseUser,
+        isLoadingAuth,
+        backendUserId,
+        setBackendUser: setBackendUserContext,
+        refetchBackendUser,
+        setPendingBackendIdForFirebaseAuth,
+        isLoggingOut,
+        setIsLoggingOut: setIsLoggingOutContext
     }}>
       {children}
     </AuthContext.Provider>
@@ -175,4 +181,3 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
-

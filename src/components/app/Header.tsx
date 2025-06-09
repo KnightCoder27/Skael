@@ -4,9 +4,9 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Compass, Briefcase, User, LogOut as LogOutIcon, LogIn, Menu } from 'lucide-react'; 
+import { Compass, Briefcase, User, LogOut as LogOutIcon, LogIn, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'; // Added SheetTrigger
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { signOut } from 'firebase/auth';
@@ -23,7 +23,7 @@ const navItemsLoggedIn = [
 export function Header() {
   const pathname = usePathname();
   const router = useRouter();
-  const { currentUser, isLoadingAuth, setIsLoggingOut, setBackendUser, isLoggingOut } = useAuth(); 
+  const { currentUser, isLoadingAuth, setIsLoggingOut, setBackendUser, isLoggingOut } = useAuth();
   const [isClient, setIsClient] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const { toast } = useToast();
@@ -34,23 +34,31 @@ export function Header() {
 
   const handleLogout = async () => {
     console.log("Header: handleLogout initiated.");
-    setIsLoggingOut(true); 
-    setBackendUser(null); // Proactively clear user state
+    setIsLoggingOut(true); // Step 1: Immediately set isLoggingOut to true
+    setBackendUser(null); // Step 2: Proactively clear user state in context
 
     try {
       console.log("Header: Attempting Firebase signOut...");
-      await signOut(firebaseAuth);
+      await signOut(firebaseAuth); // Step 3: Sign out from Firebase
       console.log("Header: Firebase signOut successful.");
-      
-      router.push('/auth'); 
-      toast({ title: "Logged Out", description: "You have been successfully logged out." });
+
+      router.push('/auth'); // Step 4: Initiate navigation
+      console.log("Header: Navigation to /auth initiated.");
+
+      // Step 5: Reset isLoggingOut *after* navigation is initiated.
+      // This allows guarded pages to see isLoggingOut=true during their unmount/final renders.
+      setIsLoggingOut(false);
+      console.log("Header: setIsLoggingOut(false) called after router.push.");
+
+      toast({ title: "Logged Out", description: "You have been successfully logged out." }); // Step 6: Show toast
       setIsSheetOpen(false);
     } catch (error) {
       console.error("Header: Error signing out from Firebase: ", error);
-      toast({ title: "Logout Failed", description: "Could not log you out from Firebase. Please try again.", variant: "destructive" });
-      setIsLoggingOut(false); 
+      toast({ title: "Logout Failed", description: "Could not log you out. Please try again.", variant: "destructive" });
+      setIsLoggingOut(false); // Ensure isLoggingOut is reset on error
     }
   };
+
 
   const NavLink = ({ href, children, icon: Icon, onClick }: { href: string; children: React.ReactNode; icon: React.ElementType, onClick?: () => void }) => (
     <Link
@@ -72,9 +80,22 @@ export function Header() {
       {children}
     </Link>
   );
-  
+
   const renderNavLinks = (isMobileSheet = false) => {
-    if (isClient && isLoadingAuth) { 
+    // Show "Logging out..." if isLoggingOut is true
+    if (isLoggingOut) {
+        return (
+            <div className={cn(
+                "flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground",
+                isMobileSheet ? "justify-start" : ""
+            )}>
+                <LoadingSpinner size={16} />
+                <span>Logging out...</span>
+            </div>
+        );
+    }
+    // Show "Loading..." if isLoadingAuth is true AND not currently logging out
+    if (isClient && isLoadingAuth) {
         return (
             <div className={cn(
                 "flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground",
@@ -85,20 +106,8 @@ export function Header() {
             </div>
         );
     }
-    if (!isClient && isLoadingAuth) { 
-        return (
-             <div className={cn(
-                "flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground",
-                isMobileSheet ? "justify-start" : ""
-            )}>
-                <LoadingSpinner size={16} />
-                <span>Loading...</span>
-            </div>
-        );
-    }
 
-
-    if (currentUser && !isLoggingOut) { // Check isLoggingOut here
+    if (currentUser) { // currentUser implies !isLoggingOut based on the above
       return (
         <>
           {navItemsLoggedIn.map((item) => (
@@ -112,28 +121,19 @@ export function Header() {
             onClick={handleLogout}
             className={cn(
               'flex items-center gap-2 text-sm font-medium',
-               isMobileSheet 
-                ? 'text-foreground/70 hover:text-primary hover:bg-primary/5 w-full justify-start px-3 py-2' 
+               isMobileSheet
+                ? 'text-foreground/70 hover:text-primary hover:bg-primary/5 w-full justify-start px-3 py-2'
                 : 'text-foreground/70 hover:text-primary p-0 md:px-3 md:py-2'
             )}
+            disabled={isLoggingOut} // Disable button while logging out
           >
             <LogOutIcon className="w-5 h-5" />
             Logout
           </Button>
         </>
       );
-    } else if (isLoggingOut) { // If logging out, show loading
-        return (
-            <div className={cn(
-                "flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground",
-                isMobileSheet ? "justify-start" : ""
-            )}>
-                <LoadingSpinner size={16} />
-                <span>Logging out...</span>
-            </div>
-        );
     }
-    else {
+    else { // No currentUser and not loading/logging out
       return (
         <NavLink href="/auth" icon={LogIn}>Login / Register</NavLink>
       );
@@ -156,7 +156,7 @@ export function Header() {
         <div className="md:hidden">
           <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon">
+              <Button variant="ghost" size="icon" disabled={isLoggingOut}>
                 <Menu className="h-6 w-6" />
                 <span className="sr-only">Toggle navigation menu</span>
               </Button>
