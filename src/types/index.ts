@@ -15,7 +15,10 @@ export interface Location {
  * Represents a technology or skill (simplified for now).
  */
 export interface Technology {
-  name: string;
+  id: number; // Added for sample data consistency
+  technology_name: string;
+  technology_slug: string;
+  // Add other fields as they become necessary from backend or usage
 }
 
 /**
@@ -44,7 +47,7 @@ export interface User {
 export interface UserIn { // For POST /users/ (registration)
   username: string;
   email: string;
-  number: string;
+  number: string | null; // Changed to allow null
   password: string;
 }
 
@@ -91,29 +94,28 @@ export interface JobListing {
   url?: string;
   salary_string?: string;
   date_posted?: string;
-  technologies?: Technology[]; // Simplified for now
+  technologies?: Technology[]; 
   companyLogo?: string;
   matchScore?: number;
   matchExplanation?: string;
   remote?: boolean;
   hybrid?: boolean;
   currency?: string;
-  employment_status?: string; // From backend
-  api_id?: string | null; // From backend
-  company_domain?: string | null; // From backend
-  company_obj_id?: number | null; // From backend
-  final_url?: string | null; // From backend
-  source_url?: string | null; // From backend
-  min_salary?: number | null; // From backend
-  max_salary?: number | null; // From backend
-  seniority?: string | null; // From backend
-  discovered_at?: string; // From backend
-  reposted?: boolean | null; // From backend
-  date_reposted?: string | null; // From backend
-  country_code?: string | null; // From backend
-  job_expired?: boolean | null; // From backend
-  industry_id?: string | null; // From backend
-  // 'fetched_data' and 'matching_phrase'/'matching_words' from backend guide are not directly mapped here yet.
+  employment_status?: string; 
+  api_id?: string | null; 
+  company_domain?: string | null; 
+  company_obj_id?: number | null; 
+  final_url?: string | null; 
+  source_url?: string | null; 
+  min_salary?: number | null; 
+  max_salary?: number | null; 
+  seniority?: string | null; 
+  discovered_at?: string; 
+  reposted?: boolean | null; 
+  date_reposted?: string | null; 
+  country_code?: string | null; 
+  job_expired?: boolean | null; 
+  industry_id?: string | null; 
 }
 
 /**
@@ -126,7 +128,7 @@ export type ApplicationStatus = "Interested" | "Saved" | "Applied" | "Interviewi
  * This will eventually be managed by backend API.
  */
 export interface TrackedApplication {
-  id: string; // Could be backend activity ID or a composite ID
+  id: string; 
   jobId: number;
   jobTitle: string;
   company: string;
@@ -182,9 +184,10 @@ export interface LocalUserActivity {
   id: string;
   type: ActivityType;
   timestamp: string;
-  userId?: number; // Changed from string to number
+  userId?: number; 
   jobId?: number;
   jobTitle?: string;
   company?: string;
   details?: { [key: string]: any };
 }
+

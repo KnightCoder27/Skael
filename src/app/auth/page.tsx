@@ -139,7 +139,7 @@ export default function AuthPage() {
       const backendRegisterPayload: UserIn = {
         username: data.name,
         email: data.email,
-        number: data.phoneNumber || "", 
+        number: data.phoneNumber ? data.phoneNumber : null, 
         password: data.password,
       };
       
@@ -174,6 +174,9 @@ export default function AuthPage() {
             registerForm.setError("email", { type: "manual", message: "This email is already registered with our system." });
         } else if (error.response.status === 405) {
             errorMessage = "Registration endpoint not found or method not allowed by backend. Please contact support.";
+        } else if (error.response.status === 422) { // Pydantic validation error
+            errorMessage = "Registration failed due to invalid data. Please check your inputs. The phone number format might be an issue if the backend expects a string but received null.";
+            // You could try to parse error.response.data.detail for more specific field errors if available
         }
       } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
         const firebaseError = error as any;
