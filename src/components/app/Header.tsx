@@ -24,7 +24,7 @@ export function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const { currentUser, isLoadingAuth, setIsLoggingOut, setBackendUser, isLoggingOut } = useAuth();
-  const [isClient, setIsClient] = useState(false);
+  const [isClient, setIsClient] = useState(false); // Kept for potential other client-only logic, but not for isLoadingAuth branch
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const { toast } = useToast();
 
@@ -34,18 +34,16 @@ export function Header() {
 
   const handleLogout = async () => {
     console.log("Header: handleLogout initiated.");
-    setIsLoggingOut(true); // Step 1: Immediately set isLoggingOut to true in context
-    setBackendUser(null); // Step 2: Proactively clear user state in context
+    setIsLoggingOut(true); 
+    setBackendUser(null); 
 
     try {
       console.log("Header: Attempting Firebase signOut...");
-      await signOut(firebaseAuth); // Step 3: Sign out from Firebase
+      await signOut(firebaseAuth); 
       console.log("Header: Firebase signOut successful.");
 
-      router.push('/auth'); // Step 4: Initiate navigation
-      console.log("Header: Navigation to /auth initiated.");
-      // setIsLoggingOut(false) is NO LONGER CALLED HERE on success. AuthContext will handle it.
-
+      router.push('/auth'); 
+      // setIsLoggingOut(false) is now handled by AuthContext upon Firebase confirming logout
       toast({ title: "Logged Out", description: "You have been successfully logged out." });
       setIsSheetOpen(false);
     } catch (error) {
@@ -89,7 +87,8 @@ export function Header() {
             </div>
         );
     }
-    if (isClient && isLoadingAuth) {
+    // Removed isClient check from this condition
+    if (isLoadingAuth) { 
         return (
             <div className={cn(
                 "flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground",
