@@ -35,7 +35,7 @@ export default function LandingPage() {
                 Find Your Dream Job, <span className="block md:inline">Without the Hassle.</span>
               </h1>
               <p className="text-lg md:text-xl text-foreground/80 mb-8 max-w-xl mx-auto md:mx-0">
-                Tired of juggling a dozen job boards and wondering if your resume stands a chance? Our AI-powered Job Hunter simplifies your search.
+                Tired of juggling a dozen job boards and wondering if your resume stands a chance? Our AI-powered platform, Skael, simplifies your search.
               </p>
               <Button asChild size="lg" className="shadow-lg hover:shadow-xl transition-shadow duration-300">
                 <Link href="/auth">
@@ -46,7 +46,7 @@ export default function LandingPage() {
             <div>
               <Image
                 src="https://placehold.co/600x700.png"
-                alt="Modern building representing career opportunities"
+                alt="Modern building representing career opportunities with Skael"
                 width={600}
                 height={700}
                 className="rounded-xl shadow-2xl object-cover mx-auto"
@@ -66,7 +66,7 @@ export default function LandingPage() {
           </h2>
           <p className="text-md md:text-lg text-foreground/70 leading-relaxed">
             Getting lost in endless listings, customizing countless resumes, and facing uncertainty is frustrating. 
-            Career Compass AI is designed to cut through the noise and guide you to success.
+            Skael is designed to cut through the noise and guide you to success.
           </p>
         </div>
       </section>
@@ -76,7 +76,7 @@ export default function LandingPage() {
         <div className="container mx-auto px-4">
           <div className="text-center mb-12">
             <h2 className="text-3xl md:text-4xl font-bold text-primary mb-3 font-headline">
-              How Our AI-Powered Platform Helps You
+              How Skael Helps You
             </h2>
             <p className="text-md md:text-lg text-foreground/70 max-w-2xl mx-auto">
               Leverage the power of artificial intelligence to streamline every step of your job search.
@@ -107,7 +107,7 @@ export default function LandingPage() {
             Say Goodbye to Job Search Frustration.
           </h2>
           <p className="text-lg md:text-xl mb-8 max-w-2xl mx-auto text-primary-foreground/90">
-            Job hunting just got smart, simple, and you-focused. Take control of your career path today.
+            Job hunting just got smart, simple, and you-focused. Take control of your career path today with Skael.
           </p>
           <Button asChild size="lg" variant="secondary" className="shadow-lg hover:shadow-xl transition-shadow duration-300 text-lg py-3 px-8 bg-card text-primary hover:bg-card/90">
             <Link href="/auth">

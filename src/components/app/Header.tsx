@@ -24,26 +24,21 @@ export function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const { currentUser, isLoadingAuth, setIsLoggingOut, setBackendUser, isLoggingOut } = useAuth();
-  const [isClient, setIsClient] = useState(false); // Kept for potential other client-only logic, but not for isLoadingAuth branch
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const { toast } = useToast();
 
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
-
   const handleLogout = async () => {
     console.log("Header: handleLogout initiated.");
-    setIsLoggingOut(true); 
-    setBackendUser(null); 
+    setIsLoggingOut(true);
+    setBackendUser(null); // Proactively clear user state
 
     try {
       console.log("Header: Attempting Firebase signOut...");
-      await signOut(firebaseAuth); 
+      await signOut(firebaseAuth);
       console.log("Header: Firebase signOut successful.");
-
-      router.push('/auth'); 
-      // setIsLoggingOut(false) is now handled by AuthContext upon Firebase confirming logout
+      
+      router.push('/auth');
+      // setIsLoggingOut(false) is now handled by AuthContext upon Firebase confirming logout (fbUser === null)
       toast({ title: "Logged Out", description: "You have been successfully logged out." });
       setIsSheetOpen(false);
     } catch (error) {
@@ -87,7 +82,7 @@ export function Header() {
             </div>
         );
     }
-    // Removed isClient check from this condition
+    
     if (isLoadingAuth) { 
         return (
             <div className={cn(
@@ -139,7 +134,7 @@ export function Header() {
       <div className="container flex h-16 items-center justify-between max-w-screen-2xl">
         <Link href="/" className="flex items-center gap-2 group mr-6" onClick={() => setIsSheetOpen(false)}>
           <Compass className="w-7 h-7 text-primary transition-transform duration-300 group-hover:rotate-12" />
-          <span className="text-xl font-bold font-headline text-primary">Career Compass AI</span>
+          <span className="text-xl font-bold font-brand text-primary">Skael</span>
         </Link>
 
         <nav className="hidden md:flex items-center space-x-2 lg:space-x-4">
@@ -156,7 +151,7 @@ export function Header() {
             </SheetTrigger>
             <SheetContent side="left" className="w-[280px] p-0 pt-6">
               <SheetHeader className="px-4 pb-2 border-b mb-2">
-                <SheetTitle className="text-lg font-semibold text-primary">Navigation Menu</SheetTitle>
+                <SheetTitle className="text-lg font-semibold font-brand text-primary">Skael Menu</SheetTitle>
               </SheetHeader>
               <div className="flex flex-col space-y-2 px-4">
                 {renderNavLinks(true)}

@@ -13,6 +13,7 @@ export default {
       fontFamily: {
         body: ['Inter', 'sans-serif'],
         headline: ['Inter', 'sans-serif'], // Using Inter for headlines too for consistency
+        brand: ['"Edu SA Hand"', 'cursive'], // New brand font
         code: ['monospace'],
       },
       colors: {
