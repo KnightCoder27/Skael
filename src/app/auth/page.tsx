@@ -13,7 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { LogIn, UserPlus, Eye, EyeOff, Compass } from 'lucide-react';
+import { LogIn, UserPlus, Eye, EyeOff, Compass, Phone } from 'lucide-react';
 import type { UserIn, UserLogin as UserLoginType, UserLoginResponse, UserRegistrationResponse } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import apiClient from '@/lib/apiClient';
@@ -31,6 +31,7 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 const registerSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters." }).max(50, {message: "Name cannot exceed 50 characters."}),
   email: z.string().email({ message: "Invalid email address." }),
+  phoneNumber: z.string().max(20, { message: "Phone number cannot exceed 20 characters." }).optional(),
   password: z.string().min(8, { message: "Password must be at least 8 characters." })
     .regex(/[a-z]/, { message: "Password must contain at least one lowercase letter." })
     .regex(/[A-Z]/, { message: "Password must contain at least one uppercase letter." })
@@ -61,7 +62,7 @@ export default function AuthPage() {
 
   const registerForm = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
-    defaultValues: { name: "", email: "", password: "", confirmPassword: "" },
+    defaultValues: { name: "", email: "", phoneNumber: "", password: "", confirmPassword: "" },
   });
 
   const onLoginSubmit: SubmitHandler<LoginFormValues> = async (data) => {
@@ -138,15 +139,15 @@ export default function AuthPage() {
       const backendRegisterPayload: UserIn = {
         username: data.name,
         email: data.email,
-        number: "", // Assuming number is optional or handled differently
+        number: data.phoneNumber || "", 
         password: data.password,
       };
-      // Using /users/ as per backend guide and router config
+      
       const backendRegisterResponse = await apiClient.post<UserRegistrationResponse>('/users/', backendRegisterPayload);
       newBackendUserId = backendRegisterResponse.data.id;
       console.log("AuthPage: Backend registration successful. New Backend User ID:", newBackendUserId);
 
-      if (!newBackendUserId && newBackendUserId !== 0) { // Check for null or undefined, allow 0 if it's a valid ID
+      if (!newBackendUserId && newBackendUserId !== 0) { 
           throw new Error("Backend registration did not return a valid user ID.");
       }
 
@@ -330,6 +331,23 @@ export default function AuthPage() {
                   />
                   {registerForm.formState.errors.email && (
                     <p className="text-sm text-destructive">{registerForm.formState.errors.email.message}</p>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="register-phone">Phone Number (Optional)</Label>
+                  <div className="relative flex items-center">
+                    <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                        id="register-phone"
+                        type="tel"
+                        autoComplete="tel"
+                        placeholder="(123) 456-7890"
+                        {...registerForm.register('phoneNumber')}
+                        className={`pl-10 ${registerForm.formState.errors.phoneNumber ? 'border-destructive focus-visible:ring-destructive' : ''}`}
+                    />
+                  </div>
+                  {registerForm.formState.errors.phoneNumber && (
+                    <p className="text-sm text-destructive">{registerForm.formState.errors.phoneNumber.message}</p>
                   )}
                 </div>
                 <div className="space-y-1">
