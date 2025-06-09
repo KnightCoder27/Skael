@@ -8,7 +8,10 @@ import { Compass, Briefcase, User, LogOut, LogIn, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
-import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
+import { useAuth } from '@/contexts/AuthContext';
+import { signOut } from 'firebase/auth';
+import { auth as firebaseAuth } from '@/lib/firebase';
+import { useToast } from '@/hooks/use-toast';
 
 const navItemsLoggedIn = [
   { href: '/jobs', label: 'Job Listings', icon: Compass },
@@ -19,19 +22,26 @@ const navItemsLoggedIn = [
 export function Header() {
   const pathname = usePathname();
   const router = useRouter();
-  const { currentUser, setCurrentUser, isLoadingAuth } = useAuth(); // Use AuthContext
+  const { currentUser, isLoadingAuth } = useAuth(); // Removed setBackendUser from here as direct call is not needed
   const [isClient, setIsClient] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
     setIsClient(true);
   }, []);
 
-  const handleLogout = () => {
-    setCurrentUser(null); 
-    // Potentially call Firebase signOut here if Firebase Auth was integrated
-    router.push('/auth'); 
-    setIsSheetOpen(false);
+  const handleLogout = async () => {
+    try {
+      await signOut(firebaseAuth);
+      // AuthContext's onAuthStateChanged will handle clearing currentUser and other states.
+      toast({ title: "Logged Out", description: "You have been successfully logged out." });
+      router.push('/auth');
+      setIsSheetOpen(false);
+    } catch (error) {
+      console.error("Error signing out: ", error);
+      toast({ title: "Logout Failed", description: "Could not log you out. Please try again.", variant: "destructive" });
+    }
   };
 
   const NavLink = ({ href, children, icon: Icon, onClick }: { href: string; children: React.ReactNode; icon: React.ElementType, onClick?: () => void }) => (
@@ -56,12 +66,12 @@ export function Header() {
   );
   
   const renderNavLinks = (isMobileSheet = false) => {
-    if (isLoadingAuth && !isClient) { // Show a loading state or simplified view if auth state is loading on server
+    if (isLoadingAuth && !isClient) { 
         return (
              <Button variant="ghost" className="p-0 h-auto text-primary" disabled>Loading...</Button>
         );
     }
-    if (isLoadingAuth && isClient) { // On client, show loading indicator until auth state is resolved
+    if (isLoadingAuth && isClient) { 
         return (
             <div className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground">
                 <LogIn className="w-5 h-5 animate-pulse" />
@@ -71,7 +81,6 @@ export function Header() {
     }
 
     if (currentUser) {
-      // User is logged in
       return (
         <>
           {navItemsLoggedIn.map((item) => (
@@ -96,7 +105,6 @@ export function Header() {
         </>
       );
     } else {
-      // User is logged out
       return (
         <NavLink href="/auth" icon={LogIn}>Login / Register</NavLink>
       );
@@ -109,7 +117,7 @@ export function Header() {
       <div className="container flex h-16 items-center justify-between max-w-screen-2xl">
         <Link href="/" className="flex items-center gap-2 group mr-6" onClick={() => setIsSheetOpen(false)}>
           <Compass className="w-7 h-7 text-primary transition-transform duration-300 group-hover:rotate-12" />
-          <span className="text-xl font-bold font-headline text-primary">Job Hunter AI</span>
+          <span className="text-xl font-bold font-headline text-primary">Career Compass AI</span>
         </Link>
 
         <nav className="hidden md:flex items-center space-x-2 lg:space-x-4">
