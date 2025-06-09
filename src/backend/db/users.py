@@ -98,7 +98,7 @@ def handle_user_locations(db: Session, user: User, location_names: list[str]):
 class UserIn(BaseModel):
     username: str
     email: str
-    number: str
+    number: Optional[str] = None
     password: str
 
 class UserUpdate(BaseModel):
