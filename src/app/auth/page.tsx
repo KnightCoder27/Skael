@@ -48,16 +48,16 @@ type RegisterFormValues = z.infer<typeof registerSchema>;
 export default function AuthPage() {
   const { toast } = useToast();
   const router = useRouter();
-  const { currentUser, isLoadingAuth, setInternalPendingBackendId } = useAuth();
+  const { currentUser, isLoadingAuth, setPendingBackendIdForFirebaseAuth, isLoggingOut } = useAuth();
 
   useEffect(() => {
-    console.log("AuthPage Effect for redirect: isLoadingAuth=", isLoadingAuth, "currentUser present=", !!currentUser);
-    if (!isLoadingAuth && currentUser) {
+    console.log("AuthPage Effect for redirect: isLoadingAuth=", isLoadingAuth, "currentUser present=", !!currentUser, "isLoggingOut=", isLoggingOut);
+    if (!isLoadingAuth && currentUser && !isLoggingOut) {
       console.log("AuthPage Effect: Conditions met. Redirecting to /jobs.");
       router.push('/jobs');
       toast({ title: "Login Successful", description: "Redirecting to your dashboard..." });
     }
-  }, [currentUser, isLoadingAuth, router, toast]);
+  }, [currentUser, isLoadingAuth, router, toast, isLoggingOut]);
 
 
   const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
@@ -81,20 +81,22 @@ export default function AuthPage() {
     toast({ title: "Processing Login...", description: "Verifying credentials..." });
     try {
       const backendLoginPayload: UserLoginType = { email: data.email, password: data.password };
+      console.log("AuthPage: Attempting backend login for:", data.email);
       const backendResponse = await apiClient.post<UserLoginResponse>('/users/login', backendLoginPayload);
       backendUserId = backendResponse.data.user_id;
+      console.log("AuthPage: Backend login successful. User ID:", backendUserId);
 
       if (!backendUserId && backendUserId !== 0) {
         throw new Error("Backend login did not return a valid user ID.");
       }
       
-      setInternalPendingBackendId(backendUserId);
+      setPendingBackendIdForFirebaseAuth(backendUserId);
       await signInWithEmailAndPassword(firebaseAuth, data.email, data.password);
       // Success toast and redirect will be handled by useEffect watching currentUser
 
     } catch (error) {
       console.error("AuthPage: Error during login:", error);
-      setInternalPendingBackendId(null);
+      setPendingBackendIdForFirebaseAuth(null);
 
       let errorMessage = "An unexpected error occurred during login.";
       if (error instanceof AxiosError && error.response) {
@@ -140,22 +142,24 @@ export default function AuthPage() {
         number: data.phoneNumber && data.phoneNumber.trim() !== "" ? data.phoneNumber : null,
         password: data.password,
       };
-      
+      console.log("AuthPage: Attempting backend registration for:", data.email);
       const backendRegisterResponse = await apiClient.post<UserRegistrationResponse>('/users/', backendRegisterPayload);
       newBackendUserId = backendRegisterResponse.data.id;
+      console.log("AuthPage: Backend registration successful. User ID:", newBackendUserId);
+
 
       if (!newBackendUserId && newBackendUserId !== 0) {
           throw new Error("Backend registration did not return a valid user ID.");
       }
 
-      setInternalPendingBackendId(newBackendUserId);
+      setPendingBackendIdForFirebaseAuth(newBackendUserId);
       const firebaseUserCredential = await createUserWithEmailAndPassword(firebaseAuth, data.email, data.password);
       await updateProfile(firebaseUserCredential.user, { displayName: data.name });
       // Success toast and redirect will be handled by useEffect watching currentUser
 
     } catch (error) {
       console.error("AuthPage: Error during registration:", error);
-      setInternalPendingBackendId(null);
+      setPendingBackendIdForFirebaseAuth(null);
 
       let errorMessage = "An unexpected error occurred during registration.";
        if (error instanceof AxiosError && error.response) {
@@ -204,12 +208,14 @@ export default function AuthPage() {
     }
   };
 
-  if (isLoadingAuth) {
+  if (isLoadingAuth || (currentUser && !isLoggingOut) ) { // Show loading if auth is loading OR if user exists and not logging out (to allow redirect useEffect to run)
     return (
       <div className="flex min-h-[calc(100vh-12rem)] flex-col items-center justify-center p-4">
         <Card className="w-full max-w-md shadow-xl bg-card text-center p-8">
           <LoadingSpinner size={40} />
-          <p className="mt-4 text-muted-foreground">Loading authentication...</p>
+          <p className="mt-4 text-muted-foreground">
+            {isLoadingAuth ? "Loading authentication..." : (currentUser ? "Redirecting..." : "Please wait...")}
+          </p>
         </Card>
       </div>
     );
