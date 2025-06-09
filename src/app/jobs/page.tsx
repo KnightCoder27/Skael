@@ -114,13 +114,13 @@ export default function JobExplorerPage() {
     return {
       ...backendJob, 
       technologies: backendJob.technologies?.map((name, index) => ({
-        id: `${backendJob.id}-tech-${index}`, 
+        id: `${backendJob.id || 'no-id'}-tech-${index}`, 
         technology_name: name,
         technology_slug: name.toLowerCase().replace(/\s+/g, '-'),
       })) || [],
       companyLogo: `https://placehold.co/100x100.png?text=${encodeURIComponent(backendJob.company?.[0] || 'J')}`,
-      matchScore: jobAnalysisCache[backendJob.id]?.matchScore,
-      matchExplanation: jobAnalysisCache[backendJob.id]?.matchExplanation,
+      matchScore: typeof backendJob.id === 'number' ? jobAnalysisCache[backendJob.id]?.matchScore : undefined,
+      matchExplanation: typeof backendJob.id === 'number' ? jobAnalysisCache[backendJob.id]?.matchExplanation : undefined,
     };
   };
 
@@ -149,9 +149,9 @@ export default function JobExplorerPage() {
       const payload: UserProfileForRelevantJobs = { 
         job_titles: currentUser.job_role ? [currentUser.job_role] : [],
         skills: currentUser.skills && currentUser.skills.length > 0 ? currentUser.skills : [],
-        experience: currentUser.experience ?? 0, // Default to 0 if null/undefined as backend expects int
+        experience: currentUser.experience ?? 0,
         locations: currentUser.preferred_locations && currentUser.preferred_locations.length > 0 ? currentUser.preferred_locations : [],
-        countries: [], // Explicitly send empty array
+        countries: [], 
         remote: remotePreferenceValue,
       };
       const cleanedPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== undefined));
@@ -159,7 +159,13 @@ export default function JobExplorerPage() {
       console.log("DEBUG: Payload for /jobs/relevant_jobs:", JSON.stringify(cleanedPayload, null, 2));
 
       const response = await apiClient.post<BackendJobListingResponseItem[]>('/jobs/relevant_jobs', cleanedPayload);
-      setRelevantJobsList(response.data.map(mapBackendJobToFrontend));
+      
+      const validJobs = response.data.filter(job => typeof job.id === 'number' && job.id !== null && job.id !== undefined);
+      if (validJobs.length !== response.data.length) {
+        console.warn(`Relevant Jobs: Filtered out ${response.data.length - validJobs.length} jobs due to missing or invalid ID.`);
+      }
+      setRelevantJobsList(validJobs.map(mapBackendJobToFrontend));
+
     } catch (error) {
       const message = error instanceof AxiosError && error.response?.data?.detail ? error.response.data.detail : "Could not load relevant jobs.";
       setErrorRelevantJobs(message);
@@ -174,7 +180,13 @@ export default function JobExplorerPage() {
     setErrorAllJobs(null);
     try {
       const response = await apiClient.get<BackendJobListingResponseItem[]>('/jobs/list_jobs/');
-      setAllJobsList(response.data.map(mapBackendJobToFrontend));
+
+      const validJobs = response.data.filter(job => typeof job.id === 'number' && job.id !== null && job.id !== undefined);
+      if (validJobs.length !== response.data.length) {
+        console.warn(`All Jobs: Filtered out ${response.data.length - validJobs.length} jobs due to missing or invalid ID.`);
+      }
+      setAllJobsList(validJobs.map(mapBackendJobToFrontend));
+
     } catch (error) {
       const message = error instanceof AxiosError && error.response?.data?.detail ? error.response.data.detail : "Could not load all jobs.";
       setErrorAllJobs(message);
@@ -211,9 +223,9 @@ export default function JobExplorerPage() {
     const payload: UserProfileForJobFetching = {
       job_titles: currentUser.job_role ? [currentUser.job_role] : [],
       skills: currentUser.skills && currentUser.skills.length > 0 ? currentUser.skills : [],
-      experience: currentUser.experience ?? 0, // Default to 0 if null/undefined
+      experience: currentUser.experience ?? 0, 
       locations: currentUser.preferred_locations && currentUser.preferred_locations.length > 0 ? currentUser.preferred_locations : [],
-      countries: [], // Explicitly send empty array
+      countries: [], 
       remote: remotePreferenceValue,
     };
     
@@ -254,6 +266,11 @@ export default function JobExplorerPage() {
     setSelectedJobForDetails(job);
     setIsDetailsModalOpen(true);
     if (job.matchScore !== undefined && job.matchExplanation) return;
+    
+    if (typeof job.id !== 'number') {
+        console.warn("Cannot fetch AI details for job with invalid ID:", job);
+        return;
+    }
     const cachedAnalysis = jobAnalysisCache[job.id];
     if (cachedAnalysis) {
       const updateWithCache = (prev: JobListing[]) => prev.map(j => j.id === job.id ? { ...j, ...cachedAnalysis } : j);
@@ -279,7 +296,7 @@ export default function JobExplorerPage() {
       setRelevantJobsList(updateJobsState);
       setAllJobsList(updateJobsState);
       setSelectedJobForDetails(prevJob => prevJob ? { ...prevJob, ...explanationResult } : null);
-      setJobAnalysisCache(prevCache => ({ ...prevCache, [job.id]: explanationResult }));
+      setJobAnalysisCache(prevCache => ({ ...prevCache, [job.id as number]: explanationResult }));
       addLocalActivity({ type: "MATCH_ANALYSIS_VIEWED", jobId: job.id, jobTitle: job.job_title, company: job.company, details: { matchScore: explanationResult.matchScore }});
     } catch (error) {
       console.error("Error fetching AI match explanation:", error);
@@ -292,6 +309,10 @@ export default function JobExplorerPage() {
   const handleViewDetails = (job: JobListing) => fetchJobDetailsWithAI(job);
 
   const handleSaveJob = (job: JobListing) => {
+    if (typeof job.id !== 'number') {
+        toast({ title: "Error", description: "Cannot save job with invalid ID.", variant: "destructive"});
+        return;
+    }
     const existingApplicationIndex = trackedApplications.findIndex(app => app.jobId === job.id);
     let activityType: ActivityType = "JOB_SAVED";
     let toastMessage = `${job.job_title} added to your application tracker.`;
@@ -311,6 +332,10 @@ export default function JobExplorerPage() {
   };
 
   const openMaterialsModal = (job: JobListing) => {
+    if (typeof job.id !== 'number') {
+        toast({ title: "Error", description: "Cannot generate materials for job with invalid ID.", variant: "destructive"});
+        return;
+    }
     setSelectedJobForMaterials(job);
     setGeneratedResume(null);
     setGeneratedCoverLetter(null);
@@ -322,6 +347,7 @@ export default function JobExplorerPage() {
   };
 
   const getPointsForJob = async (jobToGetPointsFor: JobListing): Promise<ExtractJobDescriptionPointsOutput | null> => {
+    if (typeof jobToGetPointsFor.id !== 'number') return null;
     if (jobToGetPointsFor.id === jobForExtractedPoints?.id && extractedJobPoints) return extractedJobPoints;
     try {
       const pointsInput: ExtractJobDescriptionPointsInput = { jobDescription: jobToGetPointsFor.description || '' };
@@ -337,6 +363,7 @@ export default function JobExplorerPage() {
   };
 
   const handleTriggerAIResumeGeneration = async (jobToGenerateFor: JobListing) => {
+    if (typeof jobToGenerateFor.id !== 'number') return;
     if (!currentUser || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0) {
       toast({ title: "Profile Incomplete", description: "Please complete your profile (summary, skills) to generate materials.", variant: "destructive" });
       return;
@@ -361,6 +388,7 @@ export default function JobExplorerPage() {
   };
 
   const handleTriggerAICoverLetterGeneration = async (jobToGenerateFor: JobListing) => {
+    if (typeof jobToGenerateFor.id !== 'number') return;
     if (!currentUser || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0) {
       toast({ title: "Profile Incomplete", description: "Please complete your profile (summary, skills) to generate materials.", variant: "destructive" });
       return;
@@ -386,7 +414,7 @@ export default function JobExplorerPage() {
 
   const isProfileIncompleteForAIFeatures = currentUser && (!currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0);
 
-  if (isLoggingOut) return <FullPageLoading message="Logging out..." Icon={LogOutIcon} />;
+  if (isLoggingOut) return <FullPageLoading message="Logging out..." />;
   if (isLoadingAuth) return <FullPageLoading message="Authenticating..." />;
   if (!currentUser && !isLoadingAuth && !isLoggingOut) return <FullPageLoading message="Verifying session..." />;
 
@@ -513,6 +541,3 @@ export default function JobExplorerPage() {
     </div>
   );
 }
-
-
-    
