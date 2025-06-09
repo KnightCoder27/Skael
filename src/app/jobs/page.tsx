@@ -112,8 +112,7 @@ export default function JobExplorerPage() {
 
   const mapBackendJobToFrontend = (backendJob: BackendJobListingResponseItem): JobListing => {
     return {
-      ...backendJob, // Spread all backend fields first
-      // Then map/override specific fields
+      ...backendJob, 
       technologies: backendJob.technologies?.map((name, index) => ({
         id: `${backendJob.id}-tech-${index}`, 
         technology_name: name,
@@ -148,15 +147,15 @@ export default function JobExplorerPage() {
       else if (currentUser.remote_preference === "Onsite") remotePreferenceValue = false;
 
       const payload: UserProfileForRelevantJobs = { 
-        job_titles: currentUser.job_role ? [currentUser.job_role] : undefined,
-        skills: currentUser.skills && currentUser.skills.length > 0 ? currentUser.skills : undefined,
-        experience: currentUser.experience ?? undefined, 
-        locations: currentUser.preferred_locations && currentUser.preferred_locations.length > 0 ? currentUser.preferred_locations : undefined,
-        // countries: undefined, // Omitting countries for now, backend might use default or derive
+        job_titles: currentUser.job_role ? [currentUser.job_role] : [],
+        skills: currentUser.skills && currentUser.skills.length > 0 ? currentUser.skills : [],
+        experience: currentUser.experience ?? 0, // Default to 0 if null/undefined as backend expects int
+        locations: currentUser.preferred_locations && currentUser.preferred_locations.length > 0 ? currentUser.preferred_locations : [],
+        countries: [], // Explicitly send empty array
         remote: remotePreferenceValue,
       };
       const cleanedPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== undefined));
-
+      
       console.log("DEBUG: Payload for /jobs/relevant_jobs:", JSON.stringify(cleanedPayload, null, 2));
 
       const response = await apiClient.post<BackendJobListingResponseItem[]>('/jobs/relevant_jobs', cleanedPayload);
@@ -188,13 +187,13 @@ export default function JobExplorerPage() {
 
   useEffect(() => {
     if (currentUser && !isLoggingOut) {
-        if (activeTab === "relevant" && relevantJobsList.length === 0) { 
+        if (activeTab === "relevant" && relevantJobsList.length === 0 && !isLoadingRelevantJobs && !errorRelevantJobs) { 
             fetchRelevantJobs();
-        } else if (activeTab === "all" && allJobsList.length === 0) { 
+        } else if (activeTab === "all" && allJobsList.length === 0 && !isLoadingAllJobs && !errorAllJobs) { 
             fetchAllJobs();
         }
     }
-  }, [activeTab, currentUser, fetchRelevantJobs, fetchAllJobs, isLoggingOut, relevantJobsList.length, allJobsList.length]);
+  }, [activeTab, currentUser, fetchRelevantJobs, fetchAllJobs, isLoggingOut, relevantJobsList.length, allJobsList.length, isLoadingRelevantJobs, errorRelevantJobs, isLoadingAllJobs, errorAllJobs]);
 
 
   const handleGenerateJobs = async () => {
@@ -210,11 +209,11 @@ export default function JobExplorerPage() {
     else if (currentUser.remote_preference === "Onsite") remotePreferenceValue = false;
 
     const payload: UserProfileForJobFetching = {
-      job_titles: currentUser.job_role ? [currentUser.job_role] : undefined,
-      skills: currentUser.skills && currentUser.skills.length > 0 ? currentUser.skills : undefined,
-      experience: currentUser.experience ?? undefined,
-      locations: currentUser.preferred_locations && currentUser.preferred_locations.length > 0 ? currentUser.preferred_locations : undefined,
-      // countries: undefined, // Let backend handle default or derive for now
+      job_titles: currentUser.job_role ? [currentUser.job_role] : [],
+      skills: currentUser.skills && currentUser.skills.length > 0 ? currentUser.skills : [],
+      experience: currentUser.experience ?? 0, // Default to 0 if null/undefined
+      locations: currentUser.preferred_locations && currentUser.preferred_locations.length > 0 ? currentUser.preferred_locations : [],
+      countries: [], // Explicitly send empty array
       remote: remotePreferenceValue,
     };
     
@@ -515,3 +514,5 @@ export default function JobExplorerPage() {
   );
 }
 
+
+    
