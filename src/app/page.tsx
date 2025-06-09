@@ -45,7 +45,7 @@ export default function LandingPage() {
             </div>
             <div>
               <Image
-                src="https://storage.googleapis.com/generative-ai-for-developers/images/xlhmHsozT1A.jpeg"
+                src="https://placehold.co/600x700.png"
                 alt="Modern building representing career opportunities"
                 width={600}
                 height={700}
