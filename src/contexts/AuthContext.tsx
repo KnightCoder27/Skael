@@ -50,7 +50,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const token = await fbUserForToken.getIdToken(true);
 
       if (!token) {
-        console.error("AuthContext: Failed to retrieve Firebase ID token for backend request (token is falsy). Aborting profile fetch.");
+        console.error("AuthContext: Failed to retrieve Firebase ID token for backend request. Aborting profile fetch.");
         toast({ title: "Authentication Error", description: "Could not retrieve a valid session token. Please try logging in again.", variant: "destructive" });
         setCurrentUser(null);
         setBackendUserIdState(null);
@@ -76,20 +76,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
 
   useEffect(() => {
-    console.log("AuthContext: Main useEffect setting up onAuthStateChanged listener. Current state:", { fbUserUid: firebaseUser?.uid, currentUserId: currentUser?.id, backendUserIdFromState: backendUserId, pendingBackendIdFromRef: pendingBackendIdRef.current, isLoggingOut });
+    console.log("AuthContext: Main useEffect setting up onAuthStateChanged listener. Current state:", { isLoadingAuth, fbUserUid: firebaseUser?.uid, currentUserId: currentUser?.id, backendUserIdFromState: backendUserId, pendingBackendIdFromRef: pendingBackendIdRef.current, isLoggingOut });
     
-    // Attempt to load from localStorage initially if no currentUser and not logging out
-    if (typeof window !== 'undefined' && !currentUser && !isLoggingOut) {
+    if (typeof window !== 'undefined' && !currentUser && !isLoggingOut && !isLoadingAuth) {
       try {
         const storedBackendUser = window.localStorage.getItem(CURRENT_BACKEND_USER_STORAGE_KEY);
         if (storedBackendUser) {
           const parsedUser: User = JSON.parse(storedBackendUser);
-          // Only set if firebaseUser is not yet resolved, to avoid overriding fresh data
-          if (!firebaseUser) {
+          if (!firebaseUser) { // Only restore if Firebase hasn't resolved yet
              setCurrentUser(parsedUser);
              if (parsedUser && typeof parsedUser.id === 'number') {
                setBackendUserIdState(parsedUser.id);
              }
+             console.log("AuthContext: Restored backend user from localStorage:", parsedUser.id);
           }
         }
       } catch (error) {
@@ -99,34 +98,30 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
     
     const unsubscribe = onAuthStateChanged(firebaseAuth, async (fbUser) => {
-      console.log("AuthContext: onAuthStateChanged triggered. Firebase user (fbUser):", fbUser?.uid, "Current pendingBackendIdRef:", pendingBackendIdRef.current);
-      setIsLoadingAuth(true); // Start loading for any auth state change
+      console.log(`AuthContext: --- onAuthStateChanged START --- FB User: ${fbUser?.uid}, Pending Backend ID Ref: ${pendingBackendIdRef.current}`);
+      setIsLoadingAuth(true);
       console.log("AuthContext: isLoadingAuth SET TO TRUE (start of onAuthStateChanged)");
 
       if (fbUser) {
         setFirebaseUser(fbUser);
         setIsLoggingOutState(false); // Ensure isLoggingOut is false if we have a Firebase user
-        console.log("AuthContext: Firebase user is present (fbUser.uid:", fbUser.uid, ")");
+        console.log(`AuthContext: Firebase user is present (fbUser.uid: ${fbUser.uid})`);
         
-        let idToFetchProfileFor: number | null = null;
         const localPendingId = pendingBackendIdRef.current; 
 
         if (localPendingId !== null && !isNaN(localPendingId)) {
           console.log(`AuthContext: Using localPendingId from ref: ${localPendingId} to fetch profile.`);
-          idToFetchProfileFor = localPendingId;
-        } else if (backendUserId && (!currentUser || currentUser.id !== backendUserId)) {
-           console.log(`AuthContext: No pending ID in ref. Existing backendUserId (${backendUserId}) found. Re-fetching profile if currentUser is stale/mismatched or missing.`);
-           idToFetchProfileFor = backendUserId;
+          await fetchBackendUserProfile(localPendingId, fbUser);
+          pendingBackendIdRef.current = null; // Clear the ref after use
+          console.log("AuthContext: Cleared pendingBackendIdRef after fetch.");
+        } else if (backendUserId !== null && (!currentUser || currentUser.id !== backendUserId)) {
+           console.log(`AuthContext: No pending ID in ref. Existing backendUserId (${backendUserId}) found. Re-fetching profile if currentUser is stale/mismatched or missing for fbUser: ${fbUser.uid}.`);
+           await fetchBackendUserProfile(backendUserId, fbUser);
         } else if (currentUser && currentUser.id === backendUserId && backendUserId !== null) {
-           console.log(`AuthContext: No pending ID in ref. User profile (ID: ${currentUser.id}) already loaded and consistent with backendUserId (${backendUserId}). No immediate fetch needed.`);
+           console.log(`AuthContext: No pending ID. Backend user profile (ID: ${currentUser.id}) already loaded and consistent with backendUserId (${backendUserId}) for fbUser: ${fbUser.uid}. No immediate fetch needed.`);
         } else {
-          console.log("AuthContext: Firebase user detected, but no clear path to determine backend user ID yet (no pending ID in ref, no existing session to refresh/resume).");
+          console.log(`AuthContext: Firebase user ${fbUser.uid} detected, but no clear path to determine backend user ID yet (no pending ID, no existing session to refresh/resume, or currentUser matches backendUserId).`);
         }
-
-        if (idToFetchProfileFor !== null && !isNaN(idToFetchProfileFor)) {
-          await fetchBackendUserProfile(idToFetchProfileFor, fbUser);
-        }
-        pendingBackendIdRef.current = null; // Clear the ref after use or if no fetch was needed for this specific auth event
 
       } else { // fbUser is null (logout)
         console.log("AuthContext: No Firebase user (logout). Clearing user state.");
@@ -136,19 +131,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         pendingBackendIdRef.current = null; // Clear ref on logout
         if (typeof window !== 'undefined') {
           window.localStorage.removeItem(CURRENT_BACKEND_USER_STORAGE_KEY);
+          console.log("AuthContext: Removed currentBackendUser from localStorage.");
         }
         setIsLoggingOutState(false); // Reset isLoggingOut after all state is cleared
       }
       console.log("AuthContext: onAuthStateChanged processing finished for this event.");
-      setIsLoadingAuth(false); // Stop loading after all processing for this auth event
+      setIsLoadingAuth(false); 
       console.log("AuthContext: isLoadingAuth SET TO FALSE (end of onAuthStateChanged)");
+      console.log(`AuthContext: --- onAuthStateChanged END --- FB User: ${fbUser?.uid}`);
     });
 
     return () => {
       console.log("AuthContext: Unsubscribing from onAuthStateChanged.");
       unsubscribe();
     };
-  }, [fetchBackendUserProfile, backendUserId, currentUser]); // Dependencies for re-subscribing if these context-dependent items change.
+  }, [fetchBackendUserProfile]); 
 
 
   const setBackendUserContext = (user: User | null) => {
@@ -163,8 +160,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const refetchBackendUser = async () => {
-    const currentFbUser = firebaseAuth.currentUser;
-    if (backendUserId && currentFbUser) {
+    // Ensure firebaseAuth.currentUser is accessed directly here to get the most current Firebase user object
+    const currentFbUser = firebaseAuth.currentUser; 
+    if (backendUserId !== null && currentFbUser) {
       console.log("AuthContext: refetchBackendUser called. Fetching profile for backendUserId:", backendUserId);
       setIsLoadingAuth(true); 
       console.log("AuthContext: isLoadingAuth SET TO TRUE (start of refetchBackendUser)");
@@ -172,12 +170,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setIsLoadingAuth(false); 
       console.log("AuthContext: isLoadingAuth SET TO FALSE (end of refetchBackendUser)");
     } else {
-      console.warn("AuthContext: refetchBackendUser called but backendUserId is null or no Firebase user is authenticated. BackendUserId:", backendUserId, "Firebase User:", currentFbUser);
-      if (!currentFbUser) { // If no Firebase user, implies a logged-out state or error
+      console.warn("AuthContext: refetchBackendUser called but backendUserId is null or no Firebase user is authenticated. BackendUserId:", backendUserId, "Firebase User UID (from state):", firebaseUser?.uid, "Firebase User (direct check):", currentFbUser?.uid);
+      if (!currentFbUser) { 
          setCurrentUser(null);
          setBackendUserIdState(null);
          if (typeof window !== 'undefined') window.localStorage.removeItem(CURRENT_BACKEND_USER_STORAGE_KEY);
-         setIsLoadingAuth(false); // Ensure loading stops
+         setIsLoadingAuth(false); 
          console.log("AuthContext: isLoadingAuth SET TO FALSE (refetch failed due to no Firebase user)");
       }
     }
