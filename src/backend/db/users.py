@@ -98,7 +98,7 @@ def handle_user_locations(db: Session, user: User, location_names: list[str]):
 class UserIn(BaseModel):
     username: str
     email: str
-    number: str
+    number: Optional[str] = None # Allow null for phone number
     password: str
 
 class UserUpdate(BaseModel):
@@ -122,24 +122,16 @@ class FeedbackIn(BaseModel):
     feedback: str
     metadata: Optional[dict] = None
 
-@router.post("/", status_code=201) # Changed from /register to /
+@router.post("/", status_code=201) 
 def create_user(user_in: UserIn, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email_id == user_in.email).first()
     if user:
         raise HTTPException(status_code=400, detail="Email already registered")
     
-    # Ensure phone number is a string before trying to convert if needed, or handle if it's meant to be stored as int
-    # For now, assuming User model's phone_number is string. If it's int, ensure conversion here.
-    # Example if User.phone_number is an integer:
-    # try:
-    #     phone_number_int = int(user_in.number)
-    # except ValueError:
-    #     raise HTTPException(status_code=400, detail="Invalid phone number format")
-
     new_user = User(
-        user_name=user_in.username.lower(), # Changed from user_name to username to match UserIn
+        user_name=user_in.username.lower(), 
         email_id=user_in.email,
-        phone_number=user_in.number, # Assuming User.phone_number is String. If int, use phone_number_int
+        phone_number=user_in.number, 
         password=hash_password(user_in.password),
         joined_date=datetime.now()
     )
@@ -150,28 +142,22 @@ def create_user(user_in: UserIn, db: Session = Depends(get_db)):
 
 @router.get("/{id}", response_model=UserOut)
 def get_user(id: int = Path(...), db: Session = Depends(get_db), current_firebase_user: dict = Depends(get_current_user)):
-    # current_firebase_user now contains the decoded token including 'uid'
-    # You might want to compare current_firebase_user['uid'] with something in your User model
-    # if you link Firebase UIDs to your internal user IDs.
-    # For now, just checking if the user exists by internal ID.
-    
     user = db.query(User).filter(User.id == id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    # Constructing UserOut Pydantic model from the SQLAlchemy User object
     return UserOut(
         id=user.id,
-        user_name=user.user_name, # In User model, it's user_name
-        email_id=user.email_id, # In User model, it's email_id
+        user_name=user.user_name, 
+        email_id=user.email_id, 
         phone_number=user.phone_number,
         desired_job_role=user.desired_job_role,
-        skills=[tech.technology_name for tech in user.skills if tech.technology_name], # Ensure names exist
+        skills=[tech.technology_name for tech in user.skills if tech.technology_name], 
         experience=user.experience,
-        preferred_locations=[loc.name for loc in user.preferred_locations if loc.name], # Ensure names exist
+        preferred_locations=[loc.name for loc in user.preferred_locations if loc.name], 
         remote_preference=user.remote_preference.value if user.remote_preference else None,
         professional_summary=user.professional_summary,
-        expected_salary=str(user.expected_salary) if user.expected_salary is not None else None, # Ensure string if model expects it
+        expected_salary=str(user.expected_salary) if user.expected_salary is not None else None, 
         resume=user.resume,
         joined_date=user.joined_date
     )
@@ -179,7 +165,6 @@ def get_user(id: int = Path(...), db: Session = Depends(get_db), current_firebas
 
 @router.put("/{id}")
 def update_user(id: int, update_data: UserUpdate, db: Session = Depends(get_db), current_firebase_user: dict = Depends(get_current_user)):
-    # Similar authorization check as in get_user might be needed
     user = db.query(User).filter(User.id == id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -196,15 +181,20 @@ def update_user(id: int, update_data: UserUpdate, db: Session = Depends(get_db),
         user.experience = update_dict['experience']
     if 'remote_preference' in update_dict and update_dict['remote_preference']:
         try:
-            user.remote_preference = RemotePreference(update_dict['remote_preference'].upper())
+            # The value from update_dict['remote_preference'] ("Remote", "Hybrid", "Onsite")
+            # directly matches the values of the RemotePreference enum members.
+            user.remote_preference = RemotePreference(update_dict['remote_preference'])
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid remote preference value.")
+    elif 'remote_preference' in update_dict and update_dict['remote_preference'] is None:
+        user.remote_preference = None # Allow unsetting it
+    
     if 'password' in update_dict and update_dict['password']:
         user.password = hash_password(update_dict['password'])
     if 'professional_summary' in update_dict:
         user.professional_summary = update_dict['professional_summary'].lower()
     if 'expected_salary' in update_dict:
-        user.expected_salary = str(update_dict['expected_salary']) # Assuming stored as string
+        user.expected_salary = str(update_dict['expected_salary']) 
     if 'resume' in update_dict:
         user.resume = update_dict['resume']
     
@@ -218,7 +208,6 @@ def update_user(id: int, update_data: UserUpdate, db: Session = Depends(get_db),
 
 @router.delete("/{id}")
 def delete_user(id: int, db: Session = Depends(get_db), current_firebase_user: dict = Depends(get_current_user)):
-    # Authorization check recommended
     user = db.query(User).filter(User.id == id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -228,12 +217,11 @@ def delete_user(id: int, db: Session = Depends(get_db), current_firebase_user: d
 
 @router.post("/{id}/feedback")
 def log_feedback(id: int, feedback: FeedbackIn, db: Session = Depends(get_db), current_firebase_user: dict = Depends(get_current_user)):
-    # Authorization check recommended
     activity = UserActivityLog(
         user_id=id,
         job_id=None, 
         action_type="feedback",
-        activity_metadata={"feedback": feedback.feedback, **(feedback.metadata or {})} # activity_metadata, not metadata
+        activity_metadata={"feedback": feedback.feedback, **(feedback.metadata or {})} 
     )
     db.add(activity)
     db.commit()
@@ -251,4 +239,4 @@ def login(user_login: UserLogin, db: Session = Depends(get_db)):
         )
     return {"msg": "Login successful", "user_id": user.id}
 
-
+    
