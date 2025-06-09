@@ -112,9 +112,10 @@ export default function JobExplorerPage() {
 
   const mapBackendJobToFrontend = (backendJob: BackendJobListingResponseItem): JobListing => {
     return {
-      ...backendJob,
+      ...backendJob, // Spread all backend fields first
+      // Then map/override specific fields
       technologies: backendJob.technologies?.map((name, index) => ({
-        id: `${backendJob.id}-tech-${index}`, // Simple local ID for display purposes
+        id: `${backendJob.id}-tech-${index}`, 
         technology_name: name,
         technology_slug: name.toLowerCase().replace(/\s+/g, '-'),
       })) || [],
@@ -142,19 +143,21 @@ export default function JobExplorerPage() {
     setIsLoadingRelevantJobs(true);
     setErrorRelevantJobs(null);
     try {
-      let remotePreference: boolean | null = null;
-      if (currentUser.remote_preference === "Remote") remotePreference = true;
-      else if (currentUser.remote_preference === "Onsite") remotePreference = false;
+      let remotePreferenceValue: boolean | null = null;
+      if (currentUser.remote_preference === "Remote") remotePreferenceValue = true;
+      else if (currentUser.remote_preference === "Onsite") remotePreferenceValue = false;
 
       const payload: UserProfileForRelevantJobs = { 
         job_titles: currentUser.job_role ? [currentUser.job_role] : undefined,
         skills: currentUser.skills && currentUser.skills.length > 0 ? currentUser.skills : undefined,
-        experience: currentUser.experience ?? undefined, // Use undefined if null for optional fields
+        experience: currentUser.experience ?? undefined, 
         locations: currentUser.preferred_locations && currentUser.preferred_locations.length > 0 ? currentUser.preferred_locations : undefined,
-        // countries: undefined, // Omitting countries for relevant_jobs for now, backend might use default
-        remote: remotePreference,
+        // countries: undefined, // Omitting countries for now, backend might use default or derive
+        remote: remotePreferenceValue,
       };
       const cleanedPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== undefined));
+
+      console.log("DEBUG: Payload for /jobs/relevant_jobs:", JSON.stringify(cleanedPayload, null, 2));
 
       const response = await apiClient.post<BackendJobListingResponseItem[]>('/jobs/relevant_jobs', cleanedPayload);
       setRelevantJobsList(response.data.map(mapBackendJobToFrontend));
@@ -185,9 +188,9 @@ export default function JobExplorerPage() {
 
   useEffect(() => {
     if (currentUser && !isLoggingOut) {
-        if (activeTab === "relevant" && relevantJobsList.length === 0) { // Fetch only if not already loaded
+        if (activeTab === "relevant" && relevantJobsList.length === 0) { 
             fetchRelevantJobs();
-        } else if (activeTab === "all" && allJobsList.length === 0) { // Fetch only if not already loaded
+        } else if (activeTab === "all" && allJobsList.length === 0) { 
             fetchAllJobs();
         }
     }
@@ -202,31 +205,31 @@ export default function JobExplorerPage() {
     setIsLoadingGenerateJobs(true);
     setErrorGenerateJobs(null);
 
-    let remotePreference: boolean | null = null;
-    if (currentUser.remote_preference === "Remote") remotePreference = true;
-    else if (currentUser.remote_preference === "Onsite") remotePreference = false;
+    let remotePreferenceValue: boolean | null = null;
+    if (currentUser.remote_preference === "Remote") remotePreferenceValue = true;
+    else if (currentUser.remote_preference === "Onsite") remotePreferenceValue = false;
 
     const payload: UserProfileForJobFetching = {
       job_titles: currentUser.job_role ? [currentUser.job_role] : undefined,
       skills: currentUser.skills && currentUser.skills.length > 0 ? currentUser.skills : undefined,
       experience: currentUser.experience ?? undefined,
       locations: currentUser.preferred_locations && currentUser.preferred_locations.length > 0 ? currentUser.preferred_locations : undefined,
-      // countries: undefined, // Let backend handle default or derive
-      remote: remotePreference,
+      // countries: undefined, // Let backend handle default or derive for now
+      remote: remotePreferenceValue,
     };
     
     const cleanedPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== undefined));
+    console.log("DEBUG: Payload for /jobs/fetch_jobs:", JSON.stringify(cleanedPayload, null, 2));
 
     try {
-      const response = await apiClient.post<{ status: string; jobs_fetched: number; jobs: any[] }>('/jobs/fetch_jobs', cleanedPayload);
+      const response = await apiClient.post<{ status: string; jobs_fetched: number; jobs: BackendJobListingResponseItem[] }>('/jobs/fetch_jobs', cleanedPayload);
       toast({ title: "Job Fetch Initiated", description: `${response.data.jobs_fetched} jobs fetched/processed from external API. Newly fetched jobs might appear in 'All Jobs' or 'Relevant Jobs' after a refresh or switching tabs.` });
-      // To see new jobs, user might need to switch to other tabs, which will trigger re-fetch if list is empty.
-      // Or, we could automatically trigger a re-fetch of the current "All" or "Relevant" tab.
+      
       if (activeTab === "all") {
-        setAllJobsList([]); // Clear to force re-fetch
+        setAllJobsList([]); 
         fetchAllJobs();
       } else if (activeTab === "relevant") {
-        setRelevantJobsList([]); // Clear to force re-fetch
+        setRelevantJobsList([]); 
         fetchRelevantJobs();
       }
     } catch (error) {
@@ -254,8 +257,9 @@ export default function JobExplorerPage() {
     if (job.matchScore !== undefined && job.matchExplanation) return;
     const cachedAnalysis = jobAnalysisCache[job.id];
     if (cachedAnalysis) {
-      setRelevantJobsList(prev => prev.map(j => j.id === job.id ? { ...j, ...cachedAnalysis } : j));
-      setAllJobsList(prev => prev.map(j => j.id === job.id ? { ...j, ...cachedAnalysis } : j));
+      const updateWithCache = (prev: JobListing[]) => prev.map(j => j.id === job.id ? { ...j, ...cachedAnalysis } : j);
+      setRelevantJobsList(updateWithCache);
+      setAllJobsList(updateWithCache);
       setSelectedJobForDetails(prevJob => prevJob ? { ...prevJob, ...cachedAnalysis } : null);
       return;
     }
@@ -510,3 +514,4 @@ export default function JobExplorerPage() {
     </div>
   );
 }
+
