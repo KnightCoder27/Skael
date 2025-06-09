@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Compass, Briefcase, User, LogOut, LogIn, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'; // Added SheetHeader, SheetTitle
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { signOut } from 'firebase/auth';
@@ -22,7 +22,7 @@ const navItemsLoggedIn = [
 export function Header() {
   const pathname = usePathname();
   const router = useRouter();
-  const { currentUser, isLoadingAuth } = useAuth(); // Removed setBackendUser from here as direct call is not needed
+  const { currentUser, isLoadingAuth } = useAuth();
   const [isClient, setIsClient] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const { toast } = useToast();
@@ -133,6 +133,9 @@ export function Header() {
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="w-[280px] p-0 pt-6">
+              <SheetHeader className="px-4 pb-2 border-b mb-2">
+                <SheetTitle className="text-lg font-semibold text-primary">Navigation Menu</SheetTitle>
+              </SheetHeader>
               <div className="flex flex-col space-y-2 px-4">
                 {renderNavLinks(true)}
               </div>
