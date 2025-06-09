@@ -12,8 +12,8 @@ export default {
     extend: {
       fontFamily: {
         body: ['Inter', 'sans-serif'],
-        headline: ['Inter', 'sans-serif'], // Using Inter for headlines too for consistency
-        brand: ['Barlow', 'sans-serif'], // Changed to Barlow
+        headline: ['Inter', 'sans-serif'], 
+        brand: ['Inter', 'sans-serif'], // Changed to Inter
         code: ['monospace'],
       },
       colors: {
