@@ -196,7 +196,7 @@ def update_user(id: int, update_data: UserUpdate, db: Session = Depends(get_db),
         user.experience = update_dict['experience']
     if 'remote_preference' in update_dict and update_dict['remote_preference']:
         try:
-            user.remote_preference = RemotePreference(update_dict['remote_preference'].upper())
+            user.remote_preference = RemotePreference(update_dict['remote_preference'])
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid remote preference value.")
     if 'password' in update_dict and update_dict['password']:
