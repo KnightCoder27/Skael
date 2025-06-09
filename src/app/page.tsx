@@ -32,7 +32,7 @@ export default function LandingPage() {
           <div className="grid md:grid-cols-2 gap-12 items-center">
             <div className="text-center md:text-left">
               <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold text-primary mb-6 leading-tight font-headline">
-                TESTING PREVIEW: Find Your Dream Job, <span className="block md:inline">Without the Hassle.</span>
+                Find Your Dream Job, <span className="block md:inline">Without the Hassle.</span>
               </h1>
               <p className="text-lg md:text-xl text-foreground/80 mb-8 max-w-xl mx-auto md:mx-0">
                 Tired of juggling a dozen job boards and wondering if your resume stands a chance? Our AI-powered Job Hunter simplifies your search.
