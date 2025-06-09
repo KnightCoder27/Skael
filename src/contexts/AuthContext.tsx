@@ -19,6 +19,8 @@ interface AuthContextType {
   setBackendUser: (user: User | null) => void;
   refetchBackendUser: () => Promise<void>;
   setInternalPendingBackendId: (id: number | null) => void;
+  isLoggingOut: boolean; // New state
+  setIsLoggingOut: (loggingOut: boolean) => void; // New setter
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -30,7 +32,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [internalPendingBackendId, setInternalPendingBackendIdState] = useState<number | null>(null);
   const [authResolutionAttempted, setAuthResolutionAttempted] = useState(false);
+  const [isLoggingOut, setIsLoggingOutState] = useState(false); // New state
   const { toast } = useToast();
+
+  const setIsLoggingOut = useCallback((loggingOut: boolean) => {
+    console.log("AuthContext: setIsLoggingOut called with:", loggingOut);
+    setIsLoggingOutState(loggingOut);
+  }, []);
 
   const setInternalPendingBackendId = useCallback((id: number | null) => {
     console.log("AuthContext: setInternalPendingBackendId called with ID:", id);
@@ -75,9 +83,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
 
   useEffect(() => {
-    console.log("AuthContext: Main useEffect running. Current state:", { isLoadingAuth, fbUserUid: firebaseUser?.uid, currentUserId: currentUser?.id, backendUserIdFromState: backendUserId, internalPendingBackendId });
+    console.log("AuthContext: Main useEffect running. Current state:", { isLoadingAuth, fbUserUid: firebaseUser?.uid, currentUserId: currentUser?.id, backendUserIdFromState: backendUserId, internalPendingBackendId, isLoggingOut });
     
-    if (typeof window !== 'undefined' && !currentUser && !internalPendingBackendId) {
+    if (typeof window !== 'undefined' && !currentUser && !internalPendingBackendId && !isLoggingOut) {
       try {
         const storedBackendUser = window.localStorage.getItem(CURRENT_BACKEND_USER_STORAGE_KEY);
         if (storedBackendUser) {
@@ -97,21 +105,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     console.log("AuthContext: Setting up onAuthStateChanged listener.");
     const unsubscribe = onAuthStateChanged(firebaseAuth, async (fbUser) => {
       console.log("AuthContext: onAuthStateChanged triggered. Firebase user (fbUser):", fbUser?.uid);
-      setAuthResolutionAttempted(false); // Reset for new auth state change
-      // setIsLoadingAuth(true); // Keep true until authResolutionAttempted effect handles it
+      setAuthResolutionAttempted(false); 
 
       if (fbUser) {
         setFirebaseUser(fbUser);
         console.log("AuthContext: Firebase user is present (fbUser.uid:", fbUser.uid, ")");
         
         let idToFetchProfileFor: number | null = null;
-        let usedInternalPendingId = false;
 
         if (internalPendingBackendId !== null && !isNaN(internalPendingBackendId)) {
           console.log(`AuthContext: Using internalPendingBackendId: ${internalPendingBackendId} to fetch profile.`);
           idToFetchProfileFor = internalPendingBackendId;
           setInternalPendingBackendId(null); 
-          usedInternalPendingId = true;
         } else if (backendUserId && (!currentUser || currentUser.id !== backendUserId)) {
            console.log(`AuthContext: No internal pending ID. Existing backendUserId (${backendUserId}) found. Re-fetching profile if currentUser is stale/mismatched.`);
            idToFetchProfileFor = backendUserId;
@@ -126,6 +131,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         } else {
            console.log("AuthContext: No profile fetch triggered by onAuthStateChanged internal logic this time.");
         }
+        setIsLoggingOutState(false); // Ensure logging out is false if user is authenticated
 
       } else {
         console.log("AuthContext: No Firebase user (logout). Clearing user state.");
@@ -136,6 +142,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (typeof window !== 'undefined') {
           window.localStorage.removeItem(CURRENT_BACKEND_USER_STORAGE_KEY);
         }
+        setIsLoggingOutState(false); // Reset logging out flag after user is confirmed null
       }
       setAuthResolutionAttempted(true);
       console.log("AuthContext: onAuthStateChanged processing finished. authResolutionAttempted set to true.");
@@ -145,17 +152,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       console.log("AuthContext: Unsubscribing from onAuthStateChanged.");
       unsubscribe();
     };
-  }, [fetchBackendUserProfile, internalPendingBackendId, backendUserId, currentUser]); 
+  }, [fetchBackendUserProfile, internalPendingBackendId, backendUserId, currentUser, isLoggingOut]); 
 
   useEffect(() => {
     if (authResolutionAttempted) {
       setIsLoadingAuth(false);
-      console.log("AuthContext: authResolutionAttempted is true, setting isLoadingAuth to false. Final states:", { currentUser: currentUser?.id, firebaseUser: firebaseUser?.uid, backendUserId });
+      console.log("AuthContext: authResolutionAttempted is true, setting isLoadingAuth to false. Final states:", { currentUser: currentUser?.id, firebaseUser: firebaseUser?.uid, backendUserId, isLoggingOut });
     } else {
       setIsLoadingAuth(true);
-       console.log("AuthContext: authResolutionAttempted is false, setting isLoadingAuth to true.");
+       console.log("AuthContext: authResolutionAttempted is false (or other deps changed), setting isLoadingAuth to true.");
     }
-  }, [authResolutionAttempted, currentUser, firebaseUser, backendUserId]);
+  }, [authResolutionAttempted, currentUser, firebaseUser, backendUserId, isLoggingOut]);
 
 
   const setBackendUserContext = (user: User | null) => {
@@ -174,24 +181,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const currentFbUser = firebaseAuth.currentUser; 
     if (backendUserId && currentFbUser) {
       console.log("AuthContext: refetchBackendUser called. Fetching profile for backendUserId:", backendUserId);
-      setAuthResolutionAttempted(false); // Indicate a new resolution attempt is starting
+      setAuthResolutionAttempted(false); 
       setIsLoadingAuth(true);
       await fetchBackendUserProfile(backendUserId, currentFbUser); 
-      setAuthResolutionAttempted(true); // Signal completion
-      // isLoadingAuth will be set to false by the dedicated useEffect
+      setAuthResolutionAttempted(true); 
     } else {
       console.warn("AuthContext: refetchBackendUser called but backendUserId is null or no Firebase user is authenticated. BackendUserId:", backendUserId, "Firebase User:", currentFbUser);
       if (!currentFbUser) {
          setCurrentUser(null); 
          setBackendUserIdState(null);
          if (typeof window !== 'undefined') window.localStorage.removeItem(CURRENT_BACKEND_USER_STORAGE_KEY);
-         setAuthResolutionAttempted(true); // Still, mark resolution as attempted (for logout case)
+         setAuthResolutionAttempted(true); 
       }
     }
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, firebaseUser, isLoadingAuth, backendUserId, setBackendUser: setBackendUserContext, refetchBackendUser, setInternalPendingBackendId }}>
+    <AuthContext.Provider value={{ currentUser, firebaseUser, isLoadingAuth, backendUserId, setBackendUser: setBackendUserContext, refetchBackendUser, setInternalPendingBackendId, isLoggingOut, setIsLoggingOut }}>
       {children}
     </AuthContext.Provider>
   );

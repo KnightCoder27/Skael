@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect } from 'react'; // Added useEffect
+import { useEffect } from 'react'; 
 import useLocalStorage from '@/hooks/use-local-storage';
 import type { TrackedApplication, ApplicationStatus } from '@/types';
 import { ApplicationTrackerTable } from '@/components/app/application-tracker-table';
@@ -9,24 +9,29 @@ import { Button } from '@/components/ui/button';
 import { Briefcase, FilePlus2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
-import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
-import { useRouter } from 'next/navigation'; // Import useRouter
-import { FullPageLoading } from '@/components/app/loading-spinner'; // Import FullPageLoading
+import { useAuth } from '@/contexts/AuthContext'; 
+import { useRouter } from 'next/navigation'; 
+import { FullPageLoading } from '@/components/app/loading-spinner'; 
 
 
 export default function TrackerPage() {
-  const { currentUser, isLoadingAuth } = useAuth(); // Use AuthContext
-  const router = useRouter(); // Initialize useRouter
+  const { currentUser, isLoadingAuth, isLoggingOut } = useAuth(); // Added isLoggingOut
+  const router = useRouter(); 
   const [trackedApplications, setTrackedApplications] = useLocalStorage<TrackedApplication[]>('tracked-applications', []);
   const { toast } = useToast();
 
-  // Redirect if not authenticated
   useEffect(() => {
-    if (!isLoadingAuth && !currentUser) {
-      toast({ title: "Access Denied", description: "Please log in to view your tracker.", variant: "destructive" });
-      router.push('/auth');
+    if (!isLoadingAuth) {
+      if (isLoggingOut) {
+        console.log("TrackerPage: Logout in progress, delaying auth check.");
+        return; 
+      }
+      if (!currentUser) {
+        toast({ title: "Access Denied", description: "Please log in to view your tracker.", variant: "destructive" });
+        router.push('/auth');
+      }
     }
-  }, [isLoadingAuth, currentUser, router, toast]);
+  }, [isLoadingAuth, currentUser, router, toast, isLoggingOut]);
 
 
   const handleUpdateStatus = (jobId: number, status: ApplicationStatus) => {
@@ -47,7 +52,11 @@ export default function TrackerPage() {
     return <FullPageLoading message="Authenticating..." />;
   }
 
-  if (!currentUser) { // Should be caught by useEffect, but as a fallback
+  if (isLoggingOut) { // Show loading/processing if actively logging out
+    return <FullPageLoading message="Processing..." />;
+  }
+
+  if (!currentUser) { 
     return <FullPageLoading message="Redirecting to login..." />;
   }
 

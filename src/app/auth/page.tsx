@@ -20,7 +20,7 @@ import apiClient from '@/lib/apiClient';
 import { auth as firebaseAuth } from '@/lib/firebase';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile }from 'firebase/auth';
 import { AxiosError } from 'axios';
-import { FullPageLoading, LoadingSpinner } from '@/components/app/loading-spinner';
+import { LoadingSpinner } from '@/components/app/loading-spinner';
 
 // Schemas for form validation
 const loginSchema = z.object({
@@ -55,8 +55,8 @@ export default function AuthPage() {
     console.log("AuthPage Effect for redirect: isLoadingAuth=", isLoadingAuth, "currentUser present=", !!currentUser);
     if (!isLoadingAuth && currentUser) {
       console.log("AuthPage Effect: Conditions met. Redirecting to /jobs.");
-      toast({ title: "Login Successful", description: "Redirecting to your dashboard..." });
-      router.push('/jobs');
+      router.push('/jobs'); // Push first
+      toast({ title: "Login Successful", description: "Redirecting to your dashboard..." }); // Then toast
     }
   }, [currentUser, isLoadingAuth, router, toast]);
 
@@ -79,7 +79,7 @@ export default function AuthPage() {
   const onLoginSubmit: SubmitHandler<LoginFormValues> = async (data) => {
     loginForm.clearErrors();
     let backendUserId: number | null = null;
-    toast({ title: "Processing Login...", description: "Verifying credentials and loading profile." });
+    toast({ title: "Processing Login...", description: "Verifying credentials..." });
     try {
       console.log("AuthPage: Attempting backend login for:", data.email);
       const backendLoginPayload: UserLoginType = { email: data.email, password: data.password };
@@ -97,9 +97,6 @@ export default function AuthPage() {
       console.log("AuthPage: Attempting Firebase login for:", data.email);
       await signInWithEmailAndPassword(firebaseAuth, data.email, data.password);
       console.log("AuthPage: Firebase login successful for:", data.email);
-
-      // No direct router.push here; useEffect will handle it when currentUser is set.
-      // Toast for success before redirect is handled by the useEffect.
 
     } catch (error) {
       console.error("AuthPage: Error during login:", error);
@@ -143,7 +140,7 @@ export default function AuthPage() {
   const onRegisterSubmit: SubmitHandler<RegisterFormValues> = async (data) => {
     registerForm.clearErrors();
     let newBackendUserId: number | null = null;
-    toast({ title: "Processing Registration...", description: "Creating account and profile." });
+    toast({ title: "Processing Registration...", description: "Creating account..." });
     try {
       console.log("AuthPage: Attempting backend registration for:", data.email);
       const backendRegisterPayload: UserIn = {
@@ -168,8 +165,6 @@ export default function AuthPage() {
       const firebaseUserCredential = await createUserWithEmailAndPassword(firebaseAuth, data.email, data.password);
       await updateProfile(firebaseUserCredential.user, { displayName: data.name });
       console.log("AuthPage: Firebase user creation and profile update successful for:", data.email, "Firebase UID:", firebaseUserCredential.user.uid);
-
-      // No direct router.push here; useEffect will handle it when currentUser is set.
 
     } catch (error) {
       console.error("AuthPage: Error during registration:", error);

@@ -36,7 +36,7 @@ interface JobAnalysisCache {
 export default function JobExplorerPage() {
   const [jobs, setJobs] = useState<JobListing[]>([]);
   const [isLoadingJobsState, setIsLoadingJobsState] = useState(true);
-  const { currentUser, isLoadingAuth } = useAuth();
+  const { currentUser, isLoadingAuth, isLoggingOut } = useAuth(); // Added isLoggingOut
   const router = useRouter();
 
   const [trackedApplications, setTrackedApplications] = useLocalStorage<TrackedApplication[]>('tracked-applications', []);
@@ -62,14 +62,18 @@ export default function JobExplorerPage() {
   const { toast } = useToast();
 
   useEffect(() => {
-    console.log(`JobExplorerPage Effect: isLoadingAuth=${isLoadingAuth}, currentUser.id=${currentUser?.id}`);
+    console.log(`JobExplorerPage Effect: isLoadingAuth=${isLoadingAuth}, currentUser.id=${currentUser?.id}, isLoggingOut=${isLoggingOut}`);
     if (!isLoadingAuth) {
+      if (isLoggingOut) {
+        console.log("JobExplorerPage: Logout in progress, skipping access denied logic.");
+        // Potentially show a "Logging out..." message or just let AuthContext handle redirect visually
+        return;
+      }
       if (!currentUser) {
         console.log("JobExplorerPage: Access Denied. isLoadingAuth is false, currentUser is null. Redirecting to /auth.");
         toast({ title: "Access Denied", description: "Please log in to explore jobs.", variant: "destructive" });
         router.push('/auth');
       } else {
-        // User is authenticated, proceed to load jobs
         console.log(`JobExplorerPage: Access Granted. isLoadingAuth is false, currentUser.id=${currentUser.id}. Loading jobs.`);
         setIsLoadingJobsState(true); 
         const augmentedJobs = sampleJobs.map(job => {
@@ -86,7 +90,7 @@ export default function JobExplorerPage() {
     } else {
         console.log("JobExplorerPage: Still loading auth (isLoadingAuth is true).");
     }
-  }, [isLoadingAuth, currentUser, router, toast, jobAnalysisCache]);
+  }, [isLoadingAuth, currentUser, router, toast, jobAnalysisCache, isLoggingOut]);
 
 
   const addLocalActivity = useCallback((activityData: Omit<LocalUserActivity, 'id' | 'timestamp'>) => {
@@ -313,12 +317,8 @@ export default function JobExplorerPage() {
     return <FullPageLoading message="Authenticating & loading jobs..." />;
   }
 
-  if (!currentUser) {
+  if (!isLoggingOut && !currentUser) { // Check !isLoggingOut before showing "Verifying session..." or redirecting
     return <FullPageLoading message="Verifying session..." />;
-  }
-
-  if (isLoadingJobsState && currentUser) {
-    return <FullPageLoading message="Finding best jobs for you..." />;
   }
 
 
@@ -347,13 +347,14 @@ export default function JobExplorerPage() {
         </Alert>
       )}
 
-      {jobs.length === 0 && !isLoadingJobsState ? (
+      {jobs.length === 0 && !isLoadingJobsState && currentUser ? ( // Ensure currentUser exists before showing "No Jobs"
         <div className="text-center py-12">
           <FileWarning className="mx-auto h-12 w-12 text-muted-foreground" />
           <h3 className="mt-2 text-xl font-semibold">No Jobs Found</h3>
           <p className="mt-1 text-muted-foreground">Check back later or adjust your (future) search criteria.</p>
         </div>
       ) : (
+        currentUser && // Only render job list if currentUser is present
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {jobs.map(job => (
             <JobCard

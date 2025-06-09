@@ -20,74 +20,78 @@ import { useRouter } from 'next/navigation';
 import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle } from 'lucide-react';
 import { FullPageLoading } from '@/components/app/loading-spinner';
 import apiClient from '@/lib/apiClient';
-import { auth as firebaseAuth, db } from '@/lib/firebase'; // Import firebaseAuth
-import { deleteUser as deleteFirebaseUser } from 'firebase/auth'; // For deleting Firebase user
+import { auth as firebaseAuth, db } from '@/lib/firebase'; 
+import { deleteUser as deleteFirebaseUser } from 'firebase/auth'; 
 import { AxiosError } from 'axios';
 
 
-const remotePreferenceOptions: RemotePreferenceAPI[] = ["Remote", "Hybrid", "Onsite"]; // "Any" might not be directly supported by backend enum
+const remotePreferenceOptions: RemotePreferenceAPI[] = ["Remote", "Hybrid", "Onsite"];
 
-// Schema aligned with UserUpdateAPI and User (UserOut from backend)
 const profileSchema = z.object({
   username: z.string().min(2, 'Name should be at least 2 characters.').max(50, 'Name cannot exceed 50 characters.'),
-  email_id: z.string().email('Invalid email address.'), // Readonly, for display
+  email_id: z.string().email('Invalid email address.'), 
   phone_number: z.string().max(20, 'Phone number cannot exceed 20 characters.').optional().nullable(),
   
   professional_summary: z.string().min(50, 'Profile summary should be at least 50 characters.').optional().nullable(),
-  job_role: z.string().min(10, 'Job preferences should be at least 10 characters.').optional().nullable(), // was desired_job_role
+  job_role: z.string().min(10, 'Ideal Job Role should be at least 10 characters.').optional().nullable(), 
   
-  skills: z.string().max(500, 'Skills list cannot exceed 500 characters (comma-separated).').optional().nullable(), // For UserUpdateAPI (comma-separated)
+  skills: z.string().max(500, 'Skills list cannot exceed 500 characters (comma-separated).').optional().nullable(), 
   
   experience: z.coerce.number().int().nonnegative('Experience must be a positive number.').optional().nullable(),
   
-  preferred_locations: z.string().max(255, 'Preferred Locations cannot exceed 255 characters (comma-separated).').optional().nullable(), // For UserUpdateAPI
+  preferred_locations: z.string().max(255, 'Preferred Locations cannot exceed 255 characters (comma-separated).').optional().nullable(), 
   
   remote_preference: z.enum(remotePreferenceOptions).optional().nullable(),
-  expected_salary: z.coerce.number().positive("Expected salary must be a positive number.").optional().nullable(), // API expects number
+  expected_salary: z.coerce.number().positive("Expected salary must be a positive number.").optional().nullable(), 
   resume: z.string().url('Please enter a valid URL for your resume.').max(255, 'Resume URL cannot exceed 255 characters.').optional().nullable(),
 });
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
 
 export default function ProfilePage() {
-  const { currentUser, firebaseUser, isLoadingAuth, backendUserId, setBackendUser, refetchBackendUser } = useAuth();
+  const { currentUser, firebaseUser, isLoadingAuth, backendUserId, setBackendUser, refetchBackendUser, isLoggingOut } = useAuth(); // Added isLoggingOut
   const { toast } = useToast();
   const router = useRouter();
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
-    // Default values will be set by useEffect based on currentUser
   });
   const { register, handleSubmit, formState: { errors, isSubmitting }, reset, control } = form;
 
   useEffect(() => {
-    if (!isLoadingAuth && !firebaseUser) { // Check firebaseUser for auth status
-      toast({ title: "Not Authenticated", description: "Please log in to view your profile.", variant: "destructive" });
-      router.push('/auth');
-    } else if (!isLoadingAuth && firebaseUser && !currentUser) {
-        // Firebase user exists, but backend profile might not be loaded yet or doesn't exist
-        // AuthContext should handle fetching it. If it's still null, could mean new user or error.
-        // For new user, profile page can be their first stop.
-        // Let's ensure email is populated from firebaseUser if backend currentUser is not yet there
-        if (firebaseUser.email) {
-             reset({ email_id: firebaseUser.email, username: firebaseUser.displayName || "" });
-        }
-    } else if (currentUser) {
+    if (!isLoadingAuth) {
+      if (isLoggingOut) {
+        console.log("ProfilePage: Logout in progress, delaying auth check.");
+        return;
+      }
+      if (!firebaseUser) {
+        toast({ title: "Not Authenticated", description: "Please log in to view your profile.", variant: "destructive" });
+        router.push('/auth');
+      } else if (!currentUser && firebaseUser.email) {
+        // Firebase user exists, but backend profile might not be loaded yet or doesn't exist.
+        // AuthContext should handle fetching it. For new user, profile page can be their first stop.
+        reset({ email_id: firebaseUser.email, username: firebaseUser.displayName || "" });
+      }
+    }
+  }, [isLoadingAuth, firebaseUser, currentUser, router, toast, reset, isLoggingOut]);
+
+  useEffect(() => {
+    if (currentUser) {
       reset({
         username: currentUser.username || firebaseUser?.displayName || '',
         email_id: currentUser.email_id || firebaseUser?.email || '',
         phone_number: currentUser.phone_number || null,
         professional_summary: currentUser.professional_summary || null,
         job_role: currentUser.job_role || null,
-        skills: currentUser.skills?.join(', ') || null, // Convert array to comma-separated string for form
+        skills: currentUser.skills?.join(', ') || null, 
         experience: currentUser.experience ?? null,
-        preferred_locations: currentUser.preferred_locations?.join(', ') || null, // Convert array to comma-separated for form
+        preferred_locations: currentUser.preferred_locations?.join(', ') || null, 
         remote_preference: currentUser.remote_preference as RemotePreferenceAPI || null,
         expected_salary: currentUser.expected_salary ?? null,
         resume: currentUser.resume || null,
       });
     }
-  }, [currentUser, firebaseUser, isLoadingAuth, reset, router, toast]);
+  }, [currentUser, firebaseUser, reset]);
 
   const onSubmit: SubmitHandler<ProfileFormValues> = async (data) => {
     if (!backendUserId) {
@@ -97,18 +101,17 @@ export default function ProfilePage() {
     
     const updatePayload: UserUpdateAPI = {
       username: data.username,
-      number: data.phone_number || undefined, // API expects string or undefined
+      number: data.phone_number || undefined, 
       desired_job_role: data.job_role || undefined,
-      skills: data.skills || undefined, // Already comma-separated string from form
-      experience: data.experience ?? undefined, // Ensure null becomes undefined if API expects optional fields not nulls
-      preferred_locations: data.preferred_locations || undefined, // Already comma-separated
+      skills: data.skills || undefined, 
+      experience: data.experience ?? undefined, 
+      preferred_locations: data.preferred_locations || undefined, 
       remote_preference: data.remote_preference || undefined,
       professional_summary: data.professional_summary || undefined,
       expected_salary: data.expected_salary ?? undefined,
       resume: data.resume || undefined,
     };
 
-    // Filter out null values if API expects only defined fields
     const filteredUpdatePayload = Object.fromEntries(
         Object.entries(updatePayload).filter(([_, v]) => v !== null && v !== undefined)
     );
@@ -116,7 +119,7 @@ export default function ProfilePage() {
 
     try {
       await apiClient.put(`/users/${backendUserId}`, filteredUpdatePayload);
-      await refetchBackendUser(); // Refetch updated user data
+      await refetchBackendUser(); 
       toast({
         title: 'Profile Updated',
         description: 'Your profile information has been saved successfully.',
@@ -145,21 +148,15 @@ export default function ProfilePage() {
       return;
     }
     try {
-      // 1. Delete from custom backend
       await apiClient.delete(`/users/${backendUserId}`);
-      
-      // 2. Delete from Firebase Authentication
-      await deleteFirebaseUser(firebaseUser); // This will also sign the user out
-
-      setBackendUser(null); // Clear user from context
-      // AuthContext's onAuthStateChanged will handle firebaseUser becoming null
-
+      await deleteFirebaseUser(firebaseUser); 
+      setBackendUser(null); 
       toast({
         title: "Account Deleted",
         description: "Your account has been permanently deleted.",
         variant: "destructive",
       });
-      router.push('/auth'); // Redirect to auth page
+      router.push('/auth'); 
     } catch (error) {
       console.error("Error deleting account:", error);
       let errorMessage = "Could not delete account. Please try again.";
@@ -167,19 +164,20 @@ export default function ProfilePage() {
         errorMessage = error.response.data?.detail || error.response.data?.msg || "Failed to delete account from backend.";
       } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
         errorMessage = "Failed to delete Firebase account. You might need to re-authenticate.";
-        // If Firebase deletion fails, the backend deletion might need to be rolled back or handled.
       }
       toast({ title: "Deletion Failed", description: errorMessage, variant: "destructive" });
     }
   };
 
-  if (isLoadingAuth || (!firebaseUser && !isLoadingAuth)) { // Show loading if auth state is loading or if no firebase user yet
+  if (isLoadingAuth || (!firebaseUser && !isLoadingAuth && !isLoggingOut)) { 
     return <FullPageLoading message="Loading profile..." />;
   }
   
-  // If firebaseUser exists but currentUser (backend profile) is null, it might be a new user or loading
-  // The form is still useful for a new user to fill out their profile for the first time.
-  // Form default values are set from currentUser or firebaseUser in useEffect.
+  // If isLoggingOut is true, we might want to show a specific "Logging out..." message
+  // or let AuthContext handle the visual state until redirect. For now, FullPageLoading might be okay.
+  if (isLoggingOut) {
+    return <FullPageLoading message="Processing..." />;
+  }
 
   return (
     <div className="space-y-8">
@@ -221,7 +219,7 @@ export default function ProfilePage() {
                 {errors.email_id && <p className="text-sm text-destructive">{errors.email_id.message}</p>}
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6"> {/* Reduced to 2 for phone and locations string for now */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6"> 
               <div className="space-y-2">
                 <Label htmlFor="phone_number">Phone Number</Label>
                 <div className="relative flex items-center">

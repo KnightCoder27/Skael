@@ -12,7 +12,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { signOut } from 'firebase/auth';
 import { auth as firebaseAuth } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
-import { LoadingSpinner } from './loading-spinner'; // Import LoadingSpinner
+import { LoadingSpinner } from './loading-spinner';
 
 const navItemsLoggedIn = [
   { href: '/jobs', label: 'Job Listings', icon: Compass },
@@ -23,7 +23,7 @@ const navItemsLoggedIn = [
 export function Header() {
   const pathname = usePathname();
   const router = useRouter();
-  const { currentUser, isLoadingAuth } = useAuth(); // Removed setBackendUser as it's not used here
+  const { currentUser, isLoadingAuth, setIsLoggingOut } = useAuth();
   const [isClient, setIsClient] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const { toast } = useToast();
@@ -33,15 +33,18 @@ export function Header() {
   }, []);
 
   const handleLogout = async () => {
+    setIsLoggingOut(true); // Signal that logout is starting
+    router.push('/auth'); // Navigate first
     try {
       await signOut(firebaseAuth);
       // AuthContext's onAuthStateChanged will handle clearing currentUser and other states.
-      router.push('/auth'); // Push first
+      // setIsLoggingOut(false) will be handled by AuthContext.
       toast({ title: "Logged Out", description: "You have been successfully logged out." });
       setIsSheetOpen(false);
     } catch (error) {
       console.error("Error signing out: ", error);
       toast({ title: "Logout Failed", description: "Could not log you out. Please try again.", variant: "destructive" });
+      setIsLoggingOut(false); // Reset if error occurs here
     }
   };
 
@@ -67,7 +70,6 @@ export function Header() {
   );
   
   const renderNavLinks = (isMobileSheet = false) => {
-    // Show loading indicator only when isClient is true and isLoadingAuth is true
     if (isClient && isLoadingAuth) { 
         return (
             <div className={cn(
@@ -79,8 +81,7 @@ export function Header() {
             </div>
         );
     }
-     // If not client yet, or if auth is not loading, proceed to check currentUser
-    if (!isClient && isLoadingAuth) { // Avoid rendering auth-dependent links SSR if auth is still loading
+    if (!isClient && isLoadingAuth) { 
         return (
              <div className={cn(
                 "flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground",
