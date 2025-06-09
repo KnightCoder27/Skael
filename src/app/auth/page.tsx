@@ -20,7 +20,7 @@ import apiClient from '@/lib/apiClient';
 import { auth as firebaseAuth } from '@/lib/firebase';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile }from 'firebase/auth';
 import { AxiosError } from 'axios';
-import { FullPageLoading, LoadingSpinner } from '@/components/app/loading-spinner'; // Added LoadingSpinner
+import { FullPageLoading, LoadingSpinner } from '@/components/app/loading-spinner';
 
 // Schemas for form validation
 const loginSchema = z.object({
@@ -52,9 +52,10 @@ export default function AuthPage() {
   const { currentUser, isLoadingAuth, setInternalPendingBackendId } = useAuth();
 
   useEffect(() => {
+    console.log("AuthPage Effect for redirect: isLoadingAuth=", isLoadingAuth, "currentUser present=", !!currentUser);
     if (!isLoadingAuth && currentUser) {
-      // If auth is resolved and user is logged in, redirect from /auth to /jobs
-      toast({ title: "Already Logged In", description: "Redirecting to your job listings..." });
+      console.log("AuthPage Effect: Conditions met. Redirecting to /jobs.");
+      toast({ title: "Login Successful", description: "Redirecting to your dashboard..." });
       router.push('/jobs');
     }
   }, [currentUser, isLoadingAuth, router, toast]);
@@ -78,6 +79,7 @@ export default function AuthPage() {
   const onLoginSubmit: SubmitHandler<LoginFormValues> = async (data) => {
     loginForm.clearErrors();
     let backendUserId: number | null = null;
+    toast({ title: "Processing Login...", description: "Verifying credentials and loading profile." });
     try {
       console.log("AuthPage: Attempting backend login for:", data.email);
       const backendLoginPayload: UserLoginType = { email: data.email, password: data.password };
@@ -96,8 +98,8 @@ export default function AuthPage() {
       await signInWithEmailAndPassword(firebaseAuth, data.email, data.password);
       console.log("AuthPage: Firebase login successful for:", data.email);
 
-      toast({ title: "Login Successful", description: "Redirecting to job listings..." });
-      // router.push('/jobs'); // AuthContext effect will handle redirect if user is set
+      // No direct router.push here; useEffect will handle it when currentUser is set.
+      // Toast for success before redirect is handled by the useEffect.
 
     } catch (error) {
       console.error("AuthPage: Error during login:", error);
@@ -141,6 +143,7 @@ export default function AuthPage() {
   const onRegisterSubmit: SubmitHandler<RegisterFormValues> = async (data) => {
     registerForm.clearErrors();
     let newBackendUserId: number | null = null;
+    toast({ title: "Processing Registration...", description: "Creating account and profile." });
     try {
       console.log("AuthPage: Attempting backend registration for:", data.email);
       const backendRegisterPayload: UserIn = {
@@ -166,8 +169,7 @@ export default function AuthPage() {
       await updateProfile(firebaseUserCredential.user, { displayName: data.name });
       console.log("AuthPage: Firebase user creation and profile update successful for:", data.email, "Firebase UID:", firebaseUserCredential.user.uid);
 
-      toast({ title: "Registration Successful", description: "Redirecting..." });
-      // router.push('/jobs'); // AuthContext effect will handle redirect if user is set
+      // No direct router.push here; useEffect will handle it when currentUser is set.
 
     } catch (error) {
       console.error("AuthPage: Error during registration:", error);
@@ -182,7 +184,6 @@ export default function AuthPage() {
             errorMessage = "Registration endpoint not found or method not allowed by backend. Please contact support.";
         } else if (error.response.status === 422) { 
             errorMessage = "Registration failed due to invalid data. Please check your inputs.";
-             // Example of more specific error parsing from Pydantic (if backend provides it)
             if (error.response.data && Array.isArray(error.response.data.detail)) {
               error.response.data.detail.forEach((err: any) => {
                 if (err.loc && err.loc.includes("number") && err.type === "string_type") {
@@ -233,9 +234,6 @@ export default function AuthPage() {
       </div>
     );
   }
-
-  // If !isLoadingAuth && currentUser, the useEffect at the top will handle the redirect.
-  // So, we only render the forms if !isLoadingAuth && !currentUser.
 
   const toggleShowLoginPassword = () => setShowLoginPassword(!showLoginPassword);
   const toggleShowRegisterPassword = () => setShowRegisterPassword(!showRegisterPassword);
@@ -313,6 +311,7 @@ export default function AuthPage() {
               </CardContent>
               <CardFooter className="flex flex-col gap-4 pt-2">
                 <Button type="submit" className="w-full" disabled={loginForm.formState.isSubmitting}>
+                  {loginForm.formState.isSubmitting ? <LoadingSpinner size={16} className="mr-2" /> : null}
                   {loginForm.formState.isSubmitting ? 'Logging in...' : 'Login'}
                   {!loginForm.formState.isSubmitting && <LogIn className="ml-2 h-4 w-4" />}
                 </Button>
@@ -437,6 +436,7 @@ export default function AuthPage() {
               </CardContent>
               <CardFooter className="flex flex-col gap-4 pt-2">
                 <Button type="submit" className="w-full" disabled={registerForm.formState.isSubmitting}>
+                  {registerForm.formState.isSubmitting ? <LoadingSpinner size={16} className="mr-2" /> : null}
                   {registerForm.formState.isSubmitting ? 'Creating Account...' : 'Create Account'}
                   {!registerForm.formState.isSubmitting && <UserPlus className="ml-2 h-4 w-4" />}
                 </Button>

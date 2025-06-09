@@ -6,12 +6,13 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Compass, Briefcase, User, LogOut, LogIn, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'; // Added SheetHeader, SheetTitle
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { signOut } from 'firebase/auth';
 import { auth as firebaseAuth } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
+import { LoadingSpinner } from './loading-spinner'; // Import LoadingSpinner
 
 const navItemsLoggedIn = [
   { href: '/jobs', label: 'Job Listings', icon: Compass },
@@ -22,7 +23,7 @@ const navItemsLoggedIn = [
 export function Header() {
   const pathname = usePathname();
   const router = useRouter();
-  const { currentUser, isLoadingAuth } = useAuth();
+  const { currentUser, isLoadingAuth } = useAuth(); // Removed setBackendUser as it's not used here
   const [isClient, setIsClient] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const { toast } = useToast();
@@ -35,8 +36,8 @@ export function Header() {
     try {
       await signOut(firebaseAuth);
       // AuthContext's onAuthStateChanged will handle clearing currentUser and other states.
+      router.push('/auth'); // Push first
       toast({ title: "Logged Out", description: "You have been successfully logged out." });
-      router.push('/auth');
       setIsSheetOpen(false);
     } catch (error) {
       console.error("Error signing out: ", error);
@@ -66,19 +67,31 @@ export function Header() {
   );
   
   const renderNavLinks = (isMobileSheet = false) => {
-    if (isLoadingAuth && !isClient) { 
+    // Show loading indicator only when isClient is true and isLoadingAuth is true
+    if (isClient && isLoadingAuth) { 
         return (
-             <Button variant="ghost" className="p-0 h-auto text-primary" disabled>Loading...</Button>
-        );
-    }
-    if (isLoadingAuth && isClient) { 
-        return (
-            <div className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground">
-                <LogIn className="w-5 h-5 animate-pulse" />
+            <div className={cn(
+                "flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground",
+                isMobileSheet ? "justify-start" : ""
+            )}>
+                <LoadingSpinner size={16} />
                 <span>Loading...</span>
             </div>
         );
     }
+     // If not client yet, or if auth is not loading, proceed to check currentUser
+    if (!isClient && isLoadingAuth) { // Avoid rendering auth-dependent links SSR if auth is still loading
+        return (
+             <div className={cn(
+                "flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground",
+                isMobileSheet ? "justify-start" : ""
+            )}>
+                <LoadingSpinner size={16} />
+                <span>Loading...</span>
+            </div>
+        );
+    }
+
 
     if (currentUser) {
       return (
