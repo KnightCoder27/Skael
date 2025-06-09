@@ -110,7 +110,7 @@ export default function JobExplorerPage() {
   const [jobForExtractedPoints, setJobForExtractedPoints] = useState<JobListing | null>(null);
 
 
-  const mapBackendJobToFrontend = (backendJob: BackendJobListingResponseItem): JobListing => {
+  const mapBackendJobToFrontend = useCallback((backendJob: BackendJobListingResponseItem): JobListing => {
     return {
       ...backendJob, 
       technologies: backendJob.technologies?.map((name, index) => ({
@@ -122,7 +122,7 @@ export default function JobExplorerPage() {
       matchScore: typeof backendJob.id === 'number' ? jobAnalysisCache[backendJob.id]?.matchScore : undefined,
       matchExplanation: typeof backendJob.id === 'number' ? jobAnalysisCache[backendJob.id]?.matchExplanation : undefined,
     };
-  };
+  }, [jobAnalysisCache]);
 
   useEffect(() => {
     if (isLoggingOut) return;
@@ -149,9 +149,9 @@ export default function JobExplorerPage() {
       const payload: UserProfileForRelevantJobs = { 
         job_titles: currentUser.job_role ? [currentUser.job_role] : [],
         skills: currentUser.skills && currentUser.skills.length > 0 ? currentUser.skills : [],
-        experience: currentUser.experience ?? 0,
+        experience: currentUser.experience ?? 0, // Ensure experience is a number, default to 0
         locations: currentUser.preferred_locations && currentUser.preferred_locations.length > 0 ? currentUser.preferred_locations : [],
-        countries: [], 
+        countries: [], // As discussed, include empty array for countries
         remote: remotePreferenceValue,
       };
       const cleanedPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== undefined));
@@ -173,7 +173,7 @@ export default function JobExplorerPage() {
     } finally {
       setIsLoadingRelevantJobs(false);
     }
-  }, [currentUser, toast]);
+  }, [currentUser, toast, mapBackendJobToFrontend]);
 
   const fetchAllJobs = useCallback(async () => {
     setIsLoadingAllJobs(true);
@@ -194,18 +194,19 @@ export default function JobExplorerPage() {
     } finally {
       setIsLoadingAllJobs(false);
     }
-  }, [toast]);
+  }, [toast, mapBackendJobToFrontend]);
 
 
   useEffect(() => {
     if (currentUser && !isLoggingOut) {
-        if (activeTab === "relevant" && relevantJobsList.length === 0 && !isLoadingRelevantJobs && !errorRelevantJobs) { 
+        if (activeTab === "relevant") { 
             fetchRelevantJobs();
-        } else if (activeTab === "all" && allJobsList.length === 0 && !isLoadingAllJobs && !errorAllJobs) { 
+        } else if (activeTab === "all") { 
             fetchAllJobs();
         }
     }
-  }, [activeTab, currentUser, fetchRelevantJobs, fetchAllJobs, isLoggingOut, relevantJobsList.length, allJobsList.length, isLoadingRelevantJobs, errorRelevantJobs, isLoadingAllJobs, errorAllJobs]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, currentUser, isLoggingOut]); // fetchRelevantJobs and fetchAllJobs are memoized and will be stable if their deps are
 
 
   const handleGenerateJobs = async () => {
@@ -225,7 +226,7 @@ export default function JobExplorerPage() {
       skills: currentUser.skills && currentUser.skills.length > 0 ? currentUser.skills : [],
       experience: currentUser.experience ?? 0, 
       locations: currentUser.preferred_locations && currentUser.preferred_locations.length > 0 ? currentUser.preferred_locations : [],
-      countries: [], 
+      countries: [], // As discussed, include empty array
       remote: remotePreferenceValue,
     };
     
@@ -236,12 +237,13 @@ export default function JobExplorerPage() {
       const response = await apiClient.post<{ status: string; jobs_fetched: number; jobs: BackendJobListingResponseItem[] }>('/jobs/fetch_jobs', cleanedPayload);
       toast({ title: "Job Fetch Initiated", description: `${response.data.jobs_fetched} jobs fetched/processed from external API. Newly fetched jobs might appear in 'All Jobs' or 'Relevant Jobs' after a refresh or switching tabs.` });
       
-      if (activeTab === "all") {
-        setAllJobsList([]); 
-        fetchAllJobs();
-      } else if (activeTab === "relevant") {
-        setRelevantJobsList([]); 
-        fetchRelevantJobs();
+      if (response.data.jobs_fetched > 0) {
+        // If jobs were fetched, we might want to encourage user to switch tabs or auto-refresh a tab
+        if (activeTab === "all") {
+            fetchAllJobs(); // Re-fetch all jobs to include new ones
+        } else if (activeTab === "relevant") {
+            fetchRelevantJobs(); // Re-fetch relevant jobs
+        }
       }
     } catch (error) {
       const message = error instanceof AxiosError && error.response?.data?.detail ? error.response.data.detail : "Failed to initiate job fetching from external API.";
@@ -541,3 +543,6 @@ export default function JobExplorerPage() {
     </div>
   );
 }
+
+
+    
