@@ -81,6 +81,19 @@ export interface UserUpdateAPI { // For PUT /users/{id}
   resume?: string; // File path or URL
 }
 
+// --- Job Fetching Payloads ---
+export interface UserProfileForJobFetching { // For POST /jobs/fetch_jobs
+  job_titles?: string[];
+  skills?: string[];
+  experience?: number | null;
+  locations?: string[];
+  countries?: string[]; // e.g., ["IN", "US"]
+  remote?: boolean | null; // null for any, true for remote, false for not remote
+}
+
+export interface UserProfileForRelevantJobs { // For POST /jobs/relevant_jobs
+  skills: string[];
+}
 
 /**
  * Represents a job listing, aligned with JobListingResponse from backend.
@@ -98,7 +111,7 @@ export interface JobListing {
   api_id?: string | null;
   url?: string | null;
   date_posted?: string | null; // Date string
-  employment_status?: string | null; // Backend sends string, not array.
+  employment_status?: string | null; // Updated to string | null
   matching_phrase?: string[] | null;
   matching_words?: string[] | null;
   company_domain?: string | null;
