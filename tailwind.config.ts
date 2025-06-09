@@ -13,7 +13,7 @@ export default {
       fontFamily: {
         body: ['Inter', 'sans-serif'],
         headline: ['Inter', 'sans-serif'], // Using Inter for headlines too for consistency
-        brand: ['"Edu SA Hand"', 'cursive'], // New brand font
+        brand: ['Barlow', 'sans-serif'], // Changed to Barlow
         code: ['monospace'],
       },
       colors: {
