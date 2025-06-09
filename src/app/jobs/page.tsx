@@ -12,7 +12,7 @@ import { ApplicationMaterialsModal } from '@/components/app/application-material
 import { FullPageLoading } from '@/components/app/loading-spinner';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Compass, Info, FileWarning } from 'lucide-react';
+import { Compass, Info, FileWarning, LogOut as LogOutIcon } from 'lucide-react'; // Renamed LogOut to LogOutIcon
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -36,7 +36,7 @@ interface JobAnalysisCache {
 export default function JobExplorerPage() {
   const [jobs, setJobs] = useState<JobListing[]>([]);
   const [isLoadingJobsState, setIsLoadingJobsState] = useState(true);
-  const { currentUser, isLoadingAuth, isLoggingOut } = useAuth(); // Added isLoggingOut
+  const { currentUser, isLoadingAuth, isLoggingOut } = useAuth();
   const router = useRouter();
 
   const [trackedApplications, setTrackedApplications] = useLocalStorage<TrackedApplication[]>('tracked-applications', []);
@@ -63,19 +63,18 @@ export default function JobExplorerPage() {
 
   useEffect(() => {
     console.log(`JobExplorerPage Effect: isLoadingAuth=${isLoadingAuth}, currentUser.id=${currentUser?.id}, isLoggingOut=${isLoggingOut}`);
+    if (isLoggingOut) {
+      console.log("JobExplorerPage: Logout in progress, skipping access denied logic and job loading.");
+      return;
+    }
     if (!isLoadingAuth) {
-      if (isLoggingOut) {
-        console.log("JobExplorerPage: Logout in progress, skipping access denied logic.");
-        // Potentially show a "Logging out..." message or just let AuthContext handle redirect visually
-        return;
-      }
       if (!currentUser) {
         console.log("JobExplorerPage: Access Denied. isLoadingAuth is false, currentUser is null. Redirecting to /auth.");
         toast({ title: "Access Denied", description: "Please log in to explore jobs.", variant: "destructive" });
         router.push('/auth');
       } else {
         console.log(`JobExplorerPage: Access Granted. isLoadingAuth is false, currentUser.id=${currentUser.id}. Loading jobs.`);
-        setIsLoadingJobsState(true); 
+        setIsLoadingJobsState(true);
         const augmentedJobs = sampleJobs.map(job => {
           const cachedData = jobAnalysisCache[job.id];
           if (cachedData) {
@@ -95,7 +94,7 @@ export default function JobExplorerPage() {
 
   const addLocalActivity = useCallback((activityData: Omit<LocalUserActivity, 'id' | 'timestamp'>) => {
     const newActivity: LocalUserActivity = {
-      id: Date.now().toString() + Math.random().toString(36).substring(2), 
+      id: Date.now().toString() + Math.random().toString(36).substring(2),
       timestamp: new Date().toISOString(),
       userId: currentUser?.id,
       ...activityData,
@@ -313,11 +312,21 @@ export default function JobExplorerPage() {
   const isProfileIncompleteForAIFeatures = currentUser && (!currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0);
 
 
+  if (isLoggingOut) {
+    return (
+      <div className="flex min-h-[calc(100vh-12rem)] flex-col items-center justify-center p-4 text-center">
+        <LogOutIcon className="w-12 h-12 text-primary mb-4 animate-pulse" />
+        <h2 className="text-2xl font-semibold mb-2">Logging Out</h2>
+        <p className="text-muted-foreground">Please wait...</p>
+      </div>
+    );
+  }
+
   if (isLoadingAuth) {
     return <FullPageLoading message="Authenticating & loading jobs..." />;
   }
 
-  if (!isLoggingOut && !currentUser) { // Check !isLoggingOut before showing "Verifying session..." or redirecting
+  if (!currentUser) {
     return <FullPageLoading message="Verifying session..." />;
   }
 
@@ -347,14 +356,14 @@ export default function JobExplorerPage() {
         </Alert>
       )}
 
-      {jobs.length === 0 && !isLoadingJobsState && currentUser ? ( // Ensure currentUser exists before showing "No Jobs"
+      {jobs.length === 0 && !isLoadingJobsState && currentUser ? (
         <div className="text-center py-12">
           <FileWarning className="mx-auto h-12 w-12 text-muted-foreground" />
           <h3 className="mt-2 text-xl font-semibold">No Jobs Found</h3>
           <p className="mt-1 text-muted-foreground">Check back later or adjust your (future) search criteria.</p>
         </div>
       ) : (
-        currentUser && // Only render job list if currentUser is present
+        currentUser &&
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {jobs.map(job => (
             <JobCard
@@ -391,6 +400,3 @@ export default function JobExplorerPage() {
     </div>
   );
 }
-
-
-    

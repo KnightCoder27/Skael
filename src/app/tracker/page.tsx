@@ -1,31 +1,32 @@
 
 "use client";
 
-import { useEffect } from 'react'; 
+import { useEffect } from 'react';
 import useLocalStorage from '@/hooks/use-local-storage';
 import type { TrackedApplication, ApplicationStatus } from '@/types';
 import { ApplicationTrackerTable } from '@/components/app/application-tracker-table';
 import { Button } from '@/components/ui/button';
-import { Briefcase, FilePlus2 } from 'lucide-react';
+import { Briefcase, FilePlus2, LogOut } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
-import { useAuth } from '@/contexts/AuthContext'; 
-import { useRouter } from 'next/navigation'; 
-import { FullPageLoading } from '@/components/app/loading-spinner'; 
+import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'next/navigation';
+import { FullPageLoading } from '@/components/app/loading-spinner';
 
 
 export default function TrackerPage() {
-  const { currentUser, isLoadingAuth, isLoggingOut } = useAuth(); // Added isLoggingOut
-  const router = useRouter(); 
+  const { currentUser, isLoadingAuth, isLoggingOut } = useAuth();
+  const router = useRouter();
   const [trackedApplications, setTrackedApplications] = useLocalStorage<TrackedApplication[]>('tracked-applications', []);
   const { toast } = useToast();
 
   useEffect(() => {
+    console.log(`TrackerPage Effect: isLoadingAuth=${isLoadingAuth}, currentUser.id=${currentUser?.id}, isLoggingOut=${isLoggingOut}`);
+    if (isLoggingOut) {
+        console.log("TrackerPage: Logout in progress, skipping access denied logic.");
+        return;
+    }
     if (!isLoadingAuth) {
-      if (isLoggingOut) {
-        console.log("TrackerPage: Logout in progress, delaying auth check.");
-        return; 
-      }
       if (!currentUser) {
         toast({ title: "Access Denied", description: "Please log in to view your tracker.", variant: "destructive" });
         router.push('/auth');
@@ -48,15 +49,21 @@ export default function TrackerPage() {
     toast({ title: "Application Removed", description: "The application has been removed from your tracker.", variant: "destructive" });
   };
 
+  if (isLoggingOut) {
+    return (
+      <div className="flex min-h-[calc(100vh-12rem)] flex-col items-center justify-center p-4 text-center">
+        <LogOut className="w-12 h-12 text-primary mb-4 animate-pulse" />
+        <h2 className="text-2xl font-semibold mb-2">Logging Out</h2>
+        <p className="text-muted-foreground">Please wait...</p>
+      </div>
+    );
+  }
+
   if (isLoadingAuth) {
     return <FullPageLoading message="Authenticating..." />;
   }
 
-  if (isLoggingOut) { // Show loading/processing if actively logging out
-    return <FullPageLoading message="Processing..." />;
-  }
-
-  if (!currentUser) { 
+  if (!currentUser) {
     return <FullPageLoading message="Redirecting to login..." />;
   }
 

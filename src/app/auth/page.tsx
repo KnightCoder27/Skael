@@ -22,7 +22,6 @@ import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfi
 import { AxiosError } from 'axios';
 import { LoadingSpinner } from '@/components/app/loading-spinner';
 
-// Schemas for form validation
 const loginSchema = z.object({
   email: z.string().email({ message: "Invalid email address." }),
   password: z.string().min(1, { message: "Password is required." }),
@@ -55,8 +54,8 @@ export default function AuthPage() {
     console.log("AuthPage Effect for redirect: isLoadingAuth=", isLoadingAuth, "currentUser present=", !!currentUser);
     if (!isLoadingAuth && currentUser) {
       console.log("AuthPage Effect: Conditions met. Redirecting to /jobs.");
-      router.push('/jobs'); // Push first
-      toast({ title: "Login Successful", description: "Redirecting to your dashboard..." }); // Then toast
+      router.push('/jobs');
+      toast({ title: "Login Successful", description: "Redirecting to your dashboard..." });
     }
   }, [currentUser, isLoadingAuth, router, toast]);
 
@@ -81,26 +80,21 @@ export default function AuthPage() {
     let backendUserId: number | null = null;
     toast({ title: "Processing Login...", description: "Verifying credentials..." });
     try {
-      console.log("AuthPage: Attempting backend login for:", data.email);
       const backendLoginPayload: UserLoginType = { email: data.email, password: data.password };
       const backendResponse = await apiClient.post<UserLoginResponse>('/users/login', backendLoginPayload);
       backendUserId = backendResponse.data.user_id;
-      console.log("AuthPage: Backend login successful. Backend User ID:", backendUserId);
 
       if (!backendUserId && backendUserId !== 0) {
         throw new Error("Backend login did not return a valid user ID.");
       }
       
       setInternalPendingBackendId(backendUserId);
-      console.log("AuthPage: Set internalPendingBackendId in AuthContext for login:", backendUserId);
-
-      console.log("AuthPage: Attempting Firebase login for:", data.email);
       await signInWithEmailAndPassword(firebaseAuth, data.email, data.password);
-      console.log("AuthPage: Firebase login successful for:", data.email);
+      // Success toast and redirect will be handled by useEffect watching currentUser
 
     } catch (error) {
       console.error("AuthPage: Error during login:", error);
-      setInternalPendingBackendId(null); 
+      setInternalPendingBackendId(null);
 
       let errorMessage = "An unexpected error occurred during login.";
       if (error instanceof AxiosError && error.response) {
@@ -111,8 +105,6 @@ export default function AuthPage() {
       } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
         const firebaseError = error as any;
         const firebaseErrorCode = firebaseError.code;
-        console.error("AuthPage: Firebase login error code:", firebaseErrorCode, "message:", firebaseError.message);
-
         if (firebaseErrorCode === 'auth/invalid-credential' || firebaseErrorCode === 'auth/user-not-found' || firebaseErrorCode === 'auth/wrong-password') {
           errorMessage = "Firebase: Invalid credentials. Please check your email and password.";
           loginForm.setError("password", { type: "manual", message: errorMessage });
@@ -142,7 +134,6 @@ export default function AuthPage() {
     let newBackendUserId: number | null = null;
     toast({ title: "Processing Registration...", description: "Creating account..." });
     try {
-      console.log("AuthPage: Attempting backend registration for:", data.email);
       const backendRegisterPayload: UserIn = {
         username: data.name,
         email: data.email,
@@ -152,23 +143,19 @@ export default function AuthPage() {
       
       const backendRegisterResponse = await apiClient.post<UserRegistrationResponse>('/users/', backendRegisterPayload);
       newBackendUserId = backendRegisterResponse.data.id;
-      console.log("AuthPage: Backend registration successful. New Backend User ID:", newBackendUserId);
 
-      if (!newBackendUserId && newBackendUserId !== 0) { 
+      if (!newBackendUserId && newBackendUserId !== 0) {
           throw new Error("Backend registration did not return a valid user ID.");
       }
 
       setInternalPendingBackendId(newBackendUserId);
-      console.log("AuthPage: Set internalPendingBackendId in AuthContext for registration:", newBackendUserId);
-      
-      console.log("AuthPage: Attempting Firebase user creation for:", data.email);
       const firebaseUserCredential = await createUserWithEmailAndPassword(firebaseAuth, data.email, data.password);
       await updateProfile(firebaseUserCredential.user, { displayName: data.name });
-      console.log("AuthPage: Firebase user creation and profile update successful for:", data.email, "Firebase UID:", firebaseUserCredential.user.uid);
+      // Success toast and redirect will be handled by useEffect watching currentUser
 
     } catch (error) {
       console.error("AuthPage: Error during registration:", error);
-      setInternalPendingBackendId(null); 
+      setInternalPendingBackendId(null);
 
       let errorMessage = "An unexpected error occurred during registration.";
        if (error instanceof AxiosError && error.response) {
@@ -190,8 +177,6 @@ export default function AuthPage() {
       } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
         const firebaseError = error as any;
         const firebaseErrorCode = firebaseError.code;
-        console.error("AuthPage: Firebase registration error code:", firebaseErrorCode, "message:", firebaseError.message);
-
         if (firebaseErrorCode === 'auth/email-already-in-use') {
             errorMessage = "This email is already in use with Firebase Authentication.";
             registerForm.setError("email", { type: "manual", message: errorMessage });
