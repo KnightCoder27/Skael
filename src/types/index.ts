@@ -91,8 +91,14 @@ export interface UserProfileForJobFetching { // For POST /jobs/fetch_jobs
   remote?: boolean | null; // null for any, true for remote, false for not remote
 }
 
+// UserProfileForRelevantJobs now mirrors UserProfileForJobFetching as per clarification
 export interface UserProfileForRelevantJobs { // For POST /jobs/relevant_jobs
-  skills: string[];
+  job_titles?: string[];
+  skills?: string[];
+  experience?: number | null;
+  locations?: string[];
+  countries?: string[];
+  remote?: boolean | null;
 }
 
 /**
@@ -111,7 +117,7 @@ export interface JobListing {
   api_id?: string | null;
   url?: string | null;
   date_posted?: string | null; // Date string
-  employment_status?: string | null; // Updated to string | null
+  employment_status?: string | null;
   matching_phrase?: string[] | null;
   matching_words?: string[] | null;
   company_domain?: string | null;

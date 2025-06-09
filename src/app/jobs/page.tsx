@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import type { JobListing, User, TrackedApplication, LocalUserActivity, ActivityType, UserProfileForJobFetching, UserProfileForRelevantJobs, RemotePreferenceAPI, Technology } from '@/types';
+import type { JobListing, TrackedApplication, LocalUserActivity, ActivityType, UserProfileForJobFetching, UserProfileForRelevantJobs, RemotePreferenceAPI, Technology } from '@/types';
 import useLocalStorage from '@/hooks/use-local-storage';
 import { useAuth } from '@/contexts/AuthContext';
 import apiClient from '@/lib/apiClient';
@@ -114,7 +114,7 @@ export default function JobExplorerPage() {
     return {
       ...backendJob,
       technologies: backendJob.technologies?.map((name, index) => ({
-        id: `${backendJob.id}-tech-${index}`,
+        id: `${backendJob.id}-tech-${index}`, // Simple local ID for display purposes
         technology_name: name,
         technology_slug: name.toLowerCase().replace(/\s+/g, '-'),
       })) || [],
@@ -133,8 +133,8 @@ export default function JobExplorerPage() {
   }, [isLoadingAuth, currentUser, router, toast, isLoggingOut]);
 
   const fetchRelevantJobs = useCallback(async () => {
-    if (!currentUser || !currentUser.skills || currentUser.skills.length === 0) {
-      setErrorRelevantJobs("Your profile skills are needed to find relevant jobs. Please update your profile.");
+    if (!currentUser) {
+      setErrorRelevantJobs("Please log in to view relevant jobs.");
       setRelevantJobsList([]);
       setIsLoadingRelevantJobs(false);
       return;
@@ -142,8 +142,21 @@ export default function JobExplorerPage() {
     setIsLoadingRelevantJobs(true);
     setErrorRelevantJobs(null);
     try {
-      const payload: UserProfileForRelevantJobs = { skills: currentUser.skills };
-      const response = await apiClient.post<BackendJobListingResponseItem[]>('/jobs/relevant_jobs', payload);
+      let remotePreference: boolean | null = null;
+      if (currentUser.remote_preference === "Remote") remotePreference = true;
+      else if (currentUser.remote_preference === "Onsite") remotePreference = false;
+
+      const payload: UserProfileForRelevantJobs = { 
+        job_titles: currentUser.job_role ? [currentUser.job_role] : undefined,
+        skills: currentUser.skills && currentUser.skills.length > 0 ? currentUser.skills : undefined,
+        experience: currentUser.experience ?? undefined, // Use undefined if null for optional fields
+        locations: currentUser.preferred_locations && currentUser.preferred_locations.length > 0 ? currentUser.preferred_locations : undefined,
+        // countries: undefined, // Omitting countries for relevant_jobs for now, backend might use default
+        remote: remotePreference,
+      };
+      const cleanedPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== undefined));
+
+      const response = await apiClient.post<BackendJobListingResponseItem[]>('/jobs/relevant_jobs', cleanedPayload);
       setRelevantJobsList(response.data.map(mapBackendJobToFrontend));
     } catch (error) {
       const message = error instanceof AxiosError && error.response?.data?.detail ? error.response.data.detail : "Could not load relevant jobs.";
@@ -172,13 +185,13 @@ export default function JobExplorerPage() {
 
   useEffect(() => {
     if (currentUser && !isLoggingOut) {
-        if (activeTab === "relevant") {
+        if (activeTab === "relevant" && relevantJobsList.length === 0) { // Fetch only if not already loaded
             fetchRelevantJobs();
-        } else if (activeTab === "all") {
+        } else if (activeTab === "all" && allJobsList.length === 0) { // Fetch only if not already loaded
             fetchAllJobs();
         }
     }
-  }, [activeTab, currentUser, fetchRelevantJobs, fetchAllJobs, isLoggingOut]);
+  }, [activeTab, currentUser, fetchRelevantJobs, fetchAllJobs, isLoggingOut, relevantJobsList.length, allJobsList.length]);
 
 
   const handleGenerateJobs = async () => {
@@ -192,14 +205,13 @@ export default function JobExplorerPage() {
     let remotePreference: boolean | null = null;
     if (currentUser.remote_preference === "Remote") remotePreference = true;
     else if (currentUser.remote_preference === "Onsite") remotePreference = false;
-    // Hybrid maps to null for the API which means "any" (includes hybrid if backend supports it)
 
     const payload: UserProfileForJobFetching = {
       job_titles: currentUser.job_role ? [currentUser.job_role] : undefined,
       skills: currentUser.skills && currentUser.skills.length > 0 ? currentUser.skills : undefined,
-      experience: currentUser.experience ?? null,
+      experience: currentUser.experience ?? undefined,
       locations: currentUser.preferred_locations && currentUser.preferred_locations.length > 0 ? currentUser.preferred_locations : undefined,
-      // countries: [], // Let backend handle default if not specified or derive from profile
+      // countries: undefined, // Let backend handle default or derive
       remote: remotePreference,
     };
     
@@ -207,8 +219,16 @@ export default function JobExplorerPage() {
 
     try {
       const response = await apiClient.post<{ status: string; jobs_fetched: number; jobs: any[] }>('/jobs/fetch_jobs', cleanedPayload);
-      toast({ title: "Job Fetch Initiated", description: `${response.data.jobs_fetched} jobs fetched/processed from external API. You might need to switch to other tabs and back to see newly listed jobs.` });
-      // Optionally, trigger a refresh of "All Jobs" or "Relevant Jobs" tab after a delay or user action
+      toast({ title: "Job Fetch Initiated", description: `${response.data.jobs_fetched} jobs fetched/processed from external API. Newly fetched jobs might appear in 'All Jobs' or 'Relevant Jobs' after a refresh or switching tabs.` });
+      // To see new jobs, user might need to switch to other tabs, which will trigger re-fetch if list is empty.
+      // Or, we could automatically trigger a re-fetch of the current "All" or "Relevant" tab.
+      if (activeTab === "all") {
+        setAllJobsList([]); // Clear to force re-fetch
+        fetchAllJobs();
+      } else if (activeTab === "relevant") {
+        setRelevantJobsList([]); // Clear to force re-fetch
+        fetchRelevantJobs();
+      }
     } catch (error) {
       const message = error instanceof AxiosError && error.response?.data?.detail ? error.response.data.detail : "Failed to initiate job fetching from external API.";
       setErrorGenerateJobs(message);
@@ -434,10 +454,15 @@ export default function JobExplorerPage() {
             </Alert>
           )}
           {!isLoadingRelevantJobs && !errorRelevantJobs && relevantJobsList.length === 0 && (
-            <div className="text-center py-12">
+             <div className="text-center py-12">
               <FileWarning className="mx-auto h-12 w-12 text-muted-foreground" />
               <h3 className="mt-2 text-xl font-semibold">No Relevant Jobs Found</h3>
               <p className="mt-1 text-muted-foreground">Try updating your profile skills or check back later. You can also fetch new jobs from the "Generate Jobs" tab.</p>
+              {currentUser?.skills?.length === 0 && (
+                <p className="mt-2 text-sm text-primary/80">
+                  Hint: Add some skills to your <Button variant="link" asChild className="p-0 h-auto text-primary font-semibold"><Link href="/profile">profile</Link></Button> to see relevant jobs.
+                </p>
+              )}
             </div>
           )}
           {!isLoadingRelevantJobs && !errorRelevantJobs && relevantJobsList.length > 0 && (
