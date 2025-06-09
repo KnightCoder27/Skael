@@ -309,7 +309,7 @@ export default function ProfilePage() {
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="job_role" className="text-base">My Ideal Job Role & Preferences</Label>
+              <Label htmlFor="job_role" className="text-base">Ideal Job Role</Label>
               <Textarea
                 id="job_role"
                 {...register('job_role')}
@@ -431,3 +431,4 @@ export default function ProfilePage() {
     </div>
   );
 }
+
