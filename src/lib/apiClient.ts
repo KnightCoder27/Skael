@@ -16,22 +16,20 @@ const apiClient: AxiosInstance = axios.create({
 });
 
 // Interceptor to add Firebase ID token to requests
-// Temporarily commented out to isolate token issues from AuthContext
-/*
 apiClient.interceptors.request.use(
   async (config: InternalAxiosRequestConfig) => {
     const currentUser = auth.currentUser;
     if (currentUser) {
       try {
-        const token = await currentUser.getIdToken();
+        const token = await currentUser.getIdToken(true); // Force refresh
         config.headers.Authorization = `Bearer ${token}`;
-        console.log("apiClient Interceptor: Token added to headers.");
+        console.log("apiClient Interceptor: Token added to headers for config URL:", config.url);
       } catch (error) {
         console.error('apiClient Interceptor: Error getting Firebase ID token:', error);
         // Optionally handle token refresh errors or redirect to login
       }
     } else {
-      console.log("apiClient Interceptor: No current user, no token added.");
+      console.log("apiClient Interceptor: No current user, no token added for config URL:", config.url);
     }
     return config;
   },
@@ -39,7 +37,6 @@ apiClient.interceptors.request.use(
     return Promise.reject(error);
   }
 );
-*/
 
 // Generic error handler for responses (optional, but good practice)
 apiClient.interceptors.response.use(
@@ -59,3 +56,4 @@ apiClient.interceptors.response.use(
 );
 
 export default apiClient;
+
