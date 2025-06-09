@@ -34,7 +34,7 @@ export function Header() {
 
   const handleLogout = async () => {
     console.log("Header: handleLogout initiated.");
-    setIsLoggingOut(true); // Step 1: Immediately set isLoggingOut to true
+    setIsLoggingOut(true); // Step 1: Immediately set isLoggingOut to true in context
     setBackendUser(null); // Step 2: Proactively clear user state in context
 
     try {
@@ -44,18 +44,14 @@ export function Header() {
 
       router.push('/auth'); // Step 4: Initiate navigation
       console.log("Header: Navigation to /auth initiated.");
+      // setIsLoggingOut(false) is NO LONGER CALLED HERE on success. AuthContext will handle it.
 
-      // Step 5: Reset isLoggingOut *after* navigation is initiated.
-      // This allows guarded pages to see isLoggingOut=true during their unmount/final renders.
-      setIsLoggingOut(false);
-      console.log("Header: setIsLoggingOut(false) called after router.push.");
-
-      toast({ title: "Logged Out", description: "You have been successfully logged out." }); // Step 6: Show toast
+      toast({ title: "Logged Out", description: "You have been successfully logged out." });
       setIsSheetOpen(false);
     } catch (error) {
       console.error("Header: Error signing out from Firebase: ", error);
       toast({ title: "Logout Failed", description: "Could not log you out. Please try again.", variant: "destructive" });
-      setIsLoggingOut(false); // Ensure isLoggingOut is reset on error
+      setIsLoggingOut(false); // Reset on error as a fallback
     }
   };
 
@@ -82,7 +78,6 @@ export function Header() {
   );
 
   const renderNavLinks = (isMobileSheet = false) => {
-    // Show "Logging out..." if isLoggingOut is true
     if (isLoggingOut) {
         return (
             <div className={cn(
@@ -94,7 +89,6 @@ export function Header() {
             </div>
         );
     }
-    // Show "Loading..." if isLoadingAuth is true AND not currently logging out
     if (isClient && isLoadingAuth) {
         return (
             <div className={cn(
@@ -107,7 +101,7 @@ export function Header() {
         );
     }
 
-    if (currentUser) { // currentUser implies !isLoggingOut based on the above
+    if (currentUser) {
       return (
         <>
           {navItemsLoggedIn.map((item) => (
@@ -125,7 +119,7 @@ export function Header() {
                 ? 'text-foreground/70 hover:text-primary hover:bg-primary/5 w-full justify-start px-3 py-2'
                 : 'text-foreground/70 hover:text-primary p-0 md:px-3 md:py-2'
             )}
-            disabled={isLoggingOut} // Disable button while logging out
+            disabled={isLoggingOut}
           >
             <LogOutIcon className="w-5 h-5" />
             Logout
@@ -133,7 +127,7 @@ export function Header() {
         </>
       );
     }
-    else { // No currentUser and not loading/logging out
+    else {
       return (
         <NavLink href="/auth" icon={LogIn}>Login / Register</NavLink>
       );

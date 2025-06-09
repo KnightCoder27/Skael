@@ -6,7 +6,7 @@ import useLocalStorage from '@/hooks/use-local-storage';
 import type { TrackedApplication, ApplicationStatus } from '@/types';
 import { ApplicationTrackerTable } from '@/components/app/application-tracker-table';
 import { Button } from '@/components/ui/button';
-import { Briefcase, FilePlus2, LogOut } from 'lucide-react';
+import { Briefcase, FilePlus2, LogOut as LogOutIcon } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
@@ -28,6 +28,7 @@ export default function TrackerPage() {
     }
     if (!isLoadingAuth) {
       if (!currentUser) {
+        console.log("TrackerPage: Access Denied. isLoadingAuth is false, currentUser is null. Redirecting to /auth.");
         toast({ title: "Access Denied", description: "Please log in to view your tracker.", variant: "destructive" });
         router.push('/auth');
       }
@@ -52,7 +53,7 @@ export default function TrackerPage() {
   if (isLoggingOut) {
     return (
       <div className="flex min-h-[calc(100vh-12rem)] flex-col items-center justify-center p-4 text-center">
-        <LogOut className="w-12 h-12 text-primary mb-4 animate-pulse" />
+        <LogOutIcon className="w-12 h-12 text-primary mb-4 animate-pulse" />
         <h2 className="text-2xl font-semibold mb-2">Logging Out</h2>
         <p className="text-muted-foreground">Please wait...</p>
       </div>
@@ -63,8 +64,9 @@ export default function TrackerPage() {
     return <FullPageLoading message="Authenticating..." />;
   }
 
-  if (!currentUser) {
-    return <FullPageLoading message="Redirecting to login..." />;
+  // This covers the case where auth is resolved, not logging out, but no currentUser (which means redirect should have happened)
+  if (!currentUser && !isLoadingAuth && !isLoggingOut) {
+    return <FullPageLoading message="Verifying session..." />;
   }
 
 

@@ -17,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
-import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut } from 'lucide-react';
+import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon } from 'lucide-react';
 import { FullPageLoading } from '@/components/app/loading-spinner';
 import apiClient from '@/lib/apiClient';
 import { auth as firebaseAuth, db } from '@/lib/firebase';
@@ -59,19 +59,24 @@ export default function ProfilePage() {
   const { register, handleSubmit, formState: { errors, isSubmitting }, reset, control } = form;
 
   useEffect(() => {
+    console.log(`ProfilePage Effect: isLoadingAuth=${isLoadingAuth}, currentUser.id=${currentUser?.id}, isLoggingOut=${isLoggingOut}`);
     if (isLoggingOut) {
-      console.log("ProfilePage: Logout in progress, delaying auth check.");
+      console.log("ProfilePage: Logout in progress, skipping access denied logic.");
       return;
     }
     if (!isLoadingAuth) {
-      if (!firebaseUser) {
+      if (!currentUser) {
+        console.log("ProfilePage: Access Denied. isLoadingAuth is false, currentUser is null. Redirecting to /auth.");
         toast({ title: "Not Authenticated", description: "Please log in to view your profile.", variant: "destructive" });
         router.push('/auth');
-      } else if (!currentUser && firebaseUser.email) {
-        reset({ email_id: firebaseUser.email, username: firebaseUser.displayName || "" });
+      } else if (firebaseUser?.email && (!currentUser.email_id || currentUser.email_id !== firebaseUser.email)) {
+         // This case is less likely now with unified backend ID fetching but kept for safety.
+         // If backend user is loaded but somehow email doesn't match firebase, prioritize firebase email for display form.
+        reset({ email_id: firebaseUser.email, username: firebaseUser.displayName || currentUser.username || "" });
       }
     }
-  }, [isLoadingAuth, firebaseUser, currentUser, router, toast, reset, isLoggingOut]);
+  }, [isLoadingAuth, currentUser, firebaseUser, router, toast, isLoggingOut, reset]);
+
 
   useEffect(() => {
     if (currentUser) {
@@ -88,8 +93,24 @@ export default function ProfilePage() {
         expected_salary: currentUser.expected_salary ?? null,
         resume: currentUser.resume || null,
       });
+    } else if (!isLoadingAuth && !isLoggingOut && firebaseUser) {
+      // If no currentUser from backend yet, but firebaseUser exists (and not loading/logging out)
+      // prefill with whatever Firebase knows, especially email and display name.
+      reset({
+        username: firebaseUser.displayName || '',
+        email_id: firebaseUser.email || '',
+        phone_number: null,
+        professional_summary: null,
+        job_role: null,
+        skills: null,
+        experience: null,
+        preferred_locations: null,
+        remote_preference: null,
+        expected_salary: null,
+        resume: null,
+      });
     }
-  }, [currentUser, firebaseUser, reset]);
+  }, [currentUser, firebaseUser, reset, isLoadingAuth, isLoggingOut]);
 
   const onSubmit: SubmitHandler<ProfileFormValues> = async (data) => {
     if (!backendUserId) {
@@ -111,7 +132,7 @@ export default function ProfilePage() {
     };
 
     const filteredUpdatePayload = Object.fromEntries(
-        Object.entries(updatePayload).filter(([_, v]) => v !== undefined) // Keep nulls if explicitly set by form, filter only undefined
+        Object.entries(updatePayload).filter(([_, v]) => v !== undefined)
     );
 
 
@@ -148,13 +169,13 @@ export default function ProfilePage() {
     try {
       await apiClient.delete(`/users/${backendUserId}`);
       await deleteFirebaseUser(firebaseUser);
-      setBackendUser(null);
+      setBackendUser(null); // This will trigger AuthContext to clear FirebaseUser too via onAuthStateChanged
       toast({
         title: "Account Deleted",
         description: "Your account has been permanently deleted.",
         variant: "destructive",
       });
-      router.push('/auth');
+      router.push('/auth'); // onAuthStateChanged will handle redirect via useEffect in AuthPage if needed
     } catch (error) {
       console.error("Error deleting account:", error);
       let errorMessage = "Could not delete account. Please try again.";
@@ -170,15 +191,21 @@ export default function ProfilePage() {
   if (isLoggingOut) {
     return (
       <div className="flex min-h-[calc(100vh-12rem)] flex-col items-center justify-center p-4 text-center">
-        <LogOut className="w-12 h-12 text-primary mb-4 animate-pulse" />
+        <LogOutIcon className="w-12 h-12 text-primary mb-4 animate-pulse" />
         <h2 className="text-2xl font-semibold mb-2">Logging Out</h2>
         <p className="text-muted-foreground">Please wait...</p>
       </div>
     );
   }
 
-  if (isLoadingAuth || (!firebaseUser && !isLoadingAuth)) {
+  if (isLoadingAuth) {
     return <FullPageLoading message="Loading profile..." />;
+  }
+
+  // This covers the case where auth is resolved, not logging out, but no currentUser (which means redirect should have happened)
+  // It acts as a fallback display if redirection is somehow delayed.
+  if (!currentUser && !isLoadingAuth && !isLoggingOut) {
+     return <FullPageLoading message="Verifying session..." />;
   }
   
 
@@ -217,7 +244,7 @@ export default function ProfilePage() {
                   {...register('email_id')}
                   placeholder="you@example.com"
                   className={errors.email_id ? 'border-destructive' : ''}
-                  readOnly
+                  readOnly // Email should be read-only after registration
                 />
                 {errors.email_id && <p className="text-sm text-destructive">{errors.email_id.message}</p>}
               </div>
