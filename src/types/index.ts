@@ -12,13 +12,15 @@ export interface Location {
 }
 
 /**
- * Represents a technology or skill (simplified for now).
+ * Represents a technology or skill.
+ * Frontend components like JobCard and JobDetailsModal expect an array of these.
+ * The backend's JobListingResponse provides technologies as string[].
+ * We will map string[] to Technology[] in the frontend page component.
  */
 export interface Technology {
-  id: number; // Added for sample data consistency
+  id: number | string; // Allow string for dynamic generation if needed
   technology_name: string;
   technology_slug: string;
-  // Add other fields as they become necessary from backend or usage
 }
 
 /**
@@ -30,16 +32,15 @@ export interface User {
   username: string;
   email_id: string;
   phone_number?: string | null;
-  job_role?: string | null; // Was desired_job_role
-  skills?: string[]; // Was skills_list_text (now array of strings)
+  job_role?: string | null;
+  skills?: string[];
   experience?: number | null;
-  preferred_locations?: string[]; // Was location_string (now array of strings)
-  remote_preference?: RemotePreferenceAPI | string | null; // Allow string for flexibility from API
+  preferred_locations?: string[];
+  remote_preference?: RemotePreferenceAPI | string | null;
   professional_summary?: string | null;
-  expected_salary?: number | null; // Was string
+  expected_salary?: number | null;
   resume?: string | null; // URL
   joined_date?: string; // ISO datetime string
-  // Fields removed: preferred_tier_id, country (if not in UserOut)
 }
 
 // API Request/Response types from the guide
@@ -47,7 +48,7 @@ export interface User {
 export interface UserIn { // For POST /users/ (registration)
   username: string;
   email: string;
-  number: string | null; // Changed to allow null
+  number: string | null;
   password: string;
 }
 
@@ -82,41 +83,51 @@ export interface UserUpdateAPI { // For PUT /users/{id}
 
 
 /**
- * Represents a job listing, partially aligned with JobListingResponse from backend.
- * Needs further alignment if we fetch jobs from backend.
+ * Represents a job listing, aligned with JobListingResponse from backend.
+ * Frontend type for JobListing.
  */
 export interface JobListing {
-  id: number; // Keeping as number
+  // Core fields always expected
+  id: number; // Database ID
   job_title: string;
-  company: string;
-  location: string;
-  description: string;
-  url?: string;
-  salary_string?: string;
-  date_posted?: string;
-  technologies?: Technology[]; 
-  companyLogo?: string;
-  matchScore?: number;
-  matchExplanation?: string;
-  remote?: boolean;
-  hybrid?: boolean;
-  currency?: string;
-  employment_status?: string; 
-  api_id?: string | null; 
-  company_domain?: string | null; 
-  company_obj_id?: number | null; 
-  final_url?: string | null; 
-  source_url?: string | null; 
-  min_salary?: number | null; 
-  max_salary?: number | null; 
-  seniority?: string | null; 
-  discovered_at?: string; 
-  reposted?: boolean | null; 
-  date_reposted?: string | null; 
-  country_code?: string | null; 
-  job_expired?: boolean | null; 
-  industry_id?: string | null; 
+  company: string | null; // Raw company name
+  location: string | null;
+  description: string | null;
+
+  // Fields from backend's JobListingResponse
+  api_id?: string | null;
+  url?: string | null;
+  date_posted?: string | null; // Date string
+  employment_status?: string | null; // Backend sends string, not array.
+  matching_phrase?: string[] | null;
+  matching_words?: string[] | null;
+  company_domain?: string | null;
+  company_obj_id?: number | null; // Foreign key to Company model
+  final_url?: string | null;
+  source_url?: string | null;
+  remote?: boolean | null;
+  hybrid?: boolean | null;
+  salary_string?: string | null;
+  min_salary?: number | null;
+  max_salary?: number | null;
+  currency?: string | null;
+  country?: string | null;
+  seniority?: string | null;
+  discovered_at: string; // ISO 8601 datetime string
+  reposted?: boolean | null;
+  date_reposted?: string | null; // Date string
+  country_code?: string | null;
+  job_expired?: boolean | null;
+  industry_id?: string | null;
+  fetched_data?: string | null; // Date string, assuming this is what backend 'fetched_data' field means
+
+  // Frontend specific fields or enhancements
+  technologies?: Technology[]; // Mapped from backend's string[] in the component
+  companyLogo?: string; // Placeholder, not directly from /list_jobs/
+  matchScore?: number; // For AI features, populated client-side
+  matchExplanation?: string; // For AI features, populated client-side
 }
+
 
 /**
  * Represents the status of a job application.
@@ -125,13 +136,12 @@ export type ApplicationStatus = "Interested" | "Saved" | "Applied" | "Interviewi
 
 /**
  * Represents a job application tracked by the user.
- * This will eventually be managed by backend API.
  */
 export interface TrackedApplication {
-  id: string; 
+  id: string;
   jobId: number;
   jobTitle: string;
-  company: string;
+  company: string | null;
   status: ApplicationStatus;
   appliedDate?: string;
   notes?: string;
@@ -170,7 +180,6 @@ export interface ResumeGenerateResponse {
   resume_id: string;
 }
 
-// This type was for local storage and might be deprecated or changed
 export type ActivityType =
   | "MATCH_ANALYSIS_VIEWED"
   | "JOB_SAVED"
@@ -184,10 +193,9 @@ export interface LocalUserActivity {
   id: string;
   type: ActivityType;
   timestamp: string;
-  userId?: number; 
+  userId?: number;
   jobId?: number;
   jobTitle?: string;
-  company?: string;
+  company?: string | null;
   details?: { [key: string]: any };
 }
-

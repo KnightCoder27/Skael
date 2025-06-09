@@ -2,20 +2,22 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import type { JobListing, User, TrackedApplication, LocalUserActivity, ActivityType } from '@/types';
-import { sampleJobs } from '@/lib/sample-data';
+import type { JobListing, User, TrackedApplication, LocalUserActivity, ActivityType, Technology } from '@/types';
+// import { sampleJobs } from '@/lib/sample-data'; // Removing sample data
 import useLocalStorage from '@/hooks/use-local-storage';
 import { useAuth } from '@/contexts/AuthContext';
+import apiClient from '@/lib/apiClient';
 import { JobCard } from '@/components/app/job-card';
 import { JobDetailsModal } from '@/components/app/job-details-modal';
 import { ApplicationMaterialsModal } from '@/components/app/application-materials-modal';
-import { FullPageLoading } from '@/components/app/loading-spinner';
+import { FullPageLoading, LoadingSpinner } from '@/components/app/loading-spinner';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Compass, Info, FileWarning, LogOut as LogOutIcon } from 'lucide-react'; // Renamed LogOut to LogOutIcon
+import { Compass, Info, FileWarning, LogOut as LogOutIcon, ServerCrash } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import type { AxiosError } from 'axios';
 
 // AI Flow Imports
 import { jobMatchExplanation, type JobMatchExplanationInput, type JobMatchExplanationOutput } from '@/ai/flows/job-match-explanation';
@@ -33,16 +35,53 @@ interface JobAnalysisCache {
   };
 }
 
+// Backend returns JobListingResponse which includes technologies as string[]
+// We need to map it to our frontend JobListing type which expects Technology[]
+interface BackendJobListingResponseItem {
+  id: number;
+  job_title: string;
+  url: string | null;
+  date_posted: string | null;
+  employment_status: string | null;
+  matching_phrase: string[] | null;
+  matching_words: string[] | null;
+  company: string | null;
+  company_domain: string | null;
+  company_obj_id: number | null;
+  final_url: string | null;
+  source_url: string | null;
+  location: string | null;
+  remote: boolean | null;
+  hybrid: boolean | null;
+  salary_string: string | null;
+  min_salary: number | null;
+  max_salary: number | null;
+  currency: string | null;
+  country: string | null;
+  seniority: string | null;
+  discovered_at: string;
+  description: string | null;
+  reposted: boolean | null;
+  date_reposted: string | null;
+  country_code: string | null;
+  job_expired: boolean | null;
+  industry_id: string | null;
+  fetched_data: string | null;
+  technologies: string[]; // Backend sends array of names
+  api_id?: string | null; // Ensure this is included if backend sends it
+}
+
+
 export default function JobExplorerPage() {
   const [jobs, setJobs] = useState<JobListing[]>([]);
   const [isLoadingJobsState, setIsLoadingJobsState] = useState(true);
+  const [jobFetchError, setJobFetchError] = useState<string | null>(null);
   const { currentUser, isLoadingAuth, isLoggingOut } = useAuth();
   const router = useRouter();
 
   const [trackedApplications, setTrackedApplications] = useLocalStorage<TrackedApplication[]>('tracked-applications', []);
   const [jobAnalysisCache, setJobAnalysisCache] = useLocalStorage<JobAnalysisCache>('job-ai-analysis-cache', {});
   const [localUserActivities, setLocalUserActivities] = useLocalStorage<LocalUserActivity[]>('user-activity-log', []);
-
 
   const [selectedJobForDetails, setSelectedJobForDetails] = useState<JobListing | null>(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
@@ -61,6 +100,21 @@ export default function JobExplorerPage() {
 
   const { toast } = useToast();
 
+  const mapBackendJobToFrontend = (backendJob: BackendJobListingResponseItem): JobListing => {
+    return {
+      ...backendJob,
+      // Map string[] of tech names to Technology[]
+      technologies: backendJob.technologies.map((name, index) => ({
+        id: `${backendJob.id}-tech-${index}`, // Create a unique-ish ID for key prop
+        technology_name: name,
+        technology_slug: name.toLowerCase().replace(/\s+/g, '-'),
+      })),
+      companyLogo: `https://placehold.co/100x100.png?text=${encodeURIComponent(backendJob.company?.[0] || 'J')}`, // Placeholder logo
+      matchScore: jobAnalysisCache[backendJob.id]?.matchScore,
+      matchExplanation: jobAnalysisCache[backendJob.id]?.matchExplanation,
+    };
+  };
+
   useEffect(() => {
     console.log(`JobExplorerPage Effect: isLoadingAuth=${isLoadingAuth}, currentUser.id=${currentUser?.id}, isLoggingOut=${isLoggingOut}`);
     if (isLoggingOut) {
@@ -73,18 +127,30 @@ export default function JobExplorerPage() {
         toast({ title: "Access Denied", description: "Please log in to explore jobs.", variant: "destructive" });
         router.push('/auth');
       } else {
-        console.log(`JobExplorerPage: Access Granted. isLoadingAuth is false, currentUser.id=${currentUser.id}. Loading jobs.`);
-        setIsLoadingJobsState(true);
-        const augmentedJobs = sampleJobs.map(job => {
-          const cachedData = jobAnalysisCache[job.id];
-          if (cachedData) {
-            return { ...job, ...cachedData };
+        console.log(`JobExplorerPage: Access Granted. isLoadingAuth is false, currentUser.id=${currentUser.id}. Fetching jobs from backend.`);
+        const fetchJobsFromAPI = async () => {
+          setIsLoadingJobsState(true);
+          setJobFetchError(null);
+          try {
+            const response = await apiClient.get<BackendJobListingResponseItem[]>('/jobs/list_jobs/');
+            const fetchedBackendJobs = response.data;
+            
+            const augmentedJobs = fetchedBackendJobs.map(mapBackendJobToFrontend);
+            setJobs(augmentedJobs);
+            console.log("JobExplorerPage: Jobs fetched and processed from backend.");
+          } catch (error) {
+            console.error("JobExplorerPage: Error fetching jobs from API:", error);
+            let message = "Could not load jobs from the server.";
+            if (error instanceof Error) {
+               message = (error as AxiosError).response?.data?.detail || error.message || message;
+            }
+            setJobFetchError(message);
+            toast({ title: "Failed to Load Jobs", description: message, variant: "destructive" });
+          } finally {
+            setIsLoadingJobsState(false);
           }
-          return { ...job, matchScore: undefined, matchExplanation: undefined };
-        });
-        setJobs(augmentedJobs);
-        setIsLoadingJobsState(false);
-        console.log("JobExplorerPage: Jobs processed.");
+        };
+        fetchJobsFromAPI();
       }
     } else {
         console.log("JobExplorerPage: Still loading auth (isLoadingAuth is true).");
@@ -130,7 +196,7 @@ export default function JobExplorerPage() {
     setIsLoadingExplanation(true);
     try {
       const input: JobMatchExplanationInput = {
-        jobDescription: job.description,
+        jobDescription: job.description || '', // Ensure not null
         userProfile: currentUser.professional_summary || '',
         userPreferences: currentUser.job_role || '',
         userHistory: '',
@@ -219,7 +285,7 @@ export default function JobExplorerPage() {
       return extractedJobPoints;
     }
     try {
-      const pointsInput: ExtractJobDescriptionPointsInput = { jobDescription: jobToGetPointsFor.description };
+      const pointsInput: ExtractJobDescriptionPointsInput = { jobDescription: jobToGetPointsFor.description || '' }; // Ensure not null
       const pointsResult = await extractJobDescriptionPoints(pointsInput);
       setExtractedJobPoints(pointsResult);
       setJobForExtractedPoints(jobToGetPointsFor);
@@ -247,7 +313,7 @@ export default function JobExplorerPage() {
       }
 
       const resumeInput: GenerateDocumentInput = {
-        jobDescription: jobToGenerateFor.description,
+        jobDescription: jobToGenerateFor.description || '', // Ensure not null
         userProfile: currentUser.professional_summary || '',
         pointsToMention: [...(points.keyRequirements || []), ...(points.keySkills || [])],
       };
@@ -286,7 +352,7 @@ export default function JobExplorerPage() {
       }
 
       const coverLetterInput: GenerateDocumentInput = {
-        jobDescription: jobToGenerateFor.description,
+        jobDescription: jobToGenerateFor.description || '', // Ensure not null
         userProfile: currentUser.professional_summary || '',
         pointsToMention: [...(points.keyRequirements || []), ...(points.keySkills || [])],
       };
@@ -323,13 +389,12 @@ export default function JobExplorerPage() {
   }
 
   if (isLoadingAuth) {
-    return <FullPageLoading message="Authenticating & loading jobs..." />;
+    return <FullPageLoading message="Authenticating..." />;
   }
 
-  if (!currentUser) {
+  if (!currentUser && !isLoadingAuth && !isLoggingOut) {
     return <FullPageLoading message="Verifying session..." />;
   }
-
 
   return (
     <div className="space-y-8">
@@ -339,7 +404,7 @@ export default function JobExplorerPage() {
           Job Explorer
         </h1>
         <p className="text-muted-foreground">
-          Discover AI-matched job opportunities. Click on a job for more details and actions.
+          Discover AI-matched job opportunities from our database. Click on a job for more details and actions.
         </p>
       </header>
 
@@ -355,15 +420,33 @@ export default function JobExplorerPage() {
           </AlertDescription>
         </Alert>
       )}
+      
+      {isLoadingJobsState && (
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+            <LoadingSpinner size={40} />
+            <p className="mt-3 text-lg text-muted-foreground">Loading job listings...</p>
+        </div>
+      )}
 
-      {jobs.length === 0 && !isLoadingJobsState && currentUser ? (
+      {!isLoadingJobsState && jobFetchError && (
+        <Alert variant="destructive" className="my-6">
+          <ServerCrash className="h-5 w-5" />
+          <AlertTitle>Error Loading Jobs</AlertTitle>
+          <AlertDescription>
+            {jobFetchError} Please try again later or contact support.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {!isLoadingJobsState && !jobFetchError && jobs.length === 0 && currentUser && (
         <div className="text-center py-12">
           <FileWarning className="mx-auto h-12 w-12 text-muted-foreground" />
           <h3 className="mt-2 text-xl font-semibold">No Jobs Found</h3>
-          <p className="mt-1 text-muted-foreground">Check back later or adjust your (future) search criteria.</p>
+          <p className="mt-1 text-muted-foreground">No jobs were found in our database currently. Check back later!</p>
         </div>
-      ) : (
-        currentUser &&
+      )}
+
+      {!isLoadingJobsState && !jobFetchError && jobs.length > 0 && currentUser && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {jobs.map(job => (
             <JobCard
