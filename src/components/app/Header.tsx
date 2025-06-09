@@ -4,9 +4,9 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Compass, Briefcase, User, LogOut as LogOutIcon, LogIn, Menu } from 'lucide-react'; // Renamed LogOut to LogOutIcon
+import { Compass, Briefcase, User, LogOut as LogOutIcon, LogIn, Menu } from 'lucide-react'; 
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'; // Added SheetTrigger
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { signOut } from 'firebase/auth';
@@ -23,7 +23,7 @@ const navItemsLoggedIn = [
 export function Header() {
   const pathname = usePathname();
   const router = useRouter();
-  const { currentUser, isLoadingAuth, setIsLoggingOut } = useAuth();
+  const { currentUser, isLoadingAuth, setIsLoggingOut, setBackendUser, isLoggingOut } = useAuth(); 
   const [isClient, setIsClient] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const { toast } = useToast();
@@ -33,18 +33,21 @@ export function Header() {
   }, []);
 
   const handleLogout = async () => {
-    setIsLoggingOut(true); // Signal that logout is starting IN AuthContext
+    console.log("Header: handleLogout initiated.");
+    setIsLoggingOut(true); 
+    setBackendUser(null); // Proactively clear user state
+
     try {
+      console.log("Header: Attempting Firebase signOut...");
       await signOut(firebaseAuth);
-      // AuthContext's onAuthStateChanged will handle clearing currentUser, setting isLoggingOut to false, etc.
-      router.push('/auth'); // Navigate after Firebase sign out attempt
+      console.log("Header: Firebase signOut successful.");
+      
+      router.push('/auth'); 
       toast({ title: "Logged Out", description: "You have been successfully logged out." });
       setIsSheetOpen(false);
     } catch (error) {
-      console.error("Error signing out: ", error);
-      toast({ title: "Logout Failed", description: "Could not log you out. Please try again.", variant: "destructive" });
-      // If signout fails, we should reset isLoggingOut as the logout didn't complete from Firebase's side.
-      // AuthContext might still be in a logged-in state if Firebase signOut failed.
+      console.error("Header: Error signing out from Firebase: ", error);
+      toast({ title: "Logout Failed", description: "Could not log you out from Firebase. Please try again.", variant: "destructive" });
       setIsLoggingOut(false); 
     }
   };
@@ -95,7 +98,7 @@ export function Header() {
     }
 
 
-    if (currentUser) {
+    if (currentUser && !isLoggingOut) { // Check isLoggingOut here
       return (
         <>
           {navItemsLoggedIn.map((item) => (
@@ -119,7 +122,18 @@ export function Header() {
           </Button>
         </>
       );
-    } else {
+    } else if (isLoggingOut) { // If logging out, show loading
+        return (
+            <div className={cn(
+                "flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground",
+                isMobileSheet ? "justify-start" : ""
+            )}>
+                <LoadingSpinner size={16} />
+                <span>Logging out...</span>
+            </div>
+        );
+    }
+    else {
       return (
         <NavLink href="/auth" icon={LogIn}>Login / Register</NavLink>
       );
@@ -161,4 +175,3 @@ export function Header() {
     </header>
   );
 }
-
