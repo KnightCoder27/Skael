@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Compass, Briefcase, User, LogOut, LogIn, Menu } from 'lucide-react';
+import { Compass, Briefcase, User, LogOut as LogOutIcon, LogIn, Menu } from 'lucide-react'; // Renamed LogOut to LogOutIcon
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
@@ -33,18 +33,19 @@ export function Header() {
   }, []);
 
   const handleLogout = async () => {
-    setIsLoggingOut(true); // Signal that logout is starting
-    router.push('/auth'); // Navigate first
+    setIsLoggingOut(true); // Signal that logout is starting IN AuthContext
     try {
       await signOut(firebaseAuth);
-      // AuthContext's onAuthStateChanged will handle clearing currentUser and other states.
-      // setIsLoggingOut(false) will be handled by AuthContext.
+      // AuthContext's onAuthStateChanged will handle clearing currentUser, setting isLoggingOut to false, etc.
+      router.push('/auth'); // Navigate after Firebase sign out attempt
       toast({ title: "Logged Out", description: "You have been successfully logged out." });
       setIsSheetOpen(false);
     } catch (error) {
       console.error("Error signing out: ", error);
       toast({ title: "Logout Failed", description: "Could not log you out. Please try again.", variant: "destructive" });
-      setIsLoggingOut(false); // Reset if error occurs here
+      // If signout fails, we should reset isLoggingOut as the logout didn't complete from Firebase's side.
+      // AuthContext might still be in a logged-in state if Firebase signOut failed.
+      setIsLoggingOut(false); 
     }
   };
 
@@ -113,7 +114,7 @@ export function Header() {
                 : 'text-foreground/70 hover:text-primary p-0 md:px-3 md:py-2'
             )}
           >
-            <LogOut className="w-5 h-5" />
+            <LogOutIcon className="w-5 h-5" />
             Logout
           </Button>
         </>
@@ -160,3 +161,4 @@ export function Header() {
     </header>
   );
 }
+
