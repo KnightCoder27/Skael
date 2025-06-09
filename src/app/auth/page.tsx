@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useForm, type SubmitHandler } from 'react-hook-form';
@@ -20,6 +20,7 @@ import apiClient from '@/lib/apiClient';
 import { auth as firebaseAuth } from '@/lib/firebase';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile }from 'firebase/auth';
 import { AxiosError } from 'axios';
+import { FullPageLoading, LoadingSpinner } from '@/components/app/loading-spinner'; // Added LoadingSpinner
 
 // Schemas for form validation
 const loginSchema = z.object({
@@ -31,7 +32,7 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 const registerSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters." }).max(50, {message: "Name cannot exceed 50 characters."}),
   email: z.string().email({ message: "Invalid email address." }),
-  phoneNumber: z.string().max(20, { message: "Phone number cannot exceed 20 characters." }).optional(),
+  phoneNumber: z.string().max(20, { message: "Phone number cannot exceed 20 characters." }).optional().or(z.literal("")),
   password: z.string().min(8, { message: "Password must be at least 8 characters." })
     .regex(/[a-z]/, { message: "Password must contain at least one lowercase letter." })
     .regex(/[A-Z]/, { message: "Password must contain at least one uppercase letter." })
@@ -48,9 +49,18 @@ type RegisterFormValues = z.infer<typeof registerSchema>;
 export default function AuthPage() {
   const { toast } = useToast();
   const router = useRouter();
-  const authContext = useAuth();
-  const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
+  const { currentUser, isLoadingAuth, setInternalPendingBackendId } = useAuth();
 
+  useEffect(() => {
+    if (!isLoadingAuth && currentUser) {
+      // If auth is resolved and user is logged in, redirect from /auth to /jobs
+      toast({ title: "Already Logged In", description: "Redirecting to your job listings..." });
+      router.push('/jobs');
+    }
+  }, [currentUser, isLoadingAuth, router, toast]);
+
+
+  const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const [showRegisterConfirmPassword, setShowRegisterConfirmPassword] = useState(false);
@@ -69,31 +79,29 @@ export default function AuthPage() {
     loginForm.clearErrors();
     let backendUserId: number | null = null;
     try {
-      // 1. Login with custom backend
       console.log("AuthPage: Attempting backend login for:", data.email);
       const backendLoginPayload: UserLoginType = { email: data.email, password: data.password };
       const backendResponse = await apiClient.post<UserLoginResponse>('/users/login', backendLoginPayload);
       backendUserId = backendResponse.data.user_id;
       console.log("AuthPage: Backend login successful. Backend User ID:", backendUserId);
 
-      if (!backendUserId && backendUserId !== 0) { // Check for null or undefined, allow 0 if it's a valid ID
+      if (!backendUserId && backendUserId !== 0) {
         throw new Error("Backend login did not return a valid user ID.");
       }
       
-      authContext.setInternalPendingBackendId(backendUserId);
+      setInternalPendingBackendId(backendUserId);
       console.log("AuthPage: Set internalPendingBackendId in AuthContext for login:", backendUserId);
 
-      // 2. Login with Firebase Auth (this will trigger onAuthStateChanged in AuthContext)
       console.log("AuthPage: Attempting Firebase login for:", data.email);
       await signInWithEmailAndPassword(firebaseAuth, data.email, data.password);
       console.log("AuthPage: Firebase login successful for:", data.email);
 
       toast({ title: "Login Successful", description: "Redirecting to job listings..." });
-      router.push('/jobs');
+      // router.push('/jobs'); // AuthContext effect will handle redirect if user is set
 
     } catch (error) {
       console.error("AuthPage: Error during login:", error);
-      authContext.setInternalPendingBackendId(null); 
+      setInternalPendingBackendId(null); 
 
       let errorMessage = "An unexpected error occurred during login.";
       if (error instanceof AxiosError && error.response) {
@@ -134,12 +142,11 @@ export default function AuthPage() {
     registerForm.clearErrors();
     let newBackendUserId: number | null = null;
     try {
-      // 1. Register with custom backend
       console.log("AuthPage: Attempting backend registration for:", data.email);
       const backendRegisterPayload: UserIn = {
         username: data.name,
         email: data.email,
-        number: data.phoneNumber ? data.phoneNumber : null, 
+        number: data.phoneNumber && data.phoneNumber.trim() !== "" ? data.phoneNumber : null,
         password: data.password,
       };
       
@@ -151,21 +158,20 @@ export default function AuthPage() {
           throw new Error("Backend registration did not return a valid user ID.");
       }
 
-      authContext.setInternalPendingBackendId(newBackendUserId);
+      setInternalPendingBackendId(newBackendUserId);
       console.log("AuthPage: Set internalPendingBackendId in AuthContext for registration:", newBackendUserId);
       
-      // 2. Register with Firebase Auth (this will trigger onAuthStateChanged in AuthContext)
       console.log("AuthPage: Attempting Firebase user creation for:", data.email);
       const firebaseUserCredential = await createUserWithEmailAndPassword(firebaseAuth, data.email, data.password);
       await updateProfile(firebaseUserCredential.user, { displayName: data.name });
       console.log("AuthPage: Firebase user creation and profile update successful for:", data.email, "Firebase UID:", firebaseUserCredential.user.uid);
 
       toast({ title: "Registration Successful", description: "Redirecting..." });
-      router.push('/jobs');
+      // router.push('/jobs'); // AuthContext effect will handle redirect if user is set
 
     } catch (error) {
       console.error("AuthPage: Error during registration:", error);
-      authContext.setInternalPendingBackendId(null); 
+      setInternalPendingBackendId(null); 
 
       let errorMessage = "An unexpected error occurred during registration.";
        if (error instanceof AxiosError && error.response) {
@@ -174,9 +180,16 @@ export default function AuthPage() {
             registerForm.setError("email", { type: "manual", message: "This email is already registered with our system." });
         } else if (error.response.status === 405) {
             errorMessage = "Registration endpoint not found or method not allowed by backend. Please contact support.";
-        } else if (error.response.status === 422) { // Pydantic validation error
-            errorMessage = "Registration failed due to invalid data. Please check your inputs. The phone number format might be an issue if the backend expects a string but received null.";
-            // You could try to parse error.response.data.detail for more specific field errors if available
+        } else if (error.response.status === 422) { 
+            errorMessage = "Registration failed due to invalid data. Please check your inputs.";
+             // Example of more specific error parsing from Pydantic (if backend provides it)
+            if (error.response.data && Array.isArray(error.response.data.detail)) {
+              error.response.data.detail.forEach((err: any) => {
+                if (err.loc && err.loc.includes("number") && err.type === "string_type") {
+                  registerForm.setError("phoneNumber", { type: "manual", message: "Phone number format is invalid." });
+                }
+              });
+            }
         }
       } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
         const firebaseError = error as any;
@@ -209,6 +222,20 @@ export default function AuthPage() {
       }
     }
   };
+
+  if (isLoadingAuth) {
+    return (
+      <div className="flex min-h-[calc(100vh-12rem)] flex-col items-center justify-center p-4">
+        <Card className="w-full max-w-md shadow-xl bg-card text-center p-8">
+          <LoadingSpinner size={40} />
+          <p className="mt-4 text-muted-foreground">Loading authentication...</p>
+        </Card>
+      </div>
+    );
+  }
+
+  // If !isLoadingAuth && currentUser, the useEffect at the top will handle the redirect.
+  // So, we only render the forms if !isLoadingAuth && !currentUser.
 
   const toggleShowLoginPassword = () => setShowLoginPassword(!showLoginPassword);
   const toggleShowRegisterPassword = () => setShowRegisterPassword(!showRegisterPassword);
