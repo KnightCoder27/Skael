@@ -23,7 +23,7 @@ origins = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://6000-firebase-studio-1749207465319.cluster-fdkw7vjj7bgguspe3fbbc25tra.cloudworkstations.dev/"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
