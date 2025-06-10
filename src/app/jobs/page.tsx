@@ -190,7 +190,7 @@ export default function JobExplorerPage() {
       matchScore: numericDbId >= 0 && jobAnalysisCache[numericDbId] ? jobAnalysisCache[numericDbId].matchScore : undefined,
       matchExplanation: numericDbId >= 0 && jobAnalysisCache[numericDbId] ? jobAnalysisCache[numericDbId].matchExplanation : undefined,
     };
-  }, []); // Removed jobAnalysisCache from dependencies. It will use the one from the component's scope.
+  }, []); 
 
 
   const fetchRelevantJobs = useCallback(async () => {
@@ -378,23 +378,27 @@ export default function JobExplorerPage() {
 
   const handleViewDetails = (job: JobListing) => fetchJobDetailsWithAI(job);
 
-  const handleSaveJob = (job: JobListing) => {
-    if (typeof job.id !== 'number' || isNaN(job.id)) {
-        toast({ title: "Error", description: "Cannot save job with invalid ID.", variant: "destructive"});
+  const handleSaveJob = async (job: JobListing) => {
+    if (typeof job.id !== 'number' || isNaN(job.id) || job.id < 0) {
+        toast({ title: "Error", description: "Cannot save job with temporary or invalid ID.", variant: "destructive"});
         return;
     }
+
     const existingApplicationIndex = trackedApplications.findIndex(app => app.jobId === job.id);
     let activityType: ActivityType = "JOB_SAVED";
     let toastMessage = `${job.job_title} added to your application tracker.`;
     let statusToLog: "Saved" | undefined = "Saved";
 
     if (existingApplicationIndex > -1) {
+      // Unsaving
       setTrackedApplications(prev => prev.filter(app => app.jobId !== job.id));
       toastMessage = `${job.job_title} removed from your tracker.`;
       activityType = "JOB_UNSAVED";
       statusToLog = undefined;
       toast({ title: "Job Unsaved", description: toastMessage });
+      // Note: Backend currently doesn't have an "unsave" endpoint, so we only update client-side.
     } else {
+      // Saving
       const newApplication: TrackedApplication = {
         id: (job.api_id || job.id.toString()) + Date.now().toString(),
         jobId: job.id,
@@ -405,6 +409,24 @@ export default function JobExplorerPage() {
       };
       setTrackedApplications(prev => [...prev, newApplication]);
       toast({ title: "Job Saved!", description: toastMessage });
+
+      // Backend call for saving
+      if (currentUser && currentUser.id) {
+        try {
+          console.log(`handleSaveJob: Attempting to save job ID ${job.id} to backend for user ID ${currentUser.id}`);
+          await apiClient.post(`/jobs/${job.id}/save`, { user_id: currentUser.id });
+          toast({ title: "Backend Sync", description: "Job save synced with backend.", variant: "default" });
+        } catch (error) {
+          console.error("Error saving job to backend:", error);
+          const errorMessage = error instanceof AxiosError && error.response?.data?.detail 
+                               ? error.response.data.detail 
+                               : "Could not sync job save with backend.";
+          toast({ title: "Backend Sync Failed", description: errorMessage, variant: "destructive" });
+          // Optionally, revert client-side save if backend sync is critical, or mark as "pending sync"
+        }
+      } else {
+        console.warn("handleSaveJob: Cannot sync job save to backend - currentUser or currentUser.id is missing.");
+      }
     }
     addLocalActivity({ type: activityType, jobId: job.id, jobTitle: job.job_title, company: job.company, details: statusToLog ? { status: statusToLog } : {}});
   };
