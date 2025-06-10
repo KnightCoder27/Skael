@@ -1,4 +1,6 @@
+
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from src.backend.db.users import router as users_router
 import firebase_admin
 from firebase_admin import credentials
@@ -11,6 +13,23 @@ from src.backend.db.activities import router as activities_router
 load_dotenv(dotenv_path=".env")
 
 app = FastAPI()
+
+# Define allowed origins
+# It's better to be specific than using "*" in production if possible.
+origins = [
+    "https://6000-firebase-studio-1749207465319.cluster-fdkw7vjj7bgguspe3fbbc25tra.cloudworkstations.dev",
+    "http://localhost:9002", # Your Next.js dev environment
+    "http://localhost:3000", # Another common local dev port
+    # Add your production frontend URL here when you have one
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,  # Allows specific origins
+    allow_credentials=True, # Allows cookies/authorization headers
+    allow_methods=["*"],    # Allows all methods (GET, POST, PUT, DELETE, OPTIONS, etc.)
+    allow_headers=["*"],    # Allows all headers (Content-Type, Authorization, etc.)
+)
 
 @app.on_event("startup")
 async def startup_event():
