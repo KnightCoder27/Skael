@@ -4,8 +4,8 @@ import datetime
 import os
 import pandas as pd
 from dotenv import load_dotenv 
-from fastapi import Depends
-from sqlalchemy.orm import Session
+# from fastapi import Depends
+# from sqlalchemy.orm import Session
 from src.backend.models.models import get_db, JobListing
 
 
@@ -55,8 +55,10 @@ def job_excel_db(EXCEL_PATH, data=[], get_id=False):
     df.to_excel(EXCEL_PATH, sheet_name='Job Listings', index=False)
 
 
-def job_db(db: Session = Depends(get_db)):
+def job_db():
+    db = next(get_db())
     job_id = db.query(JobListing.api_id).all()
+    db.close()
     return job_id
 
 
