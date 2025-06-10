@@ -209,7 +209,19 @@ class TechnologyCreate(TechnologyBase):
 #     class Config:
 #         from_attributes = True
 
-class AnalyzeResult(BaseModel):
+class SaveJob(BaseModel):
+    user_id: int
+    job_id: int
+    action_type : str
+    activity_metadata : str
+
+class AnalyzeResultIn(BaseModel):
+    user_id: int
+    job_id: int
+    score: int
+    explanation: Optional[str] = None
+
+class AnalyzeResultOut(BaseModel):
     score: int
     explanation: Optional[str] = None
 
