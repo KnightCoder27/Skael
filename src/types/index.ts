@@ -208,13 +208,12 @@ export type ActivityType =
   | "GENERAL_RESUME_GENERATED"
   | "GENERAL_COVER_LETTER_GENERATED";
 
+// Corresponds to backend's UserActivityLog, with client-side id and timestamp
 export interface LocalUserActivity {
-  id: string;
-  type: ActivityType;
-  timestamp: string;
-  userId?: number;
-  jobId?: number;
-  jobTitle?: string;
-  company?: string | null;
-  details?: { [key: string]: any };
+  id: string; // Client-generated ID for list keying
+  timestamp: string; // Client-generated timestamp for local log display/sorting
+  user_id?: number; // Corresponds to backend UserActivityLog.user_id
+  job_id?: number; // Corresponds to backend UserActivityLog.job_id
+  action_type: ActivityType; // Corresponds to backend UserActivityLog.action_type
+  metadata?: { [key: string]: any }; // Corresponds to backend UserActivityLog.activity_metadata
 }

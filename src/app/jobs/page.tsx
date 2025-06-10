@@ -153,6 +153,9 @@ export default function JobExplorerPage() {
     : [];
 
     const companyLogo = backendJob.company_object?.logo || `https://placehold.co/100x100.png?text=${encodeURIComponent(backendJob.company?.[0] || 'J')}`;
+    
+    const cachedData = (numericDbId >= 0 && jobAnalysisCache[numericDbId]) ? jobAnalysisCache[numericDbId] : {};
+
 
     return {
       id: numericDbId,
@@ -187,10 +190,10 @@ export default function JobExplorerPage() {
       fetched_data: backendJob.fetched_data || null,
       technologies: technologiesFormatted,
       companyLogo: companyLogo,
-      matchScore: numericDbId >= 0 && jobAnalysisCache[numericDbId] ? jobAnalysisCache[numericDbId].matchScore : undefined,
-      matchExplanation: numericDbId >= 0 && jobAnalysisCache[numericDbId] ? jobAnalysisCache[numericDbId].matchExplanation : undefined,
+      matchScore: cachedData.matchScore,
+      matchExplanation: cachedData.matchExplanation,
     };
-  }, []); 
+  }, []); // Removed jobAnalysisCache from dependencies
 
 
   const fetchRelevantJobs = useCallback(async () => {
@@ -310,18 +313,23 @@ export default function JobExplorerPage() {
     }
   };
 
-  const addLocalActivity = useCallback((activityData: Omit<LocalUserActivity, 'id' | 'timestamp'>) => {
+  const addLocalActivity = useCallback((
+    activityData: Omit<LocalUserActivity, 'id' | 'timestamp' | 'user_id'> & { user_id?: number }
+  ) => {
     const newActivity: LocalUserActivity = {
       id: Date.now().toString() + Math.random().toString(36).substring(2),
       timestamp: new Date().toISOString(),
-      userId: currentUser?.id,
-      ...activityData,
+      user_id: activityData.user_id ?? currentUser?.id,
+      action_type: activityData.action_type,
+      job_id: activityData.job_id,
+      metadata: activityData.metadata,
     };
     setLocalUserActivities(prevActivities => [newActivity, ...prevActivities]);
   }, [setLocalUserActivities, currentUser]);
 
   const fetchJobDetailsWithAI = useCallback(async (job: JobListing) => {
     console.log(`fetchJobDetailsWithAI: Called for job ID: ${job.id}, Title: ${job.job_title}`);
+    console.log(`fetchJobDetailsWithAI: Job object has score: ${job.matchScore}, explanation: ${!!job.matchExplanation}`);
     setSelectedJobForDetails(job);
     setIsDetailsModalOpen(true);
 
@@ -336,6 +344,7 @@ export default function JobExplorerPage() {
         return;
     }
     const cachedAnalysis = jobAnalysisCache[job.id];
+    console.log(`fetchJobDetailsWithAI: Checking cache for ID ${job.id}. Found:`, cachedAnalysis);
     if (cachedAnalysis) {
       console.log(`fetchJobDetailsWithAI: Found in jobAnalysisCache for ID: ${job.id}. Score: ${cachedAnalysis.matchScore}`);
       const updateWithCache = (prev: JobListing[]) => prev.map(j => j.id === job.id ? { ...j, ...cachedAnalysis } : j);
@@ -358,6 +367,7 @@ export default function JobExplorerPage() {
         userPreferences: currentUser.job_role || '',
         userHistory: '',
       };
+      console.log("fetchJobDetailsWithAI: Calling jobMatchExplanation AI flow...");
       const explanationResult = await jobMatchExplanation(input);
       const updateJobsState = (prevJobs: JobListing[]) => prevJobs.map(j => j.id === job.id ? { ...j, ...explanationResult } : j);
       setRelevantJobsList(updateJobsState);
@@ -365,9 +375,18 @@ export default function JobExplorerPage() {
       setFetchedApiJobs(updateJobsState);
       setSelectedJobForDetails(prevJob => prevJob ? { ...prevJob, ...explanationResult } : null);
       if (job.id >= 0) { // Only cache if ID is valid (not a temporary negative one)
+        console.log(`fetchJobDetailsWithAI: Caching AI result for job ID ${job.id}:`, explanationResult);
         setJobAnalysisCache(prevCache => ({ ...prevCache, [job.id as number]: explanationResult }));
       }
-      addLocalActivity({ type: "MATCH_ANALYSIS_VIEWED", jobId: job.id, jobTitle: job.job_title, company: job.company, details: { matchScore: explanationResult.matchScore }});
+      addLocalActivity({
+        action_type: "MATCH_ANALYSIS_VIEWED",
+        job_id: job.id,
+        metadata: {
+          jobTitle: job.job_title,
+          company: job.company,
+          matchScore: explanationResult.matchScore
+        }
+      });
     } catch (error) {
       console.error("Error fetching AI match explanation:", error);
       toast({ title: "AI Analysis Failed", description: "Could not get AI match explanation.", variant: "destructive" });
@@ -388,15 +407,19 @@ export default function JobExplorerPage() {
     let activityType: ActivityType = "JOB_SAVED";
     let toastMessage = `${job.job_title} added to your application tracker.`;
     let statusToLog: "Saved" | undefined = "Saved";
+    let metadataForActivity: { [key: string]: any } = {
+        jobTitle: job.job_title,
+        company: job.company,
+    };
 
     if (existingApplicationIndex > -1) {
       // Unsaving
       setTrackedApplications(prev => prev.filter(app => app.jobId !== job.id));
       toastMessage = `${job.job_title} removed from your tracker.`;
       activityType = "JOB_UNSAVED";
-      statusToLog = undefined;
+      statusToLog = undefined; // No status to log for unsaving in this specific metadata field
       toast({ title: "Job Unsaved", description: toastMessage });
-      // Note: Backend currently doesn't have an "unsave" endpoint, so we only update client-side.
+      // Backend currently doesn't have an "unsave" endpoint, so only client-side.
     } else {
       // Saving
       const newApplication: TrackedApplication = {
@@ -409,12 +432,14 @@ export default function JobExplorerPage() {
       };
       setTrackedApplications(prev => [...prev, newApplication]);
       toast({ title: "Job Saved!", description: toastMessage });
+      metadataForActivity.status = statusToLog;
 
-      // Backend call for saving
       if (currentUser && currentUser.id) {
         try {
           console.log(`handleSaveJob: Attempting to save job ID ${job.id} to backend for user ID ${currentUser.id}`);
-          await apiClient.post(`/jobs/${job.id}/save`, { user_id: currentUser.id });
+          const formData = new FormData();
+          formData.append('user_id', currentUser.id.toString());
+          await apiClient.post(`/jobs/${job.id}/save`, formData); // Using FormData
           toast({ title: "Backend Sync", description: "Job save synced with backend.", variant: "default" });
         } catch (error) {
           console.error("Error saving job to backend:", error);
@@ -422,13 +447,16 @@ export default function JobExplorerPage() {
                                ? error.response.data.detail 
                                : "Could not sync job save with backend.";
           toast({ title: "Backend Sync Failed", description: errorMessage, variant: "destructive" });
-          // Optionally, revert client-side save if backend sync is critical, or mark as "pending sync"
         }
       } else {
         console.warn("handleSaveJob: Cannot sync job save to backend - currentUser or currentUser.id is missing.");
       }
     }
-    addLocalActivity({ type: activityType, jobId: job.id, jobTitle: job.job_title, company: job.company, details: statusToLog ? { status: statusToLog } : {}});
+    addLocalActivity({
+      action_type: activityType,
+      job_id: job.id,
+      metadata: metadataForActivity
+    });
   };
 
   const openMaterialsModal = (job: JobListing) => {
@@ -477,7 +505,15 @@ export default function JobExplorerPage() {
       const resumeResult = await generateResume(resumeInput);
       if (resumeResult) {
         setGeneratedResume(resumeResult.resume);
-        addLocalActivity({ type: "RESUME_GENERATED_FOR_JOB", jobId: jobToGenerateFor.id, jobTitle: jobToGenerateFor.job_title, company: jobToGenerateFor.company, details: { success: true }});
+        addLocalActivity({
+          action_type: "RESUME_GENERATED_FOR_JOB",
+          job_id: jobToGenerateFor.id,
+          metadata: {
+            jobTitle: jobToGenerateFor.job_title,
+            company: jobToGenerateFor.company,
+            success: true
+          }
+        });
       }
     } catch (error) {
       console.error("Error generating resume:", error);
@@ -502,7 +538,15 @@ export default function JobExplorerPage() {
       const coverLetterResult = await generateCoverLetter(coverLetterInput);
       if (coverLetterResult) {
         setGeneratedCoverLetter(coverLetterResult.coverLetter);
-        addLocalActivity({ type: "COVER_LETTER_GENERATED_FOR_JOB", jobId: jobToGenerateFor.id, jobTitle: jobToGenerateFor.job_title, company: jobToGenerateFor.company, details: { success: true }});
+        addLocalActivity({
+          action_type: "COVER_LETTER_GENERATED_FOR_JOB",
+          job_id: jobToGenerateFor.id,
+          metadata: {
+            jobTitle: jobToGenerateFor.job_title,
+            company: jobToGenerateFor.company,
+            success: true
+          }
+        });
       }
     } catch (error) {
       console.error("Error generating cover letter:", error);
@@ -714,3 +758,4 @@ export default function JobExplorerPage() {
 
 
     
+
