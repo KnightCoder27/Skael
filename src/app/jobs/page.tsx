@@ -69,7 +69,7 @@ interface BackendJobListingResponseItem {
   fetched_data?: string | null;
   technologies?: string[] | null;
   // Added from APIJobListingItem -> APICompanyObject
-  company_object?: { 
+  company_object?: {
     logo?: string | null;
   } | null;
 }
@@ -105,7 +105,7 @@ export default function JobExplorerPage() {
   const [errorGenerateJobs, setErrorGenerateJobs] = useState<string | null>(null);
   const [errorRelevantJobs, setErrorRelevantJobs] = useState<string | null>(null);
   const [errorAllJobs, setErrorAllJobs] = useState<string | null>(null);
-  
+
   const [trackedApplications, setTrackedApplications] = useLocalStorage<TrackedApplication[]>('tracked-applications', []);
   const [jobAnalysisCache, setJobAnalysisCache] = useLocalStorage<JobAnalysisCache>('job-ai-analysis-cache', {});
   const [localUserActivities, setLocalUserActivities] = useLocalStorage<LocalUserActivity[]>('user-activity-log', []);
@@ -128,7 +128,7 @@ export default function JobExplorerPage() {
 
   const mapBackendJobToFrontend = useCallback((backendJob: BackendJobListingResponseItem): JobListing => {
     let numericDbId: number;
-  
+
     if (isValidDbId(backendJob.id)) {
         if (typeof backendJob.id === 'string') {
             numericDbId = parseInt(backendJob.id, 10);
@@ -136,14 +136,14 @@ export default function JobExplorerPage() {
                 console.warn(`mapBackendJobToFrontend: DB ID string '${backendJob.id}' could not be parsed to int for job: ${backendJob.job_title}. API ID: ${backendJob.api_id}. Assigning temporary ID.`);
                 numericDbId = -Date.now() - Math.random();
             }
-        } else { 
+        } else {
             numericDbId = backendJob.id as number;
         }
     } else {
         console.warn(`mapBackendJobToFrontend: Encountered job with invalid/missing DB ID. Original DB ID: ${backendJob.id} (type: ${typeof backendJob.id}), API ID: ${backendJob.api_id}, Title: ${backendJob.job_title}. Assigning temporary ID.`);
-        numericDbId = -Date.now() - Math.random(); 
+        numericDbId = -Date.now() - Math.random();
     }
-  
+
     const technologiesFormatted: Technology[] = Array.isArray(backendJob.technologies)
     ? backendJob.technologies.map((name, index) => ({
         id: `${numericDbId}-tech-${index}`, // Use the processed numericDbId for consistency
@@ -151,7 +151,7 @@ export default function JobExplorerPage() {
         technology_slug: name.toLowerCase().replace(/\s+/g, '-'),
       }))
     : [];
-    
+
     const companyLogo = backendJob.company_object?.logo || `https://placehold.co/100x100.png?text=${encodeURIComponent(backendJob.company?.[0] || 'J')}`;
 
     return {
@@ -190,7 +190,7 @@ export default function JobExplorerPage() {
       matchScore: numericDbId >= 0 && jobAnalysisCache[numericDbId] ? jobAnalysisCache[numericDbId].matchScore : undefined,
       matchExplanation: numericDbId >= 0 && jobAnalysisCache[numericDbId] ? jobAnalysisCache[numericDbId].matchExplanation : undefined,
     };
-  }, [jobAnalysisCache]);
+  }, []); // Removed jobAnalysisCache from dependencies. It will use the one from the component's scope.
 
 
   const fetchRelevantJobs = useCallback(async () => {
@@ -202,16 +202,16 @@ export default function JobExplorerPage() {
     setIsLoadingRelevantJobs(true);
     setErrorRelevantJobs(null);
     try {
-      const payload: UserProfileForRelevantJobs = { 
+      const payload: UserProfileForRelevantJobs = {
         job_titles: currentUser.job_role ? [currentUser.job_role] : [],
         skills: currentUser.skills || [],
         experience: currentUser.experience ?? 0,
         locations: currentUser.preferred_locations || [],
-        countries: [], 
+        countries: [],
         remote: currentUser.remote_preference === "Remote" ? true : (currentUser.remote_preference === "Onsite" ? false : null),
       };
       const cleanedPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== undefined && v !== null && (Array.isArray(v) ? v.length > 0 : true)));
-      
+
       if (!cleanedPayload.hasOwnProperty('job_titles')) cleanedPayload.job_titles = [];
       if (!cleanedPayload.hasOwnProperty('skills')) cleanedPayload.skills = [];
       if (!cleanedPayload.hasOwnProperty('locations')) cleanedPayload.locations = [];
@@ -220,7 +220,7 @@ export default function JobExplorerPage() {
       console.log("DEBUG: Payload for /jobs/relevant_jobs:", JSON.stringify(cleanedPayload, null, 2));
       const response = await apiClient.post<BackendJobListingResponseItem[]>('/jobs/relevant_jobs', cleanedPayload);
       console.log("DEBUG: Raw relevant_jobs response.data (first 5 items):", JSON.stringify(response.data.slice(0, 5), null, 2));
-      
+
       setRelevantJobsList(response.data.map(job => mapBackendJobToFrontend(job)));
 
     } catch (error) {
@@ -238,7 +238,7 @@ export default function JobExplorerPage() {
     try {
       const response = await apiClient.get<BackendJobListingResponseItem[]>('/jobs/list_jobs/');
       console.log("DEBUG: Raw list_jobs response.data (first 5 items):", JSON.stringify(response.data.slice(0, 5), null, 2));
-      
+
       setAllJobsList(response.data.map(job => mapBackendJobToFrontend(job)));
 
     } catch (error) {
@@ -253,9 +253,9 @@ export default function JobExplorerPage() {
 
   useEffect(() => {
     if (currentUser && !isLoggingOut) {
-        if (activeTab === "relevant") { 
+        if (activeTab === "relevant") {
             fetchRelevantJobs();
-        } else if (activeTab === "all") { 
+        } else if (activeTab === "all") {
             fetchAllJobs();
         }
     }
@@ -275,12 +275,12 @@ export default function JobExplorerPage() {
     const payload: UserProfileForJobFetching = {
       job_titles: currentUser.job_role ? [currentUser.job_role] : [],
       skills: currentUser.skills || [],
-      experience: currentUser.experience ?? 0, 
+      experience: currentUser.experience ?? 0,
       locations: currentUser.preferred_locations || [],
-      countries: [], 
+      countries: [],
       remote: currentUser.remote_preference === "Remote" ? true : (currentUser.remote_preference === "Onsite" ? false : null),
     };
-    
+
     const cleanedPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== undefined && v !== null && (Array.isArray(v) ? v.length > 0 : true)));
     if (!cleanedPayload.hasOwnProperty('job_titles')) cleanedPayload.job_titles = [];
     if (!cleanedPayload.hasOwnProperty('skills')) cleanedPayload.skills = [];
@@ -296,14 +296,14 @@ export default function JobExplorerPage() {
         setFetchedApiJobs(response.data.jobs.map(job => mapBackendJobToFrontend(job)));
         toast({ title: "Job Fetch Successful", description: `${response.data.jobs_fetched} job(s) were processed. See results below.` });
       } else {
-        setFetchedApiJobs([]);
+        setFetchedApiJobs([]); // Ensure it's cleared if no jobs are returned
         toast({ title: "Job Fetch Complete", description: "No new jobs were found from the external API." });
       }
     } catch (error) {
       const message = error instanceof AxiosError && error.response?.data?.detail ? error.response.data.detail : "Failed to initiate job fetching from external API.";
       setErrorGenerateJobs(message);
       setFetchedApiJobs([]);
-      setLastFetchCount(0);
+      setLastFetchCount(0); // Explicitly set to 0 on error too
       toast({ title: "Job Fetch Failed", description: message, variant: "destructive" });
     } finally {
       setIsLoadingGenerateJobs(false);
@@ -321,17 +321,23 @@ export default function JobExplorerPage() {
   }, [setLocalUserActivities, currentUser]);
 
   const fetchJobDetailsWithAI = useCallback(async (job: JobListing) => {
+    console.log(`fetchJobDetailsWithAI: Called for job ID: ${job.id}, Title: ${job.job_title}`);
     setSelectedJobForDetails(job);
     setIsDetailsModalOpen(true);
-    if (job.matchScore !== undefined && job.matchExplanation) return;
-    
-    if (typeof job.id !== 'number' || isNaN(job.id)) { 
-        console.warn("Cannot fetch AI details for job with invalid frontend ID:", job);
+
+    if (job.matchScore !== undefined && job.matchExplanation) {
+      console.log(`fetchJobDetailsWithAI: Data already on job object for ID: ${job.id}. Score: ${job.matchScore}`);
+      return;
+    }
+
+    if (typeof job.id !== 'number' || isNaN(job.id)) {
+        console.warn(`fetchJobDetailsWithAI: Cannot fetch AI details for job with invalid frontend ID:`, job);
         toast({ title: "Error", description: "Cannot perform AI analysis on job with invalid ID.", variant: "destructive"});
         return;
     }
     const cachedAnalysis = jobAnalysisCache[job.id];
     if (cachedAnalysis) {
+      console.log(`fetchJobDetailsWithAI: Found in jobAnalysisCache for ID: ${job.id}. Score: ${cachedAnalysis.matchScore}`);
       const updateWithCache = (prev: JobListing[]) => prev.map(j => j.id === job.id ? { ...j, ...cachedAnalysis } : j);
       setRelevantJobsList(updateWithCache);
       setAllJobsList(updateWithCache);
@@ -339,6 +345,7 @@ export default function JobExplorerPage() {
       setSelectedJobForDetails(prevJob => prevJob ? { ...prevJob, ...cachedAnalysis } : null);
       return;
     }
+    console.log(`fetchJobDetailsWithAI: No cache hit for ID: ${job.id}. Proceeding to AI call.`);
     if (!currentUser || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0) {
       toast({ title: "Profile Incomplete", description: "AI analysis requires your professional summary and skills in your profile.", variant: "destructive" });
       return;
@@ -357,7 +364,7 @@ export default function JobExplorerPage() {
       setAllJobsList(updateJobsState);
       setFetchedApiJobs(updateJobsState);
       setSelectedJobForDetails(prevJob => prevJob ? { ...prevJob, ...explanationResult } : null);
-      if (job.id >= 0) { 
+      if (job.id >= 0) { // Only cache if ID is valid (not a temporary negative one)
         setJobAnalysisCache(prevCache => ({ ...prevCache, [job.id as number]: explanationResult }));
       }
       addLocalActivity({ type: "MATCH_ANALYSIS_VIEWED", jobId: job.id, jobTitle: job.job_title, company: job.company, details: { matchScore: explanationResult.matchScore }});
@@ -367,12 +374,12 @@ export default function JobExplorerPage() {
     } finally {
       setIsLoadingExplanation(false);
     }
-  }, [currentUser, toast, jobAnalysisCache, setJobAnalysisCache, addLocalActivity]); 
+  }, [currentUser, toast, jobAnalysisCache, setJobAnalysisCache, addLocalActivity]);
 
   const handleViewDetails = (job: JobListing) => fetchJobDetailsWithAI(job);
 
   const handleSaveJob = (job: JobListing) => {
-    if (typeof job.id !== 'number' || isNaN(job.id)) { 
+    if (typeof job.id !== 'number' || isNaN(job.id)) {
         toast({ title: "Error", description: "Cannot save job with invalid ID.", variant: "destructive"});
         return;
     }
@@ -388,13 +395,13 @@ export default function JobExplorerPage() {
       statusToLog = undefined;
       toast({ title: "Job Unsaved", description: toastMessage });
     } else {
-      const newApplication: TrackedApplication = { 
+      const newApplication: TrackedApplication = {
         id: (job.api_id || job.id.toString()) + Date.now().toString(),
         jobId: job.id,
-        jobTitle: job.job_title, 
-        company: job.company, 
-        status: "Saved", 
-        lastUpdated: new Date().toISOString() 
+        jobTitle: job.job_title,
+        company: job.company,
+        status: "Saved",
+        lastUpdated: new Date().toISOString()
       };
       setTrackedApplications(prev => [...prev, newApplication]);
       toast({ title: "Job Saved!", description: toastMessage });
@@ -403,7 +410,7 @@ export default function JobExplorerPage() {
   };
 
   const openMaterialsModal = (job: JobListing) => {
-    if (typeof job.id !== 'number' || isNaN(job.id)) { 
+    if (typeof job.id !== 'number' || isNaN(job.id)) {
         toast({ title: "Error", description: "Cannot generate materials for job with invalid ID.", variant: "destructive"});
         return;
     }
@@ -513,7 +520,7 @@ export default function JobExplorerPage() {
           </AlertDescription>
         </Alert>
       )}
-      
+
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ActiveJobTab)} className="w-full">
         <TabsList className="grid w-full grid-cols-3 mb-6">
           <TabsTrigger value="generate"><Bot className="mr-2 h-4 w-4" />Generate Jobs</TabsTrigger>
@@ -548,7 +555,7 @@ export default function JobExplorerPage() {
           {!isLoadingGenerateJobs && lastFetchCount !== null && (
             <div className="mt-6">
               <h3 className="text-lg font-semibold mb-3">
-                {lastFetchCount > 0 ? `${lastFetchCount} job(s) fetched from the API:` : "No new jobs found from the API."}
+                {lastFetchCount > 0 ? `${lastFetchCount} job(s) fetched from the API:` : (lastFetchCount === 0 ? "No new jobs found from the API." : "")}
               </h3>
               {fetchedApiJobs.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -564,7 +571,13 @@ export default function JobExplorerPage() {
                   ))}
                 </div>
               ) : lastFetchCount > 0 ? (
-                <p className="text-muted-foreground">Jobs were fetched, but none are currently displayable (check console for mapping errors).</p>
+                 <Alert variant="default" className="mt-4">
+                    <FileWarning className="h-5 w-5" />
+                    <AlertTitle>Jobs Fetched, Display Issue</AlertTitle>
+                    <AlertDescription>
+                        {lastFetchCount} job(s) were fetched, but there was an issue displaying them. This might be due to data mapping or missing IDs. Please check the console for warnings.
+                    </AlertDescription>
+                </Alert>
               ) : null}
             </div>
           )}
@@ -599,13 +612,13 @@ export default function JobExplorerPage() {
           {!isLoadingRelevantJobs && !errorRelevantJobs && relevantJobsList.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {relevantJobsList.map((job, index) => (
-                <JobCard 
-                  key={job.api_id ? `relevant-api-${job.api_id}` : `relevant-db-${job.id}-${index}`} 
-                  job={job} 
-                  onViewDetails={handleViewDetails} 
-                  onSaveJob={handleSaveJob} 
-                  onGenerateMaterials={openMaterialsModal} 
-                  isSaved={trackedApplications.some(app => app.jobId === job.id)} 
+                <JobCard
+                  key={job.api_id ? `relevant-api-${job.api_id}` : `relevant-db-${job.id}-${index}`}
+                  job={job}
+                  onViewDetails={handleViewDetails}
+                  onSaveJob={handleSaveJob}
+                  onGenerateMaterials={openMaterialsModal}
+                  isSaved={trackedApplications.some(app => app.jobId === job.id)}
                 />
               ))}
             </div>
@@ -636,10 +649,10 @@ export default function JobExplorerPage() {
           {!isLoadingAllJobs && !errorAllJobs && allJobsList.length > 0 && (
             <div className="space-y-4">
               {allJobsList.map((job, index) => (
-                <SimpleJobListItem 
-                  key={job.api_id ? `all-api-${job.api_id}` : `all-db-${job.id}-${index}`} 
-                  job={job} 
-                  onViewDetails={handleViewDetails} 
+                <SimpleJobListItem
+                  key={job.api_id ? `all-api-${job.api_id}` : `all-db-${job.id}-${index}`}
+                  job={job}
+                  onViewDetails={handleViewDetails}
                 />
               ))}
             </div>
@@ -647,23 +660,23 @@ export default function JobExplorerPage() {
         </TabsContent>
       </Tabs>
 
-      <JobDetailsModal 
-        job={selectedJobForDetails} 
-        isOpen={isDetailsModalOpen} 
-        onClose={() => setIsDetailsModalOpen(false)} 
-        onGenerateMaterials={openMaterialsModal} 
-        isLoadingExplanation={isLoadingExplanation} 
+      <JobDetailsModal
+        job={selectedJobForDetails}
+        isOpen={isDetailsModalOpen}
+        onClose={() => setIsDetailsModalOpen(false)}
+        onGenerateMaterials={openMaterialsModal}
+        isLoadingExplanation={isLoadingExplanation}
       />
-      <ApplicationMaterialsModal 
-        isOpen={isMaterialsModalOpen} 
-        onClose={() => setIsMaterialsModalOpen(false)} 
-        resume={generatedResume} 
-        coverLetter={generatedCoverLetter} 
-        isLoadingResume={isLoadingResume} 
-        isLoadingCoverLetter={isLoadingCoverLetter} 
-        job={selectedJobForMaterials} 
-        onGenerateResume={handleTriggerAIResumeGeneration} 
-        onGenerateCoverLetter={handleTriggerAICoverLetterGeneration} 
+      <ApplicationMaterialsModal
+        isOpen={isMaterialsModalOpen}
+        onClose={() => setIsMaterialsModalOpen(false)}
+        resume={generatedResume}
+        coverLetter={generatedCoverLetter}
+        isLoadingResume={isLoadingResume}
+        isLoadingCoverLetter={isLoadingCoverLetter}
+        job={selectedJobForMaterials}
+        onGenerateResume={handleTriggerAIResumeGeneration}
+        onGenerateCoverLetter={handleTriggerAICoverLetterGeneration}
       />
     </div>
   );
@@ -676,3 +689,6 @@ export default function JobExplorerPage() {
 
 
 
+
+
+    
