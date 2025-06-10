@@ -6,7 +6,7 @@ import type { JobListing } from '@/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, Briefcase, DollarSign, Percent, Bookmark, FileText } from 'lucide-react'; // Removed Info
+import { MapPin, Briefcase, DollarSign, Percent, Bookmark, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface JobCardProps {
@@ -88,8 +88,17 @@ export function JobCard({ job, onViewDetails, onSaveJob, onGenerateMaterials, is
         )}
       </CardContent>
       <CardFooter className="flex flex-col sm:flex-row justify-end items-stretch sm:items-center gap-2 pt-3 border-t">
-        {/* Details button removed */}
         <div className="flex gap-2 w-full sm:w-auto justify-end">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={(e) => handleButtonAction(e, () => onGenerateMaterials(job))}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleButtonAction(e, () => onGenerateMaterials(job));}}
+            className="flex-1 sm:flex-initial text-primary hover:bg-primary/10"
+            aria-label={`Generate materials for ${job.job_title}`}
+          >
+            <FileText className="w-4 h-4 mr-2" /> Materials
+          </Button>
           <Button
             variant={isSaved ? "secondary" : "default"}
             size="sm"
@@ -100,16 +109,6 @@ export function JobCard({ job, onViewDetails, onSaveJob, onGenerateMaterials, is
             aria-label={isSaved ? `Unsave ${job.job_title}` : `Save ${job.job_title}`}
           >
             <Bookmark className="w-4 h-4 mr-2" /> {isSaved ? 'Saved' : 'Save'}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={(e) => handleButtonAction(e, () => onGenerateMaterials(job))}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleButtonAction(e, () => onGenerateMaterials(job));}}
-            className="flex-1 sm:flex-initial text-primary hover:bg-primary/10"
-            aria-label={`Generate materials for ${job.job_title}`}
-          >
-            <FileText className="w-4 h-4 mr-2" /> Materials
           </Button>
         </div>
       </CardFooter>
