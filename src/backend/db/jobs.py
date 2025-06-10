@@ -234,31 +234,32 @@ def get_job(id: int = Path(...), db: Session = Depends(get_db)):
     return job
 
 @router.post("/{id}/save")
-def save_job(id: int, user_id: int = Form(...), db: Session = Depends(get_db)):
+def save_job(save_data : SaveJob, db: Session = Depends(get_db)):
     # Log job save as activity
     activity = UserActivityLog(
-        user_id=user_id,
-        job_id=id,
-        action_type="job_saved",
-        metadata=None
+        user_id=save_data.user_id,
+        job_id=save_data.job_id,
+        action_type=save_data.action_type,
+        metadata=save_data.metadata
     )
     db.add(activity)
     db.commit()
     db.refresh(activity)
     return {"msg": "Job saved", "activity_id": str(activity.id)}
 
-@router.post("/{id}/analyze", response_model=AnalyzeResult)
-def analyze_job(id: int, user_id: int = Form(...), db: Session = Depends(get_db)):
+@router.post("/{id}/analyze", response_model=AnalyzeResultOut)
+def analyze_job(save_analysis : AnalyzeResultIn, db: Session = Depends(get_db)):
     # Dummy match score logic (replace with real logic/LLM)
     score = 78
     explanation = "Based on your interest in remote UI roles."
     match_log = MatchScoreLog(
-        user_id=user_id,
-        job_id=id,
-        score=score,
-        explanation=explanation
+        user_id=save_analysis.user_id,
+        job_id=save_analysis.job_id,
+        score=save_analysis.score,
+        explanation=save_analysis.explanation
     )
+    
     db.add(match_log)
     db.commit()
     db.refresh(match_log)
-    return AnalyzeResult(score=score, explanation=explanation)
+    return AnalyzeResultOut(score=score, explanation=explanation)
