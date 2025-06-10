@@ -17,7 +17,7 @@
   ];
   # Sets environment variables in the workspace
   env = {
-    DATABASE_URL= "postgresql://neondb_owner:npg_BULoiEYlyJ09@ep-black-resonance-a10pilnk-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require";
+    DATABASE_URL= os.environ.get("DATABASE_URL");
   };
   # This adds a file watcher to startup the firebase emulators. The emulators will only start if
   # a firebase.json file is written into the user's directory
