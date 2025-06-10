@@ -2,15 +2,15 @@
 "use client";
 
 import Image from 'next/image';
-import type { JobListing, Technology } from '@/types'; // Updated type
+import type { JobListing } from '@/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, Briefcase, DollarSign, Percent, Info, Bookmark, FileText } from 'lucide-react';
+import { MapPin, Briefcase, DollarSign, Percent, Bookmark, FileText } from 'lucide-react'; // Removed Info
 import { cn } from '@/lib/utils';
 
 interface JobCardProps {
-  job: JobListing; // Updated type
+  job: JobListing;
   onViewDetails: (job: JobListing) => void;
   onSaveJob: (job: JobListing) => void;
   onGenerateMaterials: (job: JobListing) => void;
@@ -20,27 +20,50 @@ interface JobCardProps {
 export function JobCard({ job, onViewDetails, onSaveJob, onGenerateMaterials, isSaved }: JobCardProps) {
   const getMatchScoreVariant = () => {
     if (job.matchScore === undefined) return "outline";
-    if (job.matchScore > 75) return "default"; 
-    if (job.matchScore > 50) return "secondary"; 
-    return "destructive"; 
+    if (job.matchScore > 75) return "default";
+    if (job.matchScore > 50) return "secondary";
+    return "destructive";
+  };
+
+  const handleCardClick = () => {
+    onViewDetails(job);
+  };
+
+  const handleCardKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onViewDetails(job);
+    }
+  };
+
+  const handleButtonAction = (event: React.MouseEvent | React.KeyboardEvent, action: () => void) => {
+    event.stopPropagation();
+    action();
   };
 
   return (
-    <Card className="flex flex-col h-full shadow-md hover:shadow-xl transition-all duration-300 ease-in-out transform hover:-translate-y-1 bg-card">
+    <Card
+      className="flex flex-col h-full shadow-md hover:shadow-xl transition-all duration-300 ease-in-out transform hover:-translate-y-1 bg-card cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      onClick={handleCardClick}
+      onKeyDown={handleCardKeyDown}
+      role="button"
+      tabIndex={0}
+      aria-label={`View details for ${job.job_title} at ${job.company}`}
+    >
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div>
-            <CardTitle className="text-xl font-bold font-headline text-primary mb-1">{job.job_title}</CardTitle> {/* Updated field */}
+            <CardTitle className="text-xl font-bold font-headline text-primary mb-1">{job.job_title}</CardTitle>
             <CardDescription className="text-sm text-muted-foreground flex items-center">
-              <Briefcase className="w-4 h-4 mr-1.5" /> {job.company} {/* Kept as job.company for simplicity with sample data */}
+              <Briefcase className="w-4 h-4 mr-1.5" /> {job.company}
             </CardDescription>
           </div>
           {job.companyLogo && (
-            <Image 
-              src={job.companyLogo} 
-              alt={`${job.company} logo`} 
-              width={48} 
-              height={48} 
+            <Image
+              src={job.companyLogo}
+              alt={`${job.company} logo`}
+              width={48}
+              height={48}
               className="rounded-md border object-contain"
               data-ai-hint="company logo"
             />
@@ -52,7 +75,7 @@ export function JobCard({ job, onViewDetails, onSaveJob, onGenerateMaterials, is
       </CardHeader>
       <CardContent className="flex-grow pb-3 space-y-2">
         <p className="text-sm text-foreground/90 line-clamp-3">{job.description}</p>
-        {job.salary_string && ( // Updated field
+        {job.salary_string && (
           <div className="text-sm text-accent flex items-center">
             <DollarSign className="w-4 h-4 mr-1.5" /> {job.salary_string}
           </div>
@@ -64,21 +87,28 @@ export function JobCard({ job, onViewDetails, onSaveJob, onGenerateMaterials, is
           </Badge>
         )}
       </CardContent>
-      <CardFooter className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2 pt-3 border-t">
-        <Button variant="outline" size="sm" onClick={() => onViewDetails(job)} className="flex-1 sm:flex-initial">
-          <Info className="w-4 h-4 mr-2" /> Details
-        </Button>
-        <div className="flex gap-2 w-full sm:w-auto">
-          <Button 
-            variant={isSaved ? "secondary" : "default"} 
-            size="sm" 
-            onClick={() => onSaveJob(job)} 
-            className="flex-1"
+      <CardFooter className="flex flex-col sm:flex-row justify-end items-stretch sm:items-center gap-2 pt-3 border-t">
+        {/* Details button removed */}
+        <div className="flex gap-2 w-full sm:w-auto justify-end">
+          <Button
+            variant={isSaved ? "secondary" : "default"}
+            size="sm"
+            onClick={(e) => handleButtonAction(e, () => onSaveJob(job))}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleButtonAction(e, () => onSaveJob(job));}}
+            className="flex-1 sm:flex-initial"
             aria-pressed={isSaved}
+            aria-label={isSaved ? `Unsave ${job.job_title}` : `Save ${job.job_title}`}
           >
             <Bookmark className="w-4 h-4 mr-2" /> {isSaved ? 'Saved' : 'Save'}
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => onGenerateMaterials(job)} className="flex-1 text-primary hover:bg-primary/10">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={(e) => handleButtonAction(e, () => onGenerateMaterials(job))}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleButtonAction(e, () => onGenerateMaterials(job));}}
+            className="flex-1 sm:flex-initial text-primary hover:bg-primary/10"
+            aria-label={`Generate materials for ${job.job_title}`}
+          >
             <FileText className="w-4 h-4 mr-2" /> Materials
           </Button>
         </div>
