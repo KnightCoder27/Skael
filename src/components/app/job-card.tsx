@@ -87,30 +87,27 @@ export function JobCard({ job, onViewDetails, onSaveJob, onGenerateMaterials, is
           </Badge>
         )}
       </CardContent>
-      <CardFooter className="flex flex-col sm:flex-row justify-end items-stretch sm:items-center gap-2 pt-3 border-t">
-        <div className="flex gap-2 w-full sm:w-auto justify-end">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={(e) => handleButtonAction(e, () => onGenerateMaterials(job))}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleButtonAction(e, () => onGenerateMaterials(job));}}
-            className="flex-1 sm:flex-initial text-primary hover:bg-primary/10"
-            aria-label={`Generate materials for ${job.job_title}`}
-          >
-            <FileText className="w-4 h-4 mr-2" /> Materials
-          </Button>
-          <Button
-            variant={isSaved ? "secondary" : "default"}
-            size="sm"
-            onClick={(e) => handleButtonAction(e, () => onSaveJob(job))}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleButtonAction(e, () => onSaveJob(job));}}
-            className="flex-1 sm:flex-initial"
-            aria-pressed={isSaved}
-            aria-label={isSaved ? `Unsave ${job.job_title}` : `Save ${job.job_title}`}
-          >
-            <Bookmark className="w-4 h-4 mr-2" /> {isSaved ? 'Saved' : 'Save'}
-          </Button>
-        </div>
+      <CardFooter className="flex flex-row justify-between items-center gap-2 pt-3 border-t">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={(e) => handleButtonAction(e, () => onGenerateMaterials(job))}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleButtonAction(e, () => onGenerateMaterials(job));}}
+          className="text-primary hover:bg-primary/10"
+          aria-label={`Generate materials for ${job.job_title}`}
+        >
+          <FileText className="w-4 h-4 mr-2" /> Materials
+        </Button>
+        <Button
+          variant={isSaved ? "secondary" : "default"}
+          size="sm"
+          onClick={(e) => handleButtonAction(e, () => onSaveJob(job))}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleButtonAction(e, () => onSaveJob(job));}}
+          aria-pressed={isSaved}
+          aria-label={isSaved ? `Unsave ${job.job_title}` : `Save ${job.job_title}`}
+        >
+          <Bookmark className="w-4 h-4 mr-2" /> {isSaved ? 'Saved' : 'Save'}
+        </Button>
       </CardFooter>
     </Card>
   );
