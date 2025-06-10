@@ -51,3 +51,4 @@ app.include_router(users_router)
 app.include_router(jobs_router)
 app.include_router(resume_router)
 app.include_router(activities_router)
+
