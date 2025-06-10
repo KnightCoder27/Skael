@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { JobListing, TrackedApplication, LocalUserActivity, ActivityType, UserProfileForJobFetching, UserProfileForRelevantJobs, Technology } from '@/types';
 import useLocalStorage from '@/hooks/use-local-storage';
 import { useAuth } from '@/contexts/AuthContext';
@@ -37,53 +37,51 @@ interface JobAnalysisCache {
 }
 
 interface BackendJobListingResponseItem {
-  id?: number | string | null;
-  api_id?: string | null;
+  id?: number | string | null | undefined;
+  api_id?: string | null | undefined;
   job_title: string;
-  url: string | null;
-  date_posted: string | null;
-  employment_status: string | null;
-  matching_phrase: string[] | null;
-  matching_words: string[] | null;
-  company: string | null;
-  company_domain: string | null;
-  company_obj_id: number | null;
-  final_url: string | null;
-  source_url: string | null;
-  location: string | null;
-  remote: boolean | null;
-  hybrid: boolean | null;
-  salary_string: string | null;
-  min_salary: number | null;
-  max_salary: number | null;
-  currency: string | null;
-  country: string | null;
-  seniority: string | null;
-  discovered_at: string;
-  description: string | null;
-  reposted: boolean | null;
-  date_reposted: string | null;
-  country_code: string | null;
-  job_expired: boolean | null;
-  industry_id: string | null;
-  fetched_data: string | null;
-  technologies: string[];
+  url?: string | null;
+  date_posted?: string | null;
+  employment_status?: string | null;
+  matching_phrase?: string[] | null;
+  matching_words?: string[] | null;
+  company?: string | null;
+  company_domain?: string | null;
+  company_obj_id?: number | null;
+  final_url?: string | null;
+  source_url?: string | null;
+  location?: string | null;
+  remote?: boolean | null;
+  hybrid?: boolean | null;
+  salary_string?: string | null;
+  min_salary?: number | null;
+  max_salary?: number | null;
+  currency?: string | null;
+  country?: string | null;
+  seniority?: string | null;
+  discovered_at?: string | null; // Should ideally be string from backend
+  description?: string | null;
+  reposted?: boolean | null;
+  date_reposted?: string | null;
+  country_code?: string | null;
+  job_expired?: boolean | null;
+  industry_id?: string | null;
+  fetched_data?: string | null;
+  technologies?: string[] | null; // From backend as string array
 }
 
 
 type ActiveJobTab = "generate" | "relevant" | "all";
 
-// Moved outside: This function does not depend on component state/props.
 const isValidDbId = (idInput: any): idInput is number | string => {
   if (idInput === null || idInput === undefined) {
     return false;
   }
-  const numId = Number(idInput); // Attempt to convert to number
-  // Check if it's a valid, finite number
+  const numId = Number(idInput);
   if (isNaN(numId) || !isFinite(numId)) {
     return false;
   }
-  return true; // It's either a number or a string that successfully converted to a valid number
+  return true;
 };
 
 export default function JobExplorerPage() {
@@ -126,10 +124,11 @@ export default function JobExplorerPage() {
 
   const mapBackendJobToFrontend = useCallback((backendJob: BackendJobListingResponseItem): JobListing => {
     let numericDbId: number;
+  
     if (isValidDbId(backendJob.id)) {
         if (typeof backendJob.id === 'string') {
             numericDbId = parseInt(backendJob.id, 10);
-            if (isNaN(numericDbId)) { // Fallback if parseInt fails (e.g., non-numeric string)
+            if (isNaN(numericDbId)) {
                 console.warn(`mapBackendJobToFrontend: DB ID string '${backendJob.id}' could not be parsed to int for job: ${backendJob.job_title}. Assigning temporary ID.`);
                 numericDbId = -Date.now() - Math.random();
             }
@@ -137,8 +136,8 @@ export default function JobExplorerPage() {
             numericDbId = backendJob.id as number;
         }
     } else {
-        console.warn(`mapBackendJobToFrontend: Encountered job with invalid/missing DB ID. Original DB ID: ${backendJob.id}, API ID: ${backendJob.api_id}, Title: ${backendJob.job_title}. Assigning temporary ID.`);
-        numericDbId = -Date.now() - Math.random();
+        console.warn(`mapBackendJobToFrontend: Encountered job with invalid/missing DB ID. Original DB ID: ${backendJob.id} (type: ${typeof backendJob.id}), API ID: ${backendJob.api_id}, Title: ${backendJob.job_title}. Assigning temporary ID.`);
+        numericDbId = -Date.now() - Math.random(); // Temporary ID, ensure it's unique enough
     }
   
     const technologiesFormatted: Technology[] = Array.isArray(backendJob.technologies)
@@ -148,7 +147,7 @@ export default function JobExplorerPage() {
         technology_slug: name.toLowerCase().replace(/\s+/g, '-'),
       }))
     : [];
-  
+    
     return {
       id: numericDbId,
       api_id: backendJob.api_id || null,
@@ -182,8 +181,8 @@ export default function JobExplorerPage() {
       fetched_data: backendJob.fetched_data || null,
       technologies: technologiesFormatted,
       companyLogo: `https://placehold.co/100x100.png?text=${encodeURIComponent(backendJob.company?.[0] || 'J')}`,
-      matchScore: numericDbId >= 0 ? jobAnalysisCache[numericDbId]?.matchScore : undefined,
-      matchExplanation: numericDbId >= 0 ? jobAnalysisCache[numericDbId]?.matchExplanation : undefined,
+      matchScore: numericDbId >= 0 && jobAnalysisCache[numericDbId] ? jobAnalysisCache[numericDbId].matchScore : undefined,
+      matchExplanation: numericDbId >= 0 && jobAnalysisCache[numericDbId] ? jobAnalysisCache[numericDbId].matchExplanation : undefined,
     };
   }, [jobAnalysisCache]);
 
@@ -205,26 +204,15 @@ export default function JobExplorerPage() {
         countries: [], 
         remote: currentUser.remote_preference === "Remote" ? true : (currentUser.remote_preference === "Onsite" ? false : null),
       };
-      const cleanedPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== undefined));
+      const cleanedPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== undefined && v !== null && (Array.isArray(v) ? v.length > 0 : true)));
       
       console.log("DEBUG: Payload for /jobs/relevant_jobs:", JSON.stringify(cleanedPayload, null, 2));
 
       const response = await apiClient.post<BackendJobListingResponseItem[]>('/jobs/relevant_jobs', cleanedPayload);
+      console.log("DEBUG: Raw relevant_jobs response.data (first 5 items):", JSON.stringify(response.data.slice(0, 5), null, 2));
       
-      const jobsWithValidDbIds = response.data.filter(job => {
-        const isValid = isValidDbId(job.id);
-        if (!isValid) {
-            console.warn(`Relevant Jobs: Invalid or missing DB ID. DB ID: ${job.id} (type: ${typeof job.id}), API ID: ${job.api_id}, Title: ${job.job_title}. Filtering out.`);
-        }
-        return isValid;
-      });
-
-      const filteredOutCount = response.data.length - jobsWithValidDbIds.length;
-      if (filteredOutCount > 0) {
-        console.warn(`Relevant Jobs: Filtered out ${filteredOutCount} jobs due to missing or invalid DB ID.`);
-      }
-      
-      setRelevantJobsList(jobsWithValidDbIds.map(job => mapBackendJobToFrontend(job)));
+      // Removed the pre-filtering step. mapBackendJobToFrontend will handle all items.
+      setRelevantJobsList(response.data.map(job => mapBackendJobToFrontend(job)));
 
     } catch (error) {
       const message = error instanceof AxiosError && error.response?.data?.detail ? error.response.data.detail : "Could not load relevant jobs.";
@@ -240,21 +228,10 @@ export default function JobExplorerPage() {
     setErrorAllJobs(null);
     try {
       const response = await apiClient.get<BackendJobListingResponseItem[]>('/jobs/list_jobs/');
+      console.log("DEBUG: Raw list_jobs response.data (first 5 items):", JSON.stringify(response.data.slice(0, 5), null, 2));
       
-      const jobsWithValidDbIds = response.data.filter(job => {
-        const isValid = isValidDbId(job.id);
-        if (!isValid) {
-             console.warn(`All Jobs: Invalid or missing DB ID. DB ID: ${job.id} (type: ${typeof job.id}), API ID: ${job.api_id}, Title: ${job.job_title}. Filtering out.`);
-        }
-        return isValid;
-      });
-      
-      const filteredOutCount = response.data.length - jobsWithValidDbIds.length;
-      if (filteredOutCount > 0) {
-        console.warn(`All Jobs: Filtered out ${filteredOutCount} jobs due to missing or invalid DB ID.`);
-      }
-      
-      setAllJobsList(jobsWithValidDbIds.map(job => mapBackendJobToFrontend(job)));
+      // Removed the pre-filtering step. mapBackendJobToFrontend will handle all items.
+      setAllJobsList(response.data.map(job => mapBackendJobToFrontend(job)));
 
     } catch (error) {
       const message = error instanceof AxiosError && error.response?.data?.detail ? error.response.data.detail : "Could not load all jobs.";
@@ -294,7 +271,7 @@ export default function JobExplorerPage() {
       remote: currentUser.remote_preference === "Remote" ? true : (currentUser.remote_preference === "Onsite" ? false : null),
     };
     
-    const cleanedPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== undefined));
+    const cleanedPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== undefined && v !== null && (Array.isArray(v) ? v.length > 0 : true)));
     console.log("DEBUG: Payload for /jobs/fetch_jobs:", JSON.stringify(cleanedPayload, null, 2));
 
     try {
