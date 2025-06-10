@@ -182,7 +182,7 @@ async def read_job_listings(skip: int = 0, limit: int = 100, db: Session = Depen
         results.append(JobListingResponse(**job_dict))
     return results
 
-@router.post('/relevant_jobs',response_model=List[JobListingCreate])
+@router.post('/relevant_jobs',response_model=List[JobListingResponse])
 def relevant_jobs(user: UserProfile, skip: int = 0, limit: int = 100, db : Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
 
     user= user.model_dump()
