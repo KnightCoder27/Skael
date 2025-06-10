@@ -30,15 +30,16 @@ import {
 } from '@/ai/flows/resume-cover-letter-generator';
 
 interface JobAnalysisCache {
-  [jobId: number]: {
+  [jobId: number]: { // job.id here refers to the frontend JobListing.id (which could be temp)
     matchScore: number;
     matchExplanation: string;
   };
 }
 
+// This interface represents the raw item from the backend response
 interface BackendJobListingResponseItem {
-  id?: number | string | null | undefined;
-  api_id?: string | null | undefined;
+  id?: number | string | null | undefined; // Database ID, may be missing or not a number initially
+  api_id?: string | null | undefined; // External API ID, should be string if present
   job_title: string;
   url?: string | null;
   date_posted?: string | null;
@@ -59,7 +60,7 @@ interface BackendJobListingResponseItem {
   currency?: string | null;
   country?: string | null;
   seniority?: string | null;
-  discovered_at?: string | null; // Should ideally be string from backend
+  discovered_at?: string | null;
   description?: string | null;
   reposted?: boolean | null;
   date_reposted?: string | null;
@@ -67,12 +68,13 @@ interface BackendJobListingResponseItem {
   job_expired?: boolean | null;
   industry_id?: string | null;
   fetched_data?: string | null;
-  technologies?: string[] | null; // From backend as string array
+  technologies?: string[] | null;
 }
 
 
 type ActiveJobTab = "generate" | "relevant" | "all";
 
+// Validates if an ID (intended as DB ID) is usable (not null, undefined, can be parsed to a finite number)
 const isValidDbId = (idInput: any): idInput is number | string => {
   if (idInput === null || idInput === undefined) {
     return false;
@@ -125,32 +127,34 @@ export default function JobExplorerPage() {
   const mapBackendJobToFrontend = useCallback((backendJob: BackendJobListingResponseItem): JobListing => {
     let numericDbId: number;
   
+    // Attempt to process backendJob.id (intended as Database ID)
     if (isValidDbId(backendJob.id)) {
         if (typeof backendJob.id === 'string') {
             numericDbId = parseInt(backendJob.id, 10);
             if (isNaN(numericDbId)) {
-                console.warn(`mapBackendJobToFrontend: DB ID string '${backendJob.id}' could not be parsed to int for job: ${backendJob.job_title}. Assigning temporary ID.`);
+                console.warn(`mapBackendJobToFrontend: DB ID string '${backendJob.id}' could not be parsed to int for job: ${backendJob.job_title}. API ID: ${backendJob.api_id}. Assigning temporary ID.`);
                 numericDbId = -Date.now() - Math.random();
             }
-        } else { // It's already a number
+        } else { 
             numericDbId = backendJob.id as number;
         }
     } else {
+        // This case handles when backendJob.id is null, undefined, or not a valid number representation
         console.warn(`mapBackendJobToFrontend: Encountered job with invalid/missing DB ID. Original DB ID: ${backendJob.id} (type: ${typeof backendJob.id}), API ID: ${backendJob.api_id}, Title: ${backendJob.job_title}. Assigning temporary ID.`);
-        numericDbId = -Date.now() - Math.random(); // Temporary ID, ensure it's unique enough
+        numericDbId = -Date.now() - Math.random(); 
     }
   
     const technologiesFormatted: Technology[] = Array.isArray(backendJob.technologies)
     ? backendJob.technologies.map((name, index) => ({
-        id: `${numericDbId}-tech-${index}`, 
+        id: `${numericDbId}-tech-${index}`, // Use the processed numericDbId for uniqueness here
         technology_name: name,
         technology_slug: name.toLowerCase().replace(/\s+/g, '-'),
       }))
     : [];
     
     return {
-      id: numericDbId,
-      api_id: backendJob.api_id || null,
+      id: numericDbId, // This is the frontend JobListing.id, always a number (potentially temporary)
+      api_id: backendJob.api_id || null, // External API ID
       job_title: backendJob.job_title || "N/A",
       company: backendJob.company || "N/A",
       location: backendJob.location || "N/A",
@@ -211,7 +215,6 @@ export default function JobExplorerPage() {
       const response = await apiClient.post<BackendJobListingResponseItem[]>('/jobs/relevant_jobs', cleanedPayload);
       console.log("DEBUG: Raw relevant_jobs response.data (first 5 items):", JSON.stringify(response.data.slice(0, 5), null, 2));
       
-      // Removed the pre-filtering step. mapBackendJobToFrontend will handle all items.
       setRelevantJobsList(response.data.map(job => mapBackendJobToFrontend(job)));
 
     } catch (error) {
@@ -230,7 +233,6 @@ export default function JobExplorerPage() {
       const response = await apiClient.get<BackendJobListingResponseItem[]>('/jobs/list_jobs/');
       console.log("DEBUG: Raw list_jobs response.data (first 5 items):", JSON.stringify(response.data.slice(0, 5), null, 2));
       
-      // Removed the pre-filtering step. mapBackendJobToFrontend will handle all items.
       setAllJobsList(response.data.map(job => mapBackendJobToFrontend(job)));
 
     } catch (error) {
@@ -306,9 +308,10 @@ export default function JobExplorerPage() {
     setIsDetailsModalOpen(true);
     if (job.matchScore !== undefined && job.matchExplanation) return;
     
-    if (typeof job.id !== 'number' || isNaN(job.id) || job.id < 0) { 
-        console.warn("Cannot fetch AI details for job with invalid DB ID:", job);
-        toast({ title: "Error", description: "Cannot perform AI analysis on job with invalid DB ID.", variant: "destructive"});
+    // Use job.id (which is the frontend JobListing.id, potentially temporary) for cache key
+    if (typeof job.id !== 'number' || isNaN(job.id)) { 
+        console.warn("Cannot fetch AI details for job with invalid frontend ID:", job);
+        toast({ title: "Error", description: "Cannot perform AI analysis on job with invalid ID.", variant: "destructive"});
         return;
     }
     const cachedAnalysis = jobAnalysisCache[job.id];
@@ -349,8 +352,9 @@ export default function JobExplorerPage() {
   const handleViewDetails = (job: JobListing) => fetchJobDetailsWithAI(job);
 
   const handleSaveJob = (job: JobListing) => {
-    if (typeof job.id !== 'number' || isNaN(job.id) || job.id < 0) { 
-        toast({ title: "Error", description: "Cannot save job with invalid DB ID.", variant: "destructive"});
+    // Use job.id (frontend ID) for tracking
+    if (typeof job.id !== 'number' || isNaN(job.id)) { 
+        toast({ title: "Error", description: "Cannot save job with invalid ID.", variant: "destructive"});
         return;
     }
     const existingApplicationIndex = trackedApplications.findIndex(app => app.jobId === job.id);
@@ -365,7 +369,14 @@ export default function JobExplorerPage() {
       statusToLog = undefined;
       toast({ title: "Job Unsaved", description: toastMessage });
     } else {
-      const newApplication: TrackedApplication = { id: (job.api_id || job.id.toString()) + Date.now().toString(), jobId: job.id, jobTitle: job.job_title, company: job.company, status: "Saved", lastUpdated: new Date().toISOString() };
+      const newApplication: TrackedApplication = { 
+        id: (job.api_id || job.id.toString()) + Date.now().toString(), // Use api_id if present for external reference, else internal job.id
+        jobId: job.id, // Use the frontend JobListing.id for local tracking
+        jobTitle: job.job_title, 
+        company: job.company, 
+        status: "Saved", 
+        lastUpdated: new Date().toISOString() 
+      };
       setTrackedApplications(prev => [...prev, newApplication]);
       toast({ title: "Job Saved!", description: toastMessage });
     }
@@ -373,8 +384,8 @@ export default function JobExplorerPage() {
   };
 
   const openMaterialsModal = (job: JobListing) => {
-    if (typeof job.id !== 'number' || isNaN(job.id) || job.id < 0) { 
-        toast({ title: "Error", description: "Cannot generate materials for job with invalid DB ID.", variant: "destructive"});
+    if (typeof job.id !== 'number' || isNaN(job.id)) { 
+        toast({ title: "Error", description: "Cannot generate materials for job with invalid ID.", variant: "destructive"});
         return;
     }
     setSelectedJobForMaterials(job);
@@ -388,7 +399,7 @@ export default function JobExplorerPage() {
   };
 
   const getPointsForJob = async (jobToGetPointsFor: JobListing): Promise<ExtractJobDescriptionPointsOutput | null> => {
-    if (typeof jobToGetPointsFor.id !== 'number' || isNaN(jobToGetPointsFor.id) || jobToGetPointsFor.id < 0) return null;
+    if (typeof jobToGetPointsFor.id !== 'number' || isNaN(jobToGetPointsFor.id)) return null;
     if (jobToGetPointsFor.id === jobForExtractedPoints?.id && extractedJobPoints) return extractedJobPoints;
     try {
       const pointsInput: ExtractJobDescriptionPointsInput = { jobDescription: jobToGetPointsFor.description || '' };
@@ -404,7 +415,7 @@ export default function JobExplorerPage() {
   };
 
   const handleTriggerAIResumeGeneration = async (jobToGenerateFor: JobListing) => {
-    if (typeof jobToGenerateFor.id !== 'number' || isNaN(jobToGenerateFor.id) || jobToGenerateFor.id < 0) return;
+    if (typeof jobToGenerateFor.id !== 'number' || isNaN(jobToGenerateFor.id)) return;
     if (!currentUser || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0) {
       toast({ title: "Profile Incomplete", description: "Please complete your profile (summary, skills) to generate materials.", variant: "destructive" });
       return;
@@ -429,7 +440,7 @@ export default function JobExplorerPage() {
   };
 
   const handleTriggerAICoverLetterGeneration = async (jobToGenerateFor: JobListing) => {
-    if (typeof jobToGenerateFor.id !== 'number' || isNaN(jobToGenerateFor.id) || jobToGenerateFor.id < 0) return;
+    if (typeof jobToGenerateFor.id !== 'number' || isNaN(jobToGenerateFor.id)) return;
     if (!currentUser || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0) {
       toast({ title: "Profile Incomplete", description: "Please complete your profile (summary, skills) to generate materials.", variant: "destructive" });
       return;
@@ -539,7 +550,7 @@ export default function JobExplorerPage() {
           )}
           {!isLoadingRelevantJobs && !errorRelevantJobs && relevantJobsList.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {relevantJobsList.map((job, index) => (
+              {relevantJobsList.map((job, index) => ( // Added index for key fallback
                 <JobCard 
                   key={job.api_id ? `relevant-api-${job.api_id}` : `relevant-db-${job.id}-${index}`} 
                   job={job} 
@@ -576,7 +587,7 @@ export default function JobExplorerPage() {
           )}
           {!isLoadingAllJobs && !errorAllJobs && allJobsList.length > 0 && (
             <div className="space-y-4">
-              {allJobsList.map((job, index) => (
+              {allJobsList.map((job, index) => ( // Added index for key fallback
                 <SimpleJobListItem 
                   key={job.api_id ? `all-api-${job.api_id}` : `all-db-${job.id}-${index}`} 
                   job={job} 
@@ -614,3 +625,4 @@ export default function JobExplorerPage() {
     
 
     
+
