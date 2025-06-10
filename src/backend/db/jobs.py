@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from src.backend.models.models import get_db, JobListing, Technology, Company, User, UserActivityLog, MatchScoreLog, Location
-from src.backend.models.schemas import AnalyzeResult, APIResponse, JobListingCreate, JobListingResponse, CompanyCreate, CompanyResponse, UserProfile
+from src.backend.models.schemas import AnalyzeResultIn, AnalyzeResultOut, APIResponse, JobListingCreate, JobListingResponse, CompanyCreate, CompanyResponse, UserProfile, SaveJob
 # from llm_services.cleaning_agent import api_data
 from datetime import datetime
 from src.backend.api.theirstack import fetch_jobs
