@@ -58,6 +58,7 @@ def job_excel_db(EXCEL_PATH, data=[], get_id=False):
 def job_db():
     db = next(get_db())
     job_id = db.query(JobListing.api_id).all()
+    job_id = [row[0] for row in job_id]  # make sure it's JSON-safe
     db.close()
     return job_id
 
