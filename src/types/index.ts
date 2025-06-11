@@ -212,7 +212,7 @@ export interface ActivityIn {
   user_id: number;
   job_id?: number | null;
   action_type: string;
-  metadata?: { [key: string]: any } | null; // Backend for /activity/log expects 'metadata'
+  metadata?: { [key: string]: any } | null;
 }
 
 export interface ActivityLogResponse { // Response from POST /activity/log
@@ -221,16 +221,16 @@ export interface ActivityLogResponse { // Response from POST /activity/log
 }
 
 
-// Payload for POST /jobs/{id}/save - as confirmed, backend expects activity_metadata as object
+// Payload for POST /jobs/{id}/save
 export interface SaveJobPayload {
   user_id: number;
   job_id: number;
   action_type: string; // e.g., "JOB_SAVED", "JOB_UNSAVED"
-  activity_metadata: { [key: string]: any } | null;
+  activity_metadata: { [key: string]: any } | null; // Changed from string to object
 }
 
 
-// Payload for POST /jobs/{id}/analyze - as confirmed, backend expects these fields
+// Payload for POST /jobs/{id}/analyze
 export interface AnalyzeJobPayload {
   user_id: number;
   job_id: number;
@@ -260,7 +260,7 @@ export type ActivityType =
   | "COVER_LETTER_GENERATED_FOR_JOB"
   | "GENERAL_RESUME_GENERATED"
   | "GENERAL_COVER_LETTER_GENERATED"
-  | "AI_ANALYSIS_LOGGED_TO_DB"
+  | "AI_MATCH_ANALYZED" // Changed from AI_ANALYSIS_LOGGED_TO_DB
   | "APPLICATION_STATUS_UPDATED";
 
 // Corresponds to backend's UserActivityLog, with client-side id and timestamp
@@ -279,8 +279,9 @@ export interface UserActivityOut {
   user_id: number;
   job_id: number | null;
   action_type: string;
-  activity_metadata: { [key: string]: any } | null; // Backend DB column is activity_metadata
+  activity_metadata: { [key: string]: any } | null;
   created_at: string; // ISO 8601 datetime string
 }
 
-```
+
+    
