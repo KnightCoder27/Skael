@@ -15,14 +15,11 @@ import { FullPageLoading, LoadingSpinner } from '@/components/app/loading-spinne
 import apiClient from '@/lib/apiClient';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
-interface BackendActivity extends UserActivityOut {
-  // No changes needed if UserActivityOut already matches backend
-}
+interface BackendActivity extends UserActivityOut {}
 
 export default function TrackerPage() {
   const { currentUser, isLoadingAuth, isLoggingOut } = useAuth();
   const router = useRouter();
-  // Local storage will now act more as a cache for statuses beyond "Saved"
   const [localStatusOverrides, setLocalStatusOverrides] = useLocalStorage<Record<number, ApplicationStatus>>('application-status-overrides', {});
   const [trackedApplications, setTrackedApplications] = useState<TrackedApplication[]>([]);
   const [isLoadingTracker, setIsLoadingTracker] = useState(false);
@@ -61,12 +58,12 @@ export default function TrackerPage() {
         if (action === 'JOB_SAVED') {
           const metadata = activity.activity_metadata || {};
           derivedApplications.push({
-            id: activity.id.toString(), // Use activity ID or generate one
+            id: activity.id.toString(), 
             jobId: jobId,
             jobTitle: metadata.jobTitle || 'N/A',
             company: metadata.company || 'N/A',
-            status: localStatusOverrides[jobId] || 'Saved', // Prioritize local override, then default to Saved
-            lastUpdated: metadata.timestamp || activity.created_at, // Prefer metadata timestamp if available
+            status: localStatusOverrides[jobId] || 'Saved',
+            lastUpdated: metadata.timestamp || activity.created_at, 
           });
         }
       }
@@ -90,7 +87,7 @@ export default function TrackerPage() {
       console.log("TrackerPage: Access Denied. isLoadingAuth is false, currentUser is null. Redirecting to /auth.");
       toast({ title: "Access Denied", description: "Please log in to view your tracker.", variant: "destructive" });
       router.push('/auth');
-    } else if (currentUser && currentUser.id) {
+    } else if (currentUser && currentUser.id && !isLoggingOut) {
       fetchAndProcessActivities();
     }
   }, [isLoadingAuth, currentUser, router, toast, isLoggingOut, fetchAndProcessActivities]);
@@ -128,15 +125,14 @@ export default function TrackerPage() {
         activity_metadata: JSON.stringify({
             jobTitle: appToRemove.jobTitle,
             company: appToRemove.company,
-            status: "Unsaved" // Reflecting the action
+            status: "Unsaved" 
         })
     };
 
     try {
-        await apiClient.post(`/jobs/${jobId}/save`, payload); // Using the /save endpoint with JOB_UNSAVED type
+        await apiClient.post(`/jobs/${jobId}/save`, payload); 
         toast({ title: "Application Removed", description: "The application has been marked as unsaved." });
-        fetchAndProcessActivities(); // Refetch to update the list from backend
-        // Clean up local status override if it existed
+        fetchAndProcessActivities(); 
         setLocalStatusOverrides(prev => {
             const newOverrides = {...prev};
             delete newOverrides[jobId];
@@ -219,5 +215,3 @@ export default function TrackerPage() {
     </div>
   );
 }
-
-    
