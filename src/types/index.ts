@@ -187,7 +187,7 @@ export interface SaveJobPayload {
   user_id: number;
   job_id: number;
   action_type: string;
-  activity_metadata: string; // JSON string of metadata { jobTitle, company, status }
+  activity_metadata: { [key: string]: any } | null; // Changed from string to object/null
 }
 
 // Payload for POST /jobs/{id}/analyze (as per user's backend code)
