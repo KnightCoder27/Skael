@@ -23,6 +23,14 @@ export interface Technology {
   technology_slug: string;
 }
 
+// Expected structure for items from backend related to match scores
+export interface BackendMatchScoreLogItem {
+  job_id: number;
+  score: number;
+  explanation: string;
+  // created_at?: string; // Optional: if your backend sends it and you need it
+}
+
 /**
  * Represents a user of the application, aligned with backend's UserOut.
  * The 'id' is the backend's database ID.
@@ -41,6 +49,7 @@ export interface User {
   expected_salary?: number | null;
   resume?: string | null; // URL
   joined_date?: string; // ISO datetime string
+  match_scores?: BackendMatchScoreLogItem[]; // <-- ADDED: To hold historical match scores
 }
 
 // API Request/Response types from the guide
@@ -259,7 +268,7 @@ export type ActivityType =
   | "COVER_LETTER_GENERATED_FOR_JOB"
   | "GENERAL_RESUME_GENERATED"
   | "GENERAL_COVER_LETTER_GENERATED"
-  | "AI_JOB_ANALYZED" // Indicates AI analysis was run for a job. Score/explanation fetched separately.
+  | "AI_JOB_ANALYZED" // Simplified: logs that an analysis was run, score/explanation not duplicated here.
   | "APPLICATION_STATUS_UPDATED";
 
 // Corresponds to backend's UserActivityLog, with client-side id and timestamp
@@ -280,12 +289,4 @@ export interface UserActivityOut {
   action_type: string;
   activity_metadata: { [key: string]: any } | null;
   created_at: string; // ISO 8601 datetime string
-}
-
-// Expected structure for items from GET /match-scores/user/{user_id}
-export interface BackendMatchScoreLogItem {
-  job_id: number;
-  score: number;
-  explanation: string;
-  // created_at?: string; // Optional: if your backend sends it and you need it
 }

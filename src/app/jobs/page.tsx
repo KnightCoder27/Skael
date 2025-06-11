@@ -221,14 +221,13 @@ export default function JobExplorerPage() {
  const populateCacheAndSavedJobIds = useCallback(async () => {
     if (!currentUser || !currentUser.id) {
       console.log("JobExplorer: populateCacheAndSavedJobIds - No current user or user ID.");
-      setIsCacheReadyForAnalysis(true); // Still set cache to ready to unblock UI if user not logged in
+      setIsCacheReadyForAnalysis(true);
       return;
     }
     console.log("JobExplorer: Starting populateCacheAndSavedJobIds for user:", currentUser.id);
     setIsCacheReadyForAnalysis(false);
     
     let generalActivitiesError = null;
-    let matchScoresError = null;
 
     // 1. Fetch general activities for saved job IDs
     try {
@@ -268,64 +267,60 @@ export default function JobExplorerPage() {
       generalActivitiesError = error;
     }
 
-    // 2. Fetch match scores from dedicated endpoint
-    try {
-      // IMPORTANT: Replace '/match-scores/user/' with your actual backend endpoint for fetching match scores
-      const matchScoresResponse = await apiClient.get<BackendMatchScoreLogItem[]>(`/match-scores/user/${currentUser.id}`);
-      const matchScores = matchScoresResponse.data;
-      const newAiCacheUpdatesFromScores: JobAnalysisCache = {};
-      matchScores.forEach(scoreLog => {
-        if (scoreLog.job_id != null) { // Check for null/undefined job_id
-          newAiCacheUpdatesFromScores[scoreLog.job_id] = {
+    // 2. Populate jobAnalysisCache from currentUser.match_scores (if backend provides it)
+    const newAiCacheUpdatesFromUser: JobAnalysisCache = {};
+    if (currentUser.match_scores && Array.isArray(currentUser.match_scores)) {
+      console.log("JobExplorer: Found currentUser.match_scores, attempting to populate cache.", currentUser.match_scores.length);
+      currentUser.match_scores.forEach(scoreLog => {
+        if (scoreLog.job_id != null && scoreLog.score != null && scoreLog.explanation != null) {
+          newAiCacheUpdatesFromUser[scoreLog.job_id] = {
             matchScore: scoreLog.score,
             matchExplanation: scoreLog.explanation,
           };
         }
       });
+    } else {
+        console.log("JobExplorer: currentUser.match_scores is not available or not an array. Historical AI scores cannot be populated from user object.");
+        toast({
+            title: "Historical AI Scores Not Loaded",
+            description: "Your profile data from the backend does not include historical match scores. Ensure GET /users/{id} provides this.",
+            variant: "default", // Not destructive, as new analyses will still work
+            duration: 10000,
+        });
+    }
 
-      if (Object.keys(newAiCacheUpdatesFromScores).length > 0) {
+    if (Object.keys(newAiCacheUpdatesFromUser).length > 0) {
         setJobAnalysisCache(prevCache => {
-          const changed = Object.keys(newAiCacheUpdatesFromScores).some(
-            key => newAiCacheUpdatesFromScores[Number(key)]?.matchScore !== prevCache[Number(key)]?.matchScore ||
-                   newAiCacheUpdatesFromScores[Number(key)]?.matchExplanation !== prevCache[Number(key)]?.matchExplanation
+          const changed = Object.keys(newAiCacheUpdatesFromUser).some(
+            key => newAiCacheUpdatesFromUser[Number(key)]?.matchScore !== prevCache[Number(key)]?.matchScore ||
+                   newAiCacheUpdatesFromUser[Number(key)]?.matchExplanation !== prevCache[Number(key)]?.matchExplanation
           );
           if (changed) {
-            console.log("JobExplorer: AI Analysis cache updated from match scores endpoint:", newAiCacheUpdatesFromScores);
-            return { ...prevCache, ...newAiCacheUpdatesFromScores };
+            console.log("JobExplorer: AI Analysis cache updated from currentUser.match_scores:", newAiCacheUpdatesFromUser);
+            return { ...prevCache, ...newAiCacheUpdatesFromUser };
           }
           return prevCache;
         });
 
-        // Update existing job lists with these scores
         const updateJobItemsInList = (list: JobListing[]): JobListing[] => {
           let listChanged = false;
           const newList = list.map(job => {
-            const newlyCachedScoreData = newAiCacheUpdatesFromScores[job.id];
+            const newlyCachedScoreData = newAiCacheUpdatesFromUser[job.id];
             if (newlyCachedScoreData && (job.matchScore !== newlyCachedScoreData.matchScore || job.matchExplanation !== newlyCachedScoreData.matchExplanation)) {
               listChanged = true;
               return { ...job, matchScore: newlyCachedScoreData.matchScore, matchExplanation: newlyCachedScoreData.matchExplanation };
             }
             return job;
           });
-          if(listChanged) console.log("JobExplorer: Job list updated with new AI scores from match scores endpoint.");
+          if(listChanged) console.log("JobExplorer: Job list updated with new AI scores from currentUser.match_scores.");
           return listChanged ? newList : list;
         };
         setRelevantJobsList(prev => updateJobItemsInList(prev));
         setAllJobsList(prev => updateJobItemsInList(prev));
         setFetchedApiJobs(prev => updateJobItemsInList(prev));
       }
-    } catch (error) {
-        console.error("Error fetching match scores from backend:", error);
-        matchScoresError = error;
-        toast({
-            title: "AI Score Sync Failed",
-            description: "Could not load historical AI match scores. Ensure backend endpoint for match scores is available. New analyses will still work.",
-            variant: "destructive",
-            duration: 7000,
-        });
-    }
-
-    if (generalActivitiesError && !matchScoresError) {
+    
+    if (generalActivitiesError) {
       toast({ title: "Partial Cache Sync", description: "Could not sync all activity data. Saved job status might be affected.", variant: "destructive" });
     }
     
@@ -338,17 +333,16 @@ export default function JobExplorerPage() {
     if (currentUser && !isLoggingOut) {
       populateCacheAndSavedJobIds(); 
     } else if (!currentUser && !isLoadingAuth && !isLoggingOut) {
-        // If user is not logged in and auth is not loading, still set cache as ready.
         setIsCacheReadyForAnalysis(true);
     }
   }, [currentUser, isLoggingOut, isLoadingAuth, populateCacheAndSavedJobIds]); 
 
   useEffect(() => {
-    if (currentUser && !isLoggingOut) {
+    if (currentUser && !isLoggingOut && isCacheReadyForAnalysis) { // Ensure cache is ready before fetching jobs that might depend on it
       if (activeTab === "relevant") fetchRelevantJobs();
       else if (activeTab === "all") fetchAllJobs();
     }
-  }, [activeTab, currentUser, isLoggingOut, fetchRelevantJobs, fetchAllJobs]);
+  }, [activeTab, currentUser, isLoggingOut, fetchRelevantJobs, fetchAllJobs, isCacheReadyForAnalysis]);
 
 
   const handleGenerateJobs = async () => {
@@ -402,7 +396,7 @@ export default function JobExplorerPage() {
       action_type: ActivityType;
       job_id?: number;
       user_id?: number; 
-      activity_metadata?: { [key: string]: any }; // Changed from metadata to activity_metadata
+      activity_metadata?: { [key: string]: any };
     }
   ) => {
     const newActivity: LocalUserActivity = {
@@ -411,93 +405,94 @@ export default function JobExplorerPage() {
       user_id: activityData.user_id ?? currentUser?.id, 
       job_id: activityData.job_id,
       action_type: activityData.action_type,
-      activity_metadata: activityData.activity_metadata, // Changed from metadata to activity_metadata
+      activity_metadata: activityData.activity_metadata,
     };
     console.log('New local activity to be logged:', newActivity);
     setLocalUserActivities(prevActivities => [newActivity, ...prevActivities]);
   }, [setLocalUserActivities, currentUser]);
 
 
-  const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
-    console.log(`JobExplorer: performAiAnalysis called for job ${jobToAnalyze.id}`);
+const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
+    console.log(`JobExplorer: performAiAnalysis called for job ${jobToAnalyze.id}. isLoadingExplanation: ${isLoadingExplanation}`);
     if (!currentUser || !currentUser.id || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0) {
-      toast({ title: "Profile Incomplete", description: "AI analysis requires your professional summary and skills in your profile.", variant: "destructive" });
-      setIsLoadingExplanation(false);
-      setJobPendingAnalysis(null);
-      return;
+        toast({ title: "Profile Incomplete", description: "AI analysis requires your professional summary and skills in your profile.", variant: "destructive" });
+        setIsLoadingExplanation(false); 
+        setJobPendingAnalysis(null);
+        return;
     }
 
-    // Ensure loading is true here, as performAiAnalysis is now called when cache is ready but item not found, or directly.
+    // Ensure loading is true here, as performAiAnalysis can be called directly or after cache check
     if (!isLoadingExplanation) setIsLoadingExplanation(true); 
 
     try {
-      const input: JobMatchExplanationInput = {
-        jobDescription: jobToAnalyze.description || '',
-        userProfile: currentUser.professional_summary || '',
-        userPreferences: currentUser.job_role || '',
-        userHistory: '',
-      };
-      const explanationResult = await jobMatchExplanation(input);
-
-      const updateJobInList = (prevJobs: JobListing[]) => 
-        prevJobs.map(j => j.id === jobToAnalyze.id ? { ...j, ...explanationResult } : j);
-      
-      setRelevantJobsList(updateJobInList);
-      setAllJobsList(updateJobInList);
-      setFetchedApiJobs(updateJobInList);
-      setSelectedJobForDetails(prevJob => prevJob && prevJob.id === jobToAnalyze.id ? { ...prevJob, ...explanationResult } : prevJob);
-      
-      if (jobToAnalyze.id >= 0) { 
-        setJobAnalysisCache(prevCache => ({ ...prevCache, [jobToAnalyze.id as number]: explanationResult }));
-      }
-
-      // Log that AI analysis was performed (no need to log score/explanation itself here)
-      addLocalActivity({
-        action_type: "AI_JOB_ANALYZED",
-        job_id: jobToAnalyze.id,
-        user_id: currentUser.id,
-        activity_metadata: { 
-          jobTitle: jobToAnalyze.job_title,
-          company: jobToAnalyze.company,
-          success: true
-        }
-      });
-
-      if (currentUser.id && jobToAnalyze.id >= 0) {
-        const analyzePayload: AnalyzeJobPayload = {
-          user_id: currentUser.id,
-          job_id: jobToAnalyze.id,
-          score: explanationResult.matchScore,
-          explanation: explanationResult.matchExplanation
+        const input: JobMatchExplanationInput = {
+            jobDescription: jobToAnalyze.description || '',
+            userProfile: currentUser.professional_summary || '',
+            userPreferences: currentUser.job_role || '',
+            userHistory: '', // Let the tool fetch if needed, or pass a summary if available
         };
-        try {
-          await apiClient.post(`/jobs/${jobToAnalyze.id}/analyze`, analyzePayload);
-          toast({ title: "AI Analysis Logged", description: "Match details saved to your backend match log.", variant: "default" });
-        } catch (analysisError) {
-          console.error("Error logging AI analysis to backend:", analysisError);
-          toast({ title: "Backend Sync Failed", description: "Could not save AI analysis details to backend.", variant: "destructive" });
-          addLocalActivity({ 
-            action_type: "AI_JOB_ANALYZED",
+        const explanationResult = await jobMatchExplanation(input);
+
+        const updateJobInList = (prevJobs: JobListing[]) => 
+            prevJobs.map(j => j.id === jobToAnalyze.id ? { ...j, ...explanationResult } : j);
+        
+        setRelevantJobsList(updateJobInList);
+        setAllJobsList(updateJobInList);
+        setFetchedApiJobs(updateJobInList);
+        setSelectedJobForDetails(prevJob => prevJob && prevJob.id === jobToAnalyze.id ? { ...prevJob, ...explanationResult } : prevJob);
+        
+        if (jobToAnalyze.id >= 0) { // Only cache jobs with valid (non-temporary) IDs
+          setJobAnalysisCache(prevCache => ({ ...prevCache, [jobToAnalyze.id as number]: explanationResult }));
+        }
+
+        addLocalActivity({
+            action_type: "AI_JOB_ANALYZED", // General analysis event type
             job_id: jobToAnalyze.id,
             user_id: currentUser.id,
             activity_metadata: { 
-              jobTitle: jobToAnalyze.job_title, 
-              company: jobToAnalyze.company,
-              success: false, 
-              error: analysisError instanceof Error ? analysisError.message : "Unknown error" 
+                jobTitle: jobToAnalyze.job_title,
+                company: jobToAnalyze.company,
+                success: true,
+                // No need to duplicate score/explanation here, it's in MatchScoreLog
             }
-          });
+        });
+
+        // Log to backend's MatchScoreLog (or similar) via /jobs/{id}/analyze
+        if (currentUser.id && jobToAnalyze.id >= 0) { // Check for valid job ID
+            const analyzePayload: AnalyzeJobPayload = {
+                user_id: currentUser.id,
+                job_id: jobToAnalyze.id,
+                score: explanationResult.matchScore,
+                explanation: explanationResult.matchExplanation
+            };
+            try {
+                await apiClient.post(`/jobs/${jobToAnalyze.id}/analyze`, analyzePayload);
+                toast({ title: "AI Analysis Logged", description: "Match details saved to your backend.", variant: "default" });
+            } catch (analysisError) {
+                console.error("Error logging AI analysis to backend's MatchScoreLog:", analysisError);
+                toast({ title: "Backend Sync Failed", description: "Could not save AI analysis details to backend.", variant: "destructive" });
+                 addLocalActivity({
+                    action_type: "AI_JOB_ANALYZED",
+                    job_id: jobToAnalyze.id,
+                    user_id: currentUser.id,
+                    activity_metadata: { 
+                        jobTitle: jobToAnalyze.job_title,
+                        company: jobToAnalyze.company,
+                        success: false,
+                        error: analysisError instanceof Error ? analysisError.message : "Unknown error while logging match score"
+                    }
+                });
+            }
         }
-      }
     } catch (error) {
-      console.error("Error fetching AI match explanation:", error);
-      toast({ title: "AI Analysis Failed", description: "Could not get AI match explanation.", variant: "destructive" });
+        console.error("Error fetching AI match explanation:", error);
+        toast({ title: "AI Analysis Failed", description: "Could not get AI match explanation.", variant: "destructive" });
     } finally {
-      setIsLoadingExplanation(false);
-      setJobPendingAnalysis(null); 
-      console.log(`JobExplorer: performAiAnalysis finished for job ${jobToAnalyze.id}. isLoadingExplanation: false`);
+        setIsLoadingExplanation(false);
+        setJobPendingAnalysis(null); 
+        console.log(`JobExplorer: performAiAnalysis finished for job ${jobToAnalyze.id}. isLoadingExplanation: false`);
     }
-  }, [currentUser, toast, setJobAnalysisCache, addLocalActivity, isLoadingExplanation]);
+}, [currentUser, toast, setJobAnalysisCache, addLocalActivity, isLoadingExplanation]);
 
 
   const fetchJobDetailsWithAI = useCallback(async (job: JobListing) => {
@@ -533,6 +528,7 @@ export default function JobExplorerPage() {
 
 
   useEffect(() => {
+    console.log(`JobExplorer: useEffect for pending analysis. isCacheReady: ${isCacheReadyForAnalysis}, pendingJob: ${jobPendingAnalysis?.id}, selectedJobModal: ${selectedJobForDetails?.id}`);
     if (isCacheReadyForAnalysis && jobPendingAnalysis && selectedJobForDetails?.id === jobPendingAnalysis.id) {
       console.log(`JobExplorer: Cache is ready. Processing pending analysis for job ${jobPendingAnalysis.id}.`);
       const cachedData = jobAnalysisCacheRef.current[jobPendingAnalysis.id];
