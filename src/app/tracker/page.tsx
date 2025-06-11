@@ -3,10 +3,10 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import useLocalStorage from '@/hooks/use-local-storage';
-import type { TrackedApplication, ApplicationStatus, UserActivityOut, ActivityIn } from '@/types';
+import type { TrackedApplication, ApplicationStatus, UserActivityOut, ActivityIn, JobListing, BackendJobListingResponseItem, Technology } from '@/types';
 import { ApplicationTrackerTable } from '@/components/app/application-tracker-table';
 import { Button } from '@/components/ui/button';
-import { Briefcase, FilePlus2, LogOut as LogOutIcon, ServerCrash, FileWarning } from 'lucide-react';
+import { Briefcase, FilePlus2, LogOut as LogOutIcon, ServerCrash, FileWarning, Eye } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
@@ -14,9 +14,27 @@ import { useRouter } from 'next/navigation';
 import { FullPageLoading, LoadingSpinner } from '@/components/app/loading-spinner';
 import apiClient from '@/lib/apiClient';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import type { SaveJobPayload } from '@/types'; // Ensure SaveJobPayload is imported
+import type { SaveJobPayload } from '@/types';
+import { JobDetailsModal } from '@/components/app/job-details-modal';
+import { ApplicationMaterialsModal } from '@/components/app/application-materials-modal';
 
-interface BackendActivity extends UserActivityOut {}
+// AI Flow Imports (for materials generation)
+import { extractJobDescriptionPoints, type ExtractJobDescriptionPointsInput, type ExtractJobDescriptionPointsOutput } from '@/ai/flows/job-description-point-extractor';
+import {
+  generateResume,
+  generateCoverLetter,
+  type GenerateDocumentInput,
+} from '@/ai/flows/resume-cover-letter-generator';
+
+
+const isValidDbId = (idInput: any): idInput is number | string => {
+  if (idInput === null || idInput === undefined) {
+    return false;
+  }
+  const numId = Number(idInput);
+  return !isNaN(numId) && isFinite(numId);
+};
+
 
 export default function TrackerPage() {
   const { currentUser, isLoadingAuth, isLoggingOut } = useAuth();
@@ -27,26 +45,95 @@ export default function TrackerPage() {
   const [errorTracker, setErrorTracker] = useState<string | null>(null);
   const { toast } = useToast();
 
+  const [selectedJobForDetailsModal, setSelectedJobForDetailsModal] = useState<JobListing | null>(null);
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [isLoadingJobDetails, setIsLoadingJobDetails] = useState(false);
+
+  // States for ApplicationMaterialsModal
+  const [selectedJobForMaterials, setSelectedJobForMaterials] = useState<JobListing | null>(null);
+  const [isMaterialsModalOpen, setIsMaterialsModalOpen] = useState(false);
+  const [isLoadingResume, setIsLoadingResume] = useState(false);
+  const [isLoadingCoverLetter, setIsLoadingCoverLetter] = useState(false);
+  const [generatedResume, setGeneratedResume] = useState<string | null>(null);
+  const [generatedCoverLetter, setGeneratedCoverLetter] = useState<string | null>(null);
+  const [extractedJobPoints, setExtractedJobPoints] = useState<ExtractJobDescriptionPointsOutput | null>(null);
+  const [jobForExtractedPoints, setJobForExtractedPoints] = useState<JobListing | null>(null);
+
+
+  const mapBackendJobToTrackerJobListing = useCallback((backendJob: BackendJobListingResponseItem): JobListing => {
+    let numericDbId: number;
+    if (isValidDbId(backendJob.id)) {
+        numericDbId = typeof backendJob.id === 'string' ? parseInt(backendJob.id, 10) : backendJob.id as number;
+        if (isNaN(numericDbId)) numericDbId = -Date.now() - Math.random();
+    } else {
+        numericDbId = -Date.now() - Math.random();
+    }
+
+    const technologiesFormatted: Technology[] = Array.isArray(backendJob.technologies)
+    ? backendJob.technologies.map((name, index) => ({
+        id: `${numericDbId}-tech-${index}`, 
+        technology_name: name,
+        technology_slug: name.toLowerCase().replace(/\s+/g, '-'),
+      }))
+    : [];
+    
+    const companyName = backendJob.company || backendJob.company_object?.name || "N/A";
+    const companyLogo = backendJob.company_object?.logo || `https://placehold.co/100x100.png?text=${encodeURIComponent(companyName?.[0] || 'J')}`;
+
+    return {
+      id: numericDbId,
+      api_id: backendJob.api_id || null,
+      job_title: backendJob.job_title || "N/A",
+      company: companyName,
+      location: backendJob.location || "N/A",
+      description: backendJob.description || "No description available.",
+      url: backendJob.url || null,
+      date_posted: backendJob.date_posted || null,
+      employment_status: backendJob.employment_status || null,
+      matching_phrase: backendJob.matching_phrase || null,
+      matching_words: backendJob.matching_words || null,
+      company_domain: backendJob.company_domain || null,
+      company_obj_id: backendJob.company_obj_id || null,
+      final_url: backendJob.final_url || null,
+      source_url: backendJob.source_url || null,
+      remote: backendJob.remote || null,
+      hybrid: backendJob.hybrid || null,
+      salary_string: backendJob.salary_string || null,
+      min_salary: backendJob.min_salary || null,
+      max_salary: backendJob.max_salary || null,
+      currency: backendJob.currency || null,
+      country: backendJob.country || null,
+      seniority: backendJob.seniority || null,
+      discovered_at: backendJob.discovered_at || new Date().toISOString(),
+      reposted: backendJob.reposted || null,
+      date_reposted: backendJob.date_reposted || null,
+      country_code: backendJob.country_code || null,
+      job_expired: backendJob.job_expired || null,
+      industry_id: backendJob.industry_id || null,
+      fetched_data: backendJob.fetched_data || null,
+      technologies: technologiesFormatted,
+      companyLogo: companyLogo,
+      // matchScore and matchExplanation are not typically part of GET /jobs/{id}
+    };
+  }, []);
+
+
   const fetchAndProcessActivities = useCallback(async () => {
     if (!currentUser || !currentUser.id) return;
 
     setIsLoadingTracker(true);
     setErrorTracker(null);
     try {
-      const response = await apiClient.get<BackendActivity[]>(`/activity/user/${currentUser.id}`);
+      const response = await apiClient.get<UserActivityOut[]>(`/activity/user/${currentUser.id}`);
       const activities = response.data;
 
-      console.log("TrackerPage: Fetched activities:", activities); // Log all fetched activities
-
-      const jobActions: Record<number, { action: 'JOB_SAVED' | 'JOB_UNSAVED', activity: BackendActivity, timestamp: string }> = {};
+      const jobActions: Record<number, { action: 'JOB_SAVED' | 'JOB_UNSAVED', activity: UserActivityOut, timestamp: string }> = {};
 
       activities.forEach(activity => {
         if (activity.job_id !== null && activity.job_id !== undefined && (activity.action_type === 'JOB_SAVED' || activity.action_type === 'JOB_UNSAVED')) {
-          // Diagnostic log for JOB_SAVED metadata
           if (activity.action_type === 'JOB_SAVED') {
-            console.log(`TrackerPage: Processing JOB_SAVED activity for job_id ${activity.job_id}, metadata:`, activity.activity_metadata);
+             console.log(`TrackerPage: Processing JOB_SAVED activity for job_id ${activity.job_id}, metadata:`, activity.activity_metadata);
           }
-
           const existing = jobActions[activity.job_id];
           if (!existing || new Date(activity.created_at) > new Date(existing.timestamp)) {
             jobActions[activity.job_id] = {
@@ -64,13 +151,13 @@ export default function TrackerPage() {
         const { action, activity } = jobActions[jobId];
 
         if (action === 'JOB_SAVED') {
-          const metadata = activity.activity_metadata as any || {}; // Cast to any for easier access, provide fallback
+          const metadata = activity.activity_metadata as any || {};
           derivedApplications.push({
             id: activity.id.toString(), 
             jobId: jobId,
             jobTitle: metadata.jobTitle || 'N/A',
             company: metadata.company || 'N/A',
-            status: localStatusOverrides[jobId] || 'Saved', // Prioritize local override for status
+            status: localStatusOverrides[jobId] || 'Saved',
             lastUpdated: activity.created_at, 
           });
         }
@@ -112,7 +199,6 @@ export default function TrackerPage() {
 
     const oldStatus = application.status;
 
-    // Optimistic UI Update
     setLocalStatusOverrides(prevOverrides => ({
       ...prevOverrides,
       [jobId]: newStatus,
@@ -124,8 +210,6 @@ export default function TrackerPage() {
     );
     toast({ title: "Status Updated Locally", description: `Application status changed to ${newStatus}. Syncing...` });
 
-    // Log to backend if it's a significant status change (e.g., not just back to "Saved" from "Interested")
-    // For now, we log all status changes except the initial "Saved" which is handled by /jobs/{id}/save
     if (newStatus !== oldStatus) {
       const activityPayload: ActivityIn = {
         user_id: currentUser.id,
@@ -144,7 +228,6 @@ export default function TrackerPage() {
       } catch (error) {
         console.error("Error logging status update to backend:", error);
         toast({ title: "Sync Failed", description: "Could not log status update to server.", variant: "destructive" });
-        // Optionally revert optimistic update or mark as "sync pending"
       }
     }
   };
@@ -164,11 +247,11 @@ export default function TrackerPage() {
         user_id: currentUser.id,
         job_id: jobId,
         action_type: "JOB_UNSAVED",
-        activity_metadata: JSON.stringify({
+        activity_metadata: {
             jobTitle: appToRemove.jobTitle,
             company: appToRemove.company,
             status: "Unsaved" 
-        })
+        }
     };
 
     try {
@@ -186,6 +269,91 @@ export default function TrackerPage() {
         toast({ title: "Removal Failed", description: message, variant: "destructive" });
     }
   };
+
+  const handleViewJobDetails = async (jobId: number) => {
+    if (!currentUser) return;
+    setIsLoadingJobDetails(true);
+    setSelectedJobForDetailsModal(null);
+    try {
+      const response = await apiClient.get<BackendJobListingResponseItem>(`/jobs/${jobId}`);
+      const mappedJob = mapBackendJobToTrackerJobListing(response.data);
+      setSelectedJobForDetailsModal(mappedJob);
+      setIsDetailsModalOpen(true);
+    } catch (error) {
+      console.error("Error fetching job details for tracker modal:", error);
+      toast({ title: "Error", description: "Could not fetch job details.", variant: "destructive" });
+    } finally {
+      setIsLoadingJobDetails(false);
+    }
+  };
+
+  const openMaterialsModalFromTracker = (job: JobListing) => {
+    if (!job) return;
+    setSelectedJobForMaterials(job);
+    setGeneratedResume(null);
+    setGeneratedCoverLetter(null);
+    setExtractedJobPoints(null);
+    setJobForExtractedPoints(null);
+    setIsLoadingResume(false);
+    setIsLoadingCoverLetter(false);
+    setIsMaterialsModalOpen(true);
+  };
+
+  const getPointsForJob = async (jobToGetPointsFor: JobListing): Promise<ExtractJobDescriptionPointsOutput | null> => {
+    if (jobToGetPointsFor.id === jobForExtractedPoints?.id && extractedJobPoints) return extractedJobPoints;
+    try {
+      const pointsInput: ExtractJobDescriptionPointsInput = { jobDescription: jobToGetPointsFor.description || '' };
+      const pointsResult = await extractJobDescriptionPoints(pointsInput);
+      setExtractedJobPoints(pointsResult);
+      setJobForExtractedPoints(jobToGetPointsFor);
+      return pointsResult;
+    } catch (error) {
+      console.error("Error extracting job description points:", error);
+      toast({ title: "Point Extraction Failed", description: "Could not extract key points from job description.", variant: "destructive" });
+      return null;
+    }
+  };
+
+  const handleTriggerAIResumeGeneration = async (jobToGenerateFor: JobListing) => {
+    if (!currentUser || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0) {
+      toast({ title: "Profile Incomplete", description: "Please complete your profile (summary, skills) to generate materials.", variant: "destructive" });
+      return;
+    }
+    setIsLoadingResume(true);
+    setGeneratedResume(null);
+    try {
+      const points = await getPointsForJob(jobToGenerateFor);
+      if (!points) { setIsLoadingResume(false); return; }
+      const resumeInput: GenerateDocumentInput = { jobDescription: jobToGenerateFor.description || '', userProfile: currentUser.professional_summary || '', pointsToMention: [...(points.keyRequirements || []), ...(points.keySkills || [])]};
+      const resumeResult = await generateResume(resumeInput);
+      if (resumeResult) setGeneratedResume(resumeResult.resume);
+    } catch (error) {
+      toast({ title: "Resume Generation Failed", variant: "destructive" });
+    } finally {
+      setIsLoadingResume(false);
+    }
+  };
+
+  const handleTriggerAICoverLetterGeneration = async (jobToGenerateFor: JobListing) => {
+     if (!currentUser || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0) {
+      toast({ title: "Profile Incomplete", description: "Please complete your profile (summary, skills) to generate materials.", variant: "destructive" });
+      return;
+    }
+    setIsLoadingCoverLetter(true);
+    setGeneratedCoverLetter(null);
+    try {
+      const points = await getPointsForJob(jobToGenerateFor);
+      if (!points) { setIsLoadingCoverLetter(false); return; }
+      const coverLetterInput: GenerateDocumentInput = { jobDescription: jobToGenerateFor.description || '', userProfile: currentUser.professional_summary || '', pointsToMention: [...(points.keyRequirements || []), ...(points.keySkills || [])]};
+      const coverLetterResult = await generateCoverLetter(coverLetterInput);
+      if (coverLetterResult) setGeneratedCoverLetter(coverLetterResult.coverLetter);
+    } catch (error) {
+      toast({ title: "Cover Letter Generation Failed", variant: "destructive" });
+    } finally {
+      setIsLoadingCoverLetter(false);
+    }
+  };
+
 
   if (isLoggingOut) {
     return (
@@ -243,6 +411,8 @@ export default function TrackerPage() {
           applications={trackedApplications}
           onUpdateStatus={handleUpdateStatus}
           onDeleteApplication={handleDeleteApplication}
+          onViewDetails={handleViewJobDetails}
+          isLoadingDetails={isLoadingJobDetails}
         />
       )}
        {!isLoadingTracker && !errorTracker && trackedApplications.length === 0 && (
@@ -254,6 +424,29 @@ export default function TrackerPage() {
             </AlertDescription>
         </Alert>
       )}
+
+      <JobDetailsModal
+        job={selectedJobForDetailsModal}
+        isOpen={isDetailsModalOpen}
+        onClose={() => setIsDetailsModalOpen(false)}
+        onGenerateMaterials={openMaterialsModalFromTracker} 
+        // isLoadingExplanation: The modal shows AI explanation if job.matchScore is present.
+        // GET /jobs/{id} doesn't return matchScore, so it won't show by default from tracker.
+        // If AI explanation needs to be generated on-the-fly from tracker, modal logic needs adjustment or prop.
+      />
+      <ApplicationMaterialsModal
+        isOpen={isMaterialsModalOpen}
+        onClose={() => setIsMaterialsModalOpen(false)}
+        resume={generatedResume}
+        coverLetter={generatedCoverLetter}
+        isLoadingResume={isLoadingResume}
+        isLoadingCoverLetter={isLoadingCoverLetter}
+        job={selectedJobForMaterials}
+        onGenerateResume={handleTriggerAIResumeGeneration}
+        onGenerateCoverLetter={handleTriggerAICoverLetterGeneration}
+      />
     </div>
   );
 }
+
+```

@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { JobListing, TrackedApplication, LocalUserActivity, ActivityType, UserProfileForJobFetching, UserProfileForRelevantJobs, Technology, SaveJobPayload, AnalyzeJobPayload, UserActivityOut } from '@/types';
+import type { JobListing, TrackedApplication, LocalUserActivity, ActivityType, UserProfileForJobFetching, UserProfileForRelevantJobs, Technology, SaveJobPayload, AnalyzeJobPayload, UserActivityOut, BackendJobListingResponseItem } from '@/types';
 import useLocalStorage from '@/hooks/use-local-storage';
 import { useAuth } from '@/contexts/AuthContext';
 import apiClient from '@/lib/apiClient';
@@ -36,43 +36,6 @@ interface JobAnalysisCache {
   };
 }
 
-interface BackendJobListingResponseItem {
-  id?: number | string | null | undefined;
-  api_id?: string | null | undefined;
-  job_title: string;
-  url?: string | null;
-  date_posted?: string | null;
-  employment_status?: string | null;
-  matching_phrase?: string[] | null;
-  matching_words?: string[] | null;
-  company?: string | null;
-  company_domain?: string | null;
-  company_obj_id?: number | null;
-  final_url?: string | null;
-  source_url?: string | null;
-  location?: string | null;
-  remote?: boolean | null;
-  hybrid?: boolean | null;
-  salary_string?: string | null;
-  min_salary?: number | null;
-  max_salary?: number | null;
-  currency?: string | null;
-  country?: string | null;
-  seniority?: string | null;
-  discovered_at?: string | null;
-  description?: string | null;
-  reposted?: boolean | null;
-  date_reposted?: string | null;
-  country_code?: string | null;
-  job_expired?: boolean | null;
-  industry_id?: string | null;
-  fetched_data?: string | null;
-  technologies?: string[] | null;
-  company_object?: {
-    logo?: string | null;
-  } | null;
-}
-
 type ActiveJobTab = "generate" | "relevant" | "all";
 
 const isValidDbId = (idInput: any): idInput is number | string => {
@@ -82,8 +45,6 @@ const isValidDbId = (idInput: any): idInput is number | string => {
   const numId = Number(idInput);
   return !isNaN(numId) && isFinite(numId);
 };
-
-interface BackendActivity extends UserActivityOut {}
 
 
 export default function JobExplorerPage() {
@@ -106,9 +67,10 @@ export default function JobExplorerPage() {
   const [errorRelevantJobs, setErrorRelevantJobs] = useState<string | null>(null);
   const [errorAllJobs, setErrorAllJobs] = useState<string | null>(null);
 
-  const [trackedApplications, setTrackedApplications] = useLocalStorage<TrackedApplication[]>('tracked-applications', []);
   const [jobAnalysisCache, setJobAnalysisCache] = useLocalStorage<JobAnalysisCache>('job-ai-analysis-cache', {});
   const [localUserActivities, setLocalUserActivities] = useLocalStorage<LocalUserActivity[]>('user-activity-log', []);
+  const [savedJobIds, setSavedJobIds] = useState<Set<number>>(new Set());
+
 
   const [selectedJobForDetails, setSelectedJobForDetails] = useState<JobListing | null>(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
@@ -151,7 +113,8 @@ export default function JobExplorerPage() {
       }))
     : [];
 
-    const companyLogo = backendJob.company_object?.logo || `https://placehold.co/100x100.png?text=${encodeURIComponent(backendJob.company?.[0] || 'J')}`;
+    const companyName = backendJob.company || backendJob.company_object?.name || "N/A";
+    const companyLogo = backendJob.company_object?.logo || `https://placehold.co/100x100.png?text=${encodeURIComponent(companyName?.[0] || 'J')}`;
     
     const cachedAnalysis = (numericDbId >= 0 && jobAnalysisCache[numericDbId]) ? jobAnalysisCache[numericDbId] : {};
 
@@ -159,7 +122,7 @@ export default function JobExplorerPage() {
       id: numericDbId,
       api_id: backendJob.api_id || null,
       job_title: backendJob.job_title || "N/A",
-      company: backendJob.company || "N/A",
+      company: companyName,
       location: backendJob.location || "N/A",
       description: backendJob.description || "No description available.",
       url: backendJob.url || null,
@@ -244,32 +207,53 @@ export default function JobExplorerPage() {
     }
   }, [toast, mapBackendJobToFrontend]);
 
-  const populateAiAnalysisCache = useCallback(async () => {
+  const populateCacheAndSavedJobIds = useCallback(async () => {
     if (!currentUser || !currentUser.id) return;
     try {
       const response = await apiClient.get<UserActivityOut[]>(`/activity/user/${currentUser.id}`);
       const activities = response.data;
-      const newCacheUpdates: JobAnalysisCache = {};
+      const newAiCacheUpdates: JobAnalysisCache = {};
+      const latestJobActions: Record<number, { action: 'JOB_SAVED' | 'JOB_UNSAVED', timestamp: string }> = {};
+
       activities.forEach(activity => {
         if (activity.action_type === "AI_ANALYSIS_LOGGED_TO_DB" && activity.job_id !== null && activity.job_id !== undefined && activity.activity_metadata) {
           const metadata = activity.activity_metadata as any;
           if (typeof metadata.score === 'number' && typeof metadata.explanation === 'string') {
-            newCacheUpdates[activity.job_id] = {
+            newAiCacheUpdates[activity.job_id] = {
               matchScore: metadata.score,
               matchExplanation: metadata.explanation,
             };
           }
         }
+        if (activity.job_id !== null && activity.job_id !== undefined && (activity.action_type === 'JOB_SAVED' || activity.action_type === 'JOB_UNSAVED')) {
+          const existing = latestJobActions[activity.job_id];
+          if (!existing || new Date(activity.created_at) > new Date(existing.timestamp)) {
+            latestJobActions[activity.job_id] = {
+              action: activity.action_type as 'JOB_SAVED' | 'JOB_UNSAVED',
+              timestamp: activity.created_at
+            };
+          }
+        }
       });
-  
-      if (Object.keys(newCacheUpdates).length > 0) {
-        setJobAnalysisCache(prevCache => ({ ...prevCache, ...newCacheUpdates }));
-        console.log("AI Analysis cache populated from backend activities:", newCacheUpdates);
+
+      const currentSavedIds = new Set<number>();
+      for (const jobIdStr in latestJobActions) {
+        const jobId = parseInt(jobIdStr, 10);
+        if (latestJobActions[jobId].action === 'JOB_SAVED') {
+          currentSavedIds.add(jobId);
+        }
+      }
+      setSavedJobIds(currentSavedIds);
+      console.log("JobExplorer: Saved Job IDs populated:", currentSavedIds);
+
+      if (Object.keys(newAiCacheUpdates).length > 0) {
+        setJobAnalysisCache(prevCache => ({ ...prevCache, ...newAiCacheUpdates }));
+        console.log("JobExplorer: AI Analysis cache populated from backend activities:", newAiCacheUpdates);
   
         const updateJobsWithCache = (jobs: JobListing[]) => 
           jobs.map(job => {
-            if (newCacheUpdates[job.id]) {
-              return { ...job, ...newCacheUpdates[job.id] };
+            if (newAiCacheUpdates[job.id]) {
+              return { ...job, ...newAiCacheUpdates[job.id] };
             }
             return job;
           });
@@ -279,19 +263,19 @@ export default function JobExplorerPage() {
         setFetchedApiJobs(prev => updateJobsWithCache(prev));
       }
     } catch (error) {
-      console.error("Error fetching activities to populate AI analysis cache:", error);
+      console.error("Error fetching activities to populate caches and saved IDs:", error);
     }
   }, [currentUser, setJobAnalysisCache]);
 
 
   useEffect(() => {
     if (currentUser && !isLoggingOut) {
-      populateAiAnalysisCache(); 
+      populateCacheAndSavedJobIds();
       if (activeTab === "relevant") fetchRelevantJobs();
       else if (activeTab === "all") fetchAllJobs();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, currentUser, isLoggingOut, populateAiAnalysisCache]);
+  }, [activeTab, currentUser, isLoggingOut, populateCacheAndSavedJobIds]); // fetchRelevantJobs & fetchAllJobs added
 
 
   const handleGenerateJobs = async () => {
@@ -464,41 +448,37 @@ export default function JobExplorerPage() {
         return;
     }
 
-    const isCurrentlySaved = trackedApplications.some(app => app.jobId === job.id && app.status !== "Unsaved");
+    const isCurrentlySaved = savedJobIds.has(job.id);
     const actionTypeForBackend = isCurrentlySaved ? "JOB_UNSAVED" : "JOB_SAVED";
     
     const metadataForActivity = {
         jobTitle: job.job_title,
         company: job.company,
-        status: actionTypeForBackend === "JOB_SAVED" ? "Saved" : "Unsaved"
+        status: actionTypeForBackend === "JOB_SAVED" ? "Saved" : "Unsaved" // Keep this for local log, backend may not use status from here
     };
 
     const payload: SaveJobPayload = {
         user_id: currentUser.id,
         job_id: job.id,
         action_type: actionTypeForBackend,
-        activity_metadata: metadataForActivity
+        activity_metadata: metadataForActivity // Send as object
     };
 
     try {
         await apiClient.post(`/jobs/${job.id}/save`, payload);
         toast({ 
             title: actionTypeForBackend === "JOB_SAVED" ? "Job Saved!" : "Job Unsaved", 
-            description: `${job.job_title} ${actionTypeForBackend === "JOB_SAVED" ? "added to" : "removed from"} your tracker. (Synced with backend)` 
+            description: `${job.job_title} status updated. (Synced with backend)` 
         });
         
         if (actionTypeForBackend === "JOB_SAVED") {
-            const newApplication: TrackedApplication = {
-                id: (job.api_id || job.id.toString()) + Date.now().toString(),
-                jobId: job.id,
-                jobTitle: job.job_title,
-                company: job.company,
-                status: "Saved",
-                lastUpdated: new Date().toISOString()
-            };
-            setTrackedApplications(prev => [...prev, newApplication]);
+           setSavedJobIds(prev => new Set(prev).add(job.id));
         } else {
-            setTrackedApplications(prev => prev.filter(app => app.jobId !== job.id));
+           setSavedJobIds(prev => {
+             const next = new Set(prev);
+             next.delete(job.id);
+             return next;
+           });
         }
         
         addLocalActivity({
@@ -714,7 +694,7 @@ export default function JobExplorerPage() {
                       onViewDetails={handleViewDetails}
                       onSaveJob={handleSaveJob}
                       onGenerateMaterials={openMaterialsModal}
-                      isSaved={trackedApplications.some(app => app.jobId === job.id)}
+                      isSaved={savedJobIds.has(job.id)}
                     />
                   ))}
                 </div>
@@ -766,7 +746,7 @@ export default function JobExplorerPage() {
                   onViewDetails={handleViewDetails}
                   onSaveJob={handleSaveJob}
                   onGenerateMaterials={openMaterialsModal}
-                  isSaved={trackedApplications.some(app => app.jobId === job.id)}
+                  isSaved={savedJobIds.has(job.id)}
                 />
               ))}
             </div>
@@ -830,3 +810,4 @@ export default function JobExplorerPage() {
   );
 }
 
+```

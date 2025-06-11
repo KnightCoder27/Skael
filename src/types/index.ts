@@ -147,6 +147,45 @@ export interface JobListing {
   matchExplanation?: string; // For AI features, populated client-side
 }
 
+// Type for the raw backend job listing item, before mapping
+export interface BackendJobListingResponseItem {
+  id?: number | string | null | undefined; // Backend might send string or number for ID
+  api_id?: string | null | undefined;
+  job_title: string;
+  url?: string | null;
+  date_posted?: string | null;
+  employment_status?: string | null;
+  matching_phrase?: string[] | null;
+  matching_words?: string[] | null;
+  company?: string | null;
+  company_domain?: string | null;
+  company_obj_id?: number | null;
+  final_url?: string | null;
+  source_url?: string | null;
+  location?: string | null;
+  remote?: boolean | null;
+  hybrid?: boolean | null;
+  salary_string?: string | null;
+  min_salary?: number | null;
+  max_salary?: number | null;
+  currency?: string | null;
+  country?: string | null;
+  seniority?: string | null;
+  discovered_at?: string | null; // Should be string (ISO date)
+  description?: string | null;
+  reposted?: boolean | null;
+  date_reposted?: string | null;
+  country_code?: string | null;
+  job_expired?: boolean | null;
+  industry_id?: string | null;
+  fetched_data?: string | null;
+  technologies?: string[] | null; // Backend sends array of strings
+  company_object?: { // Optional company object
+    logo?: string | null;
+    name?: string; // Useful if top-level company name is missing
+  } | null;
+}
+
 
 /**
  * Represents the status of a job application.
@@ -182,15 +221,16 @@ export interface ActivityLogResponse { // Response from POST /activity/log
 }
 
 
-// Payload for POST /jobs/{id}/save (as per user's backend code)
+// Payload for POST /jobs/{id}/save - as confirmed, backend expects activity_metadata as object
 export interface SaveJobPayload {
   user_id: number;
   job_id: number;
-  action_type: string;
-  activity_metadata: { [key: string]: any } | null; // Changed from string to object/null
+  action_type: string; // e.g., "JOB_SAVED", "JOB_UNSAVED"
+  activity_metadata: { [key: string]: any } | null;
 }
 
-// Payload for POST /jobs/{id}/analyze (as per user's backend code)
+
+// Payload for POST /jobs/{id}/analyze - as confirmed, backend expects these fields
 export interface AnalyzeJobPayload {
   user_id: number;
   job_id: number;
@@ -230,7 +270,7 @@ export interface LocalUserActivity {
   user_id?: number; // Corresponds to backend UserActivityLog.user_id
   job_id?: number; // Corresponds to backend UserActivityLog.job_id
   action_type: ActivityType; // Corresponds to backend UserActivityLog.action_type
-  activity_metadata?: { [key: string]: any }; // Changed from 'metadata' to 'activity_metadata'
+  activity_metadata?: { [key: string]: any };
 }
 
 // Type for the actual structure of UserActivityLog coming from GET /activity/user/{user_id}
@@ -243,3 +283,4 @@ export interface UserActivityOut {
   created_at: string; // ISO 8601 datetime string
 }
 
+```

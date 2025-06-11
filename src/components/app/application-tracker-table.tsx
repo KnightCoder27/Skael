@@ -6,19 +6,20 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Trash2, ExternalLink } from 'lucide-react';
+import { Trash2, Eye, Loader2 } from 'lucide-react'; // Replaced ExternalLink with Eye, added Loader2
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import Link from 'next/link';
-import { sampleJobs } from '@/lib/sample-data';
+// Removed sampleJobs import as it's not used for URLs anymore
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Briefcase } from 'lucide-react';
-import { format, parseISO } from 'date-fns'; // Import date-fns functions
+import { format, parseISO } from 'date-fns';
 
 interface ApplicationTrackerTableProps {
   applications: TrackedApplication[];
   onUpdateStatus: (jobId: number, status: ApplicationStatus) => void;
   onDeleteApplication: (jobId: number) => void;
-  // onEditNotes: (jobId: number) => void; // Future enhancement
+  onViewDetails: (jobId: number) => void; // Callback to open details modal
+  isLoadingDetails: boolean; // To show loading state on view details button
 }
 
 const statusOptions: ApplicationStatus[] = ["Interested", "Saved", "Applied", "Interviewing", "Offer", "Rejected"];
@@ -36,24 +37,34 @@ const getStatusColor = (status: ApplicationStatus) => {
   }
 };
 
-export function ApplicationTrackerTable({ applications, onUpdateStatus, onDeleteApplication }: ApplicationTrackerTableProps) {
+export function ApplicationTrackerTable({ applications, onUpdateStatus, onDeleteApplication, onViewDetails, isLoadingDetails }: ApplicationTrackerTableProps) {
+  const [loadingDetailJobId, setLoadingDetailJobId] = useState<number | null>(null);
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'N/A';
     try {
-      // Use parseISO to handle ISO strings and format for consistent display
       return format(parseISO(dateString), 'MM/dd/yyyy');
     } catch (error) {
       console.error("Error formatting date:", error);
-      return dateString; // Fallback to original string in case of error
+      return dateString;
     }
   };
 
-  // JobListing.id is number, TrackedApplication.jobId is number
-  const findJobUrl = (jobId: number): string | undefined => {
-    const job = sampleJobs.find(j => j.id === jobId);
-    return job?.url;
+  const handleViewDetailsClick = (jobId: number) => {
+    setLoadingDetailJobId(jobId);
+    onViewDetails(jobId);
+    // setLoadingDetailJobId will be reset by the parent component
+    // or when the modal closes, or after a timeout if necessary.
+    // For simplicity, we rely on parent to manage visual loading state,
+    // or it could be reset once the modal is open.
   };
+
+  useEffect(() => {
+    if (!isLoadingDetails && loadingDetailJobId !== null) {
+      setLoadingDetailJobId(null);
+    }
+  }, [isLoadingDetails, loadingDetailJobId]);
+
 
   if (applications.length === 0) {
     return (
@@ -118,16 +129,17 @@ export function ApplicationTrackerTable({ applications, onUpdateStatus, onDelete
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">{formatDate(app.lastUpdated)}</TableCell>
                 <TableCell className="text-right space-x-1">
-                  {/* <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => onEditNotes(app.jobId)}>
-                    <Edit3 className="h-3.5 w-3.5" /> <span className="sr-only">Edit Notes</span>
-                  </Button> */}
-                  {findJobUrl(app.jobId) && (
-                    <Button variant="outline" size="icon" className="h-7 w-7" asChild>
-                       <a href={findJobUrl(app.jobId)} target="_blank" rel="noopener noreferrer" aria-label="View Original Job Post">
-                        <ExternalLink className="h-3.5 w-3.5" /> <span className="sr-only">View Job</span>
-                       </a>
-                    </Button>
-                  )}
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => handleViewDetailsClick(app.jobId)}
+                    disabled={isLoadingDetails && loadingDetailJobId === app.jobId}
+                    aria-label={`View details for ${app.jobTitle}`}
+                  >
+                    {isLoadingDetails && loadingDetailJobId === app.jobId ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
+                    <span className="sr-only">View Details</span>
+                  </Button>
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button variant="destructive" size="icon" className="h-7 w-7" aria-label="Delete Application">
@@ -158,3 +170,5 @@ export function ApplicationTrackerTable({ applications, onUpdateStatus, onDelete
     </Card>
   );
 }
+
+```
