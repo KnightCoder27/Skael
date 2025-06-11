@@ -313,18 +313,18 @@ export default function JobExplorerPage() {
     }
   };
 
- const addLocalActivity = useCallback((
+  const addLocalActivity = useCallback((
     activityData: {
       action_type: ActivityType;
       job_id?: number;
-      user_id?: number;
+      user_id?: number; // Optional: will default to currentUser.id if not provided
       metadata?: { [key: string]: any };
     }
   ) => {
     const newActivity: LocalUserActivity = {
-      id: Date.now().toString() + Math.random().toString(36).substring(2),
-      timestamp: new Date().toISOString(),
-      user_id: activityData.user_id ?? currentUser?.id,
+      id: Date.now().toString() + Math.random().toString(36).substring(2), // Client-side unique ID
+      timestamp: new Date().toISOString(), // Client-side timestamp
+      user_id: activityData.user_id ?? currentUser?.id, // Use provided or fallback to current user
       job_id: activityData.job_id,
       action_type: activityData.action_type,
       metadata: activityData.metadata,
@@ -332,6 +332,7 @@ export default function JobExplorerPage() {
     console.log('New local activity to be logged:', newActivity);
     setLocalUserActivities(prevActivities => [newActivity, ...prevActivities]);
   }, [setLocalUserActivities, currentUser]);
+
 
   const fetchJobDetailsWithAI = useCallback(async (job: JobListing) => {
     console.log(`fetchJobDetailsWithAI: Called for job ID: ${job.id}, Title: ${job.job_title}`);
@@ -424,7 +425,8 @@ export default function JobExplorerPage() {
       toastMessage = `${job.job_title} removed from your tracker.`;
       activityActionType = "JOB_UNSAVED";
       toast({ title: "Job Unsaved", description: toastMessage });
-      // Backend currently doesn't have an "unsave" endpoint, so only client-side.
+      // Backend currently doesn't have an "unsave" endpoint, so only client-side for unsave.
+      // The backend "save" endpoint effectively logs the "saved" state.
     } else {
       // Saving
       const newApplication: TrackedApplication = {
@@ -444,8 +446,11 @@ export default function JobExplorerPage() {
           console.log(`handleSaveJob: Attempting to save job ID ${job.id} to backend for user ID ${currentUser.id}`);
           const formData = new FormData();
           formData.append('user_id', currentUser.id.toString());
+          // Add activity_metadata_json to FormData
+          formData.append('activity_metadata_json', JSON.stringify(metadataForActivity));
+
           await apiClient.post(`/jobs/${job.id}/save`, formData);
-          toast({ title: "Backend Sync", description: "Job save synced with backend.", variant: "default" });
+          toast({ title: "Backend Sync", description: "Job save and activity metadata synced with backend.", variant: "default" });
         } catch (error) {
           console.error("Error saving job to backend:", error);
           const errorMessage = error instanceof AxiosError && error.response?.data?.detail 
@@ -765,5 +770,7 @@ export default function JobExplorerPage() {
     
 
 
+
+    
 
     
