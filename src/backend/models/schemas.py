@@ -213,7 +213,7 @@ class SaveJob(BaseModel):
     user_id: int
     job_id: int
     action_type : str
-    activity_metadata : str
+    activity_metadata : Dict[str,Any]
 
 class AnalyzeResultIn(BaseModel):
     user_id: int
