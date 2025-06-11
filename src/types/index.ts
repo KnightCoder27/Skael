@@ -180,11 +180,22 @@ export interface ActivityLogResponse {
   activity_id: string;
 }
 
-// For Job Analysis
-export interface AnalyzeResult {
+// Payload for POST /jobs/{id}/save
+export interface SaveJobPayload {
+  user_id: number;
+  job_id: number;
+  action_type: string;
+  activity_metadata: string; // JSON string of the metadata object
+}
+
+// Payload for POST /jobs/{id}/analyze (to save analysis results)
+export interface AnalyzeJobPayload {
+  user_id: number;
+  job_id: number;
   score: number;
   explanation: string;
 }
+
 
 // For Resumes
 export interface ResumeIn {
@@ -206,7 +217,8 @@ export type ActivityType =
   | "RESUME_GENERATED_FOR_JOB"
   | "COVER_LETTER_GENERATED_FOR_JOB"
   | "GENERAL_RESUME_GENERATED"
-  | "GENERAL_COVER_LETTER_GENERATED";
+  | "GENERAL_COVER_LETTER_GENERATED"
+  | "AI_ANALYSIS_LOGGED_TO_DB"; // New type for logging AI analysis to backend
 
 // Corresponds to backend's UserActivityLog, with client-side id and timestamp
 export interface LocalUserActivity {

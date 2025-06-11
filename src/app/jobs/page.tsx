@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { JobListing, TrackedApplication, LocalUserActivity, ActivityType, UserProfileForJobFetching, UserProfileForRelevantJobs, Technology } from '@/types';
+import type { JobListing, TrackedApplication, LocalUserActivity, ActivityType, UserProfileForJobFetching, UserProfileForRelevantJobs, Technology, SaveJobPayload, AnalyzeJobPayload } from '@/types';
 import useLocalStorage from '@/hooks/use-local-storage';
 import { useAuth } from '@/contexts/AuthContext';
 import apiClient from '@/lib/apiClient';
@@ -154,7 +154,8 @@ export default function JobExplorerPage() {
 
     const companyLogo = backendJob.company_object?.logo || `https://placehold.co/100x100.png?text=${encodeURIComponent(backendJob.company?.[0] || 'J')}`;
     
-    const cachedData = (numericDbId >= 0 && jobAnalysisCache[numericDbId]) ? jobAnalysisCache[numericDbId] : {};
+    // Access jobAnalysisCache directly from lexical scope
+    const cachedAnalysis = (numericDbId >= 0 && jobAnalysisCache[numericDbId]) ? jobAnalysisCache[numericDbId] : {};
 
 
     return {
@@ -190,10 +191,10 @@ export default function JobExplorerPage() {
       fetched_data: backendJob.fetched_data || null,
       technologies: technologiesFormatted,
       companyLogo: companyLogo,
-      matchScore: cachedData.matchScore,
-      matchExplanation: cachedData.matchExplanation,
+      matchScore: cachedAnalysis.matchScore,
+      matchExplanation: cachedAnalysis.matchExplanation,
     };
-  }, []); 
+  }, [jobAnalysisCache]); // jobAnalysisCache is now correctly in the dependency array
 
 
   const fetchRelevantJobs = useCallback(async () => {
@@ -317,14 +318,14 @@ export default function JobExplorerPage() {
     activityData: {
       action_type: ActivityType;
       job_id?: number;
-      user_id?: number; // Optional: will default to currentUser.id if not provided
+      user_id?: number; 
       metadata?: { [key: string]: any };
     }
   ) => {
     const newActivity: LocalUserActivity = {
-      id: Date.now().toString() + Math.random().toString(36).substring(2), // Client-side unique ID
-      timestamp: new Date().toISOString(), // Client-side timestamp
-      user_id: activityData.user_id ?? currentUser?.id, // Use provided or fallback to current user
+      id: Date.now().toString() + Math.random().toString(36).substring(2), 
+      timestamp: new Date().toISOString(), 
+      user_id: activityData.user_id ?? currentUser?.id, 
       job_id: activityData.job_id,
       action_type: activityData.action_type,
       metadata: activityData.metadata,
@@ -394,6 +395,37 @@ export default function JobExplorerPage() {
           matchScore: explanationResult.matchScore
         }
       });
+
+      // Log AI analysis to backend
+      if (currentUser.id && job.id >= 0) {
+        const analyzePayload: AnalyzeJobPayload = {
+          user_id: currentUser.id,
+          job_id: job.id,
+          score: explanationResult.matchScore,
+          explanation: explanationResult.matchExplanation
+        };
+        try {
+          console.log("Attempting to log AI analysis to backend:", analyzePayload);
+          await apiClient.post(`/jobs/${job.id}/analyze`, analyzePayload);
+          toast({ title: "AI Analysis Logged", description: "Match details saved to your activity.", variant: "default" });
+           addLocalActivity({
+            action_type: "AI_ANALYSIS_LOGGED_TO_DB",
+            job_id: job.id,
+            user_id: currentUser.id,
+            metadata: { jobTitle: job.job_title, score: explanationResult.matchScore, success: true }
+          });
+        } catch (analysisError) {
+          console.error("Error logging AI analysis to backend:", analysisError);
+          toast({ title: "Backend Sync Failed", description: "Could not save AI analysis details to backend.", variant: "destructive" });
+          addLocalActivity({
+            action_type: "AI_ANALYSIS_LOGGED_TO_DB",
+            job_id: job.id,
+            user_id: currentUser.id,
+            metadata: { jobTitle: job.job_title, score: explanationResult.matchScore, success: false, error: analysisError instanceof Error ? analysisError.message : "Unknown error" }
+          });
+        }
+      }
+
     } catch (error) {
       console.error("Error fetching AI match explanation:", error);
       toast({ title: "AI Analysis Failed", description: "Could not get AI match explanation.", variant: "destructive" });
@@ -423,10 +455,32 @@ export default function JobExplorerPage() {
       // Unsaving
       setTrackedApplications(prev => prev.filter(app => app.jobId !== job.id));
       toastMessage = `${job.job_title} removed from your tracker.`;
-      activityActionType = "JOB_UNSAVED";
+      activityActionType = "JOB_UNSAVED"; // This will be logged locally
+      metadataForActivity.status = "Unsaved";
       toast({ title: "Job Unsaved", description: toastMessage });
-      // Backend currently doesn't have an "unsave" endpoint, so only client-side for unsave.
-      // The backend "save" endpoint effectively logs the "saved" state.
+      
+      // For unsaving, we still call the backend with action_type "JOB_UNSAVED"
+      // Assuming the backend can handle this or we adjust backend later.
+      if (currentUser && currentUser.id) {
+        const payload: SaveJobPayload = {
+          user_id: currentUser.id,
+          job_id: job.id,
+          action_type: "JOB_UNSAVED",
+          activity_metadata: JSON.stringify({ jobTitle: job.job_title, company: job.company })
+        };
+        try {
+          console.log(`handleSaveJob: Attempting to log unsave for job ID ${job.id} to backend:`, payload);
+          await apiClient.post(`/jobs/${job.id}/save`, payload);
+          toast({ title: "Backend Sync", description: "Job unsave activity logged with backend.", variant: "default" });
+        } catch (error) {
+            console.error("Error logging unsave to backend:", error);
+            const errorMessage = error instanceof AxiosError && error.response?.data?.detail 
+                                 ? error.response.data.detail 
+                                 : "Could not sync job unsave with backend.";
+            toast({ title: "Backend Sync Failed", description: errorMessage, variant: "destructive" });
+        }
+      }
+
     } else {
       // Saving
       const newApplication: TrackedApplication = {
@@ -438,18 +492,19 @@ export default function JobExplorerPage() {
         lastUpdated: new Date().toISOString()
       };
       setTrackedApplications(prev => [...prev, newApplication]);
-      toast({ title: "Job Saved!", description: toastMessage });
       metadataForActivity.status = "Saved";
+      toast({ title: "Job Saved!", description: toastMessage });
 
       if (currentUser && currentUser.id) {
+        const payload: SaveJobPayload = {
+          user_id: currentUser.id,
+          job_id: job.id,
+          action_type: "JOB_SAVED", 
+          activity_metadata: JSON.stringify(metadataForActivity)
+        };
         try {
-          console.log(`handleSaveJob: Attempting to save job ID ${job.id} to backend for user ID ${currentUser.id}`);
-          const formData = new FormData();
-          formData.append('user_id', currentUser.id.toString());
-          // Add activity_metadata_json to FormData
-          formData.append('activity_metadata_json', JSON.stringify(metadataForActivity));
-
-          await apiClient.post(`/jobs/${job.id}/save`, formData);
+          console.log(`handleSaveJob: Attempting to save job ID ${job.id} to backend:`, payload);
+          await apiClient.post(`/jobs/${job.id}/save`, payload);
           toast({ title: "Backend Sync", description: "Job save and activity metadata synced with backend.", variant: "default" });
         } catch (error) {
           console.error("Error saving job to backend:", error);
@@ -462,9 +517,11 @@ export default function JobExplorerPage() {
         console.warn("handleSaveJob: Cannot sync job save to backend - currentUser or currentUser.id is missing.");
       }
     }
+    // Local activity log should reflect the actual intended action type
     addLocalActivity({
-      action_type: activityActionType,
+      action_type: activityActionType, 
       job_id: job.id,
+      user_id: currentUser?.id,
       metadata: metadataForActivity
     });
   };
@@ -518,6 +575,7 @@ export default function JobExplorerPage() {
         addLocalActivity({
           action_type: "RESUME_GENERATED_FOR_JOB",
           job_id: jobToGenerateFor.id,
+          user_id: currentUser.id,
           metadata: {
             jobTitle: jobToGenerateFor.job_title,
             company: jobToGenerateFor.company,
@@ -528,6 +586,17 @@ export default function JobExplorerPage() {
     } catch (error) {
       console.error("Error generating resume:", error);
       toast({ title: "Resume Generation Failed", description: "Could not generate resume.", variant: "destructive" });
+       addLocalActivity({
+          action_type: "RESUME_GENERATED_FOR_JOB",
+          job_id: jobToGenerateFor.id,
+          user_id: currentUser?.id,
+          metadata: {
+            jobTitle: jobToGenerateFor.job_title,
+            company: jobToGenerateFor.company,
+            success: false,
+            error: error instanceof Error ? error.message : "Unknown error"
+          }
+        });
     } finally {
       setIsLoadingResume(false);
     }
@@ -551,6 +620,7 @@ export default function JobExplorerPage() {
         addLocalActivity({
           action_type: "COVER_LETTER_GENERATED_FOR_JOB",
           job_id: jobToGenerateFor.id,
+          user_id: currentUser.id,
           metadata: {
             jobTitle: jobToGenerateFor.job_title,
             company: jobToGenerateFor.company,
@@ -561,6 +631,17 @@ export default function JobExplorerPage() {
     } catch (error) {
       console.error("Error generating cover letter:", error);
       toast({ title: "Cover Letter Generation Failed", description: "Could not generate cover letter.", variant: "destructive" });
+      addLocalActivity({
+          action_type: "COVER_LETTER_GENERATED_FOR_JOB",
+          job_id: jobToGenerateFor.id,
+          user_id: currentUser?.id,
+          metadata: {
+            jobTitle: jobToGenerateFor.job_title,
+            company: jobToGenerateFor.company,
+            success: false,
+            error: error instanceof Error ? error.message : "Unknown error"
+          }
+        });
     } finally {
       setIsLoadingCoverLetter(false);
     }
