@@ -157,17 +157,18 @@ export type ApplicationStatus = "Interested" | "Saved" | "Applied" | "Interviewi
  * Represents a job application tracked by the user.
  */
 export interface TrackedApplication {
-  id: string;
-  jobId: number;
+  id: string; // This is the UserActivityLog ID from the backend if available, or a client-generated one.
+  jobId: number; // This is the JobListing.id
   jobTitle: string;
   company: string | null;
   status: ApplicationStatus;
   appliedDate?: string;
   notes?: string;
-  lastUpdated: string;
+  lastUpdated: string; // ISO string of the activity that led to this state
 }
 
 // Activity Logging Types for backend
+// This is for POST /activity/log
 export interface ActivityIn {
   user_id: number;
   job_id?: number | null;
@@ -175,20 +176,21 @@ export interface ActivityIn {
   metadata?: { [key: string]: any } | null;
 }
 
-export interface ActivityLogResponse {
+export interface ActivityLogResponse { // Response from POST /activity/log
   msg: string;
   activity_id: string;
 }
 
-// Payload for POST /jobs/{id}/save
+
+// Payload for POST /jobs/{id}/save (as per user's backend snippet)
 export interface SaveJobPayload {
   user_id: number;
   job_id: number;
-  action_type: string;
-  activity_metadata: string; // JSON string of the metadata object
+  action_type: string; // "JOB_SAVED" or "JOB_UNSAVED"
+  activity_metadata: string; // JSON string of metadata like { jobTitle, company, status }
 }
 
-// Payload for POST /jobs/{id}/analyze (to save analysis results)
+// Payload for POST /jobs/{id}/analyze (as per user's backend snippet)
 export interface AnalyzeJobPayload {
   user_id: number;
   job_id: number;
@@ -218,7 +220,8 @@ export type ActivityType =
   | "COVER_LETTER_GENERATED_FOR_JOB"
   | "GENERAL_RESUME_GENERATED"
   | "GENERAL_COVER_LETTER_GENERATED"
-  | "AI_ANALYSIS_LOGGED_TO_DB"; // New type for logging AI analysis to backend
+  | "AI_ANALYSIS_LOGGED_TO_DB"
+  | "APPLICATION_STATUS_UPDATED"; // New type for logging status changes
 
 // Corresponds to backend's UserActivityLog, with client-side id and timestamp
 export interface LocalUserActivity {
@@ -228,4 +231,14 @@ export interface LocalUserActivity {
   job_id?: number; // Corresponds to backend UserActivityLog.job_id
   action_type: ActivityType; // Corresponds to backend UserActivityLog.action_type
   metadata?: { [key: string]: any }; // Corresponds to backend UserActivityLog.activity_metadata
+}
+
+// Type for the actual structure of UserActivityLog coming from GET /activity/user/{user_id}
+export interface UserActivityOut {
+  id: number; // DB ID
+  user_id: number;
+  job_id: number | null;
+  action_type: string;
+  activity_metadata: { [key: string]: any } | null;
+  created_at: string; // ISO 8601 datetime string
 }

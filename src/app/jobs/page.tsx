@@ -244,16 +244,16 @@ export default function JobExplorerPage() {
     }
   }, [toast, mapBackendJobToFrontend]);
 
-  useEffect(() => {
-    const populateAiAnalysisCache = async () => {
+
+  const populateAiAnalysisCache = useCallback(async () => {
       if (!currentUser || !currentUser.id) return;
       try {
         const response = await apiClient.get<BackendActivity[]>(`/activity/user/${currentUser.id}`);
         const activities = response.data;
         const newCacheUpdates: JobAnalysisCache = {};
         activities.forEach(activity => {
-          if (activity.action_type === "AI_ANALYSIS_LOGGED_TO_DB" && activity.job_id !== null && activity.job_id !== undefined && activity.metadata) {
-            const metadata = activity.metadata as any; // Cast as any for easier access
+          if (activity.action_type === "AI_ANALYSIS_LOGGED_TO_DB" && activity.job_id !== null && activity.job_id !== undefined && activity.activity_metadata) {
+            const metadata = activity.activity_metadata as any;
             if (typeof metadata.score === 'number' && typeof metadata.explanation === 'string') {
               newCacheUpdates[activity.job_id] = {
                 matchScore: metadata.score,
@@ -262,22 +262,39 @@ export default function JobExplorerPage() {
             }
           }
         });
+
         if (Object.keys(newCacheUpdates).length > 0) {
           setJobAnalysisCache(prevCache => ({ ...prevCache, ...newCacheUpdates }));
           console.log("AI Analysis cache populated from backend activities:", newCacheUpdates);
+
+          // Update existing job lists with new scores
+          const updateJobsWithCache = (jobs: JobListing[]) => 
+            jobs.map(job => {
+              if (newCacheUpdates[job.id]) {
+                return { ...job, ...newCacheUpdates[job.id] };
+              }
+              return job;
+            });
+          
+          setRelevantJobsList(prev => updateJobsWithCache(prev));
+          setAllJobsList(prev => updateJobsWithCache(prev));
+          setFetchedApiJobs(prev => updateJobsWithCache(prev));
         }
       } catch (error) {
         console.error("Error fetching activities to populate AI analysis cache:", error);
       }
-    };
+    }, [currentUser, setJobAnalysisCache]);
 
+
+  useEffect(() => {
     if (currentUser && !isLoggingOut) {
-      populateAiAnalysisCache();
+      populateAiAnalysisCache(); // Populate cache
+      // Fetch jobs based on active tab AFTER cache attempt
       if (activeTab === "relevant") fetchRelevantJobs();
       else if (activeTab === "all") fetchAllJobs();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, currentUser, isLoggingOut]);
+  }, [activeTab, currentUser, isLoggingOut, populateAiAnalysisCache]); // Removed fetchRelevantJobs, fetchAllJobs from deps
 
 
   const handleGenerateJobs = async () => {
@@ -358,6 +375,7 @@ export default function JobExplorerPage() {
         toast({ title: "Error", description: "Cannot perform AI analysis on job with invalid ID.", variant: "destructive"});
         return;
     }
+    
     const cachedAnalysis = jobAnalysisCache[job.id];
     if (cachedAnalysis) {
       const updateWithCache = (prev: JobListing[]) => prev.map(j => j.id === job.id ? { ...j, ...cachedAnalysis } : j);
@@ -367,6 +385,7 @@ export default function JobExplorerPage() {
       setSelectedJobForDetails(prevJob => prevJob ? { ...prevJob, ...cachedAnalysis } : null);
       return;
     }
+
     if (!currentUser || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0) {
       toast({ title: "Profile Incomplete", description: "AI analysis requires your professional summary and skills in your profile.", variant: "destructive" });
       return;
@@ -471,7 +490,7 @@ export default function JobExplorerPage() {
             description: `${job.job_title} ${actionTypeForBackend === "JOB_SAVED" ? "added to" : "removed from"} your tracker. (Synced with backend)` 
         });
         
-        // Update client-side state
+        // Update client-side state for immediate feedback in JobCard
         if (actionTypeForBackend === "JOB_SAVED") {
             const newApplication: TrackedApplication = {
                 id: (job.api_id || job.id.toString()) + Date.now().toString(),

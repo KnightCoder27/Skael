@@ -3,7 +3,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import useLocalStorage from '@/hooks/use-local-storage';
-import type { TrackedApplication, ApplicationStatus, LocalUserActivity, UserActivityOut, SaveJobPayload } from '@/types';
+import type { TrackedApplication, ApplicationStatus, UserActivityOut, ActivityIn } from '@/types';
 import { ApplicationTrackerTable } from '@/components/app/application-tracker-table';
 import { Button } from '@/components/ui/button';
 import { Briefcase, FilePlus2, LogOut as LogOutIcon, ServerCrash, FileWarning } from 'lucide-react';
@@ -14,6 +14,7 @@ import { useRouter } from 'next/navigation';
 import { FullPageLoading, LoadingSpinner } from '@/components/app/loading-spinner';
 import apiClient from '@/lib/apiClient';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import type { SaveJobPayload } from '@/types'; // Ensure SaveJobPayload is imported
 
 interface BackendActivity extends UserActivityOut {}
 
@@ -35,10 +36,17 @@ export default function TrackerPage() {
       const response = await apiClient.get<BackendActivity[]>(`/activity/user/${currentUser.id}`);
       const activities = response.data;
 
+      console.log("TrackerPage: Fetched activities:", activities); // Log all fetched activities
+
       const jobActions: Record<number, { action: 'JOB_SAVED' | 'JOB_UNSAVED', activity: BackendActivity, timestamp: string }> = {};
 
       activities.forEach(activity => {
         if (activity.job_id !== null && activity.job_id !== undefined && (activity.action_type === 'JOB_SAVED' || activity.action_type === 'JOB_UNSAVED')) {
+          // Diagnostic log for JOB_SAVED metadata
+          if (activity.action_type === 'JOB_SAVED') {
+            console.log(`TrackerPage: Processing JOB_SAVED activity for job_id ${activity.job_id}, metadata:`, activity.activity_metadata);
+          }
+
           const existing = jobActions[activity.job_id];
           if (!existing || new Date(activity.created_at) > new Date(existing.timestamp)) {
             jobActions[activity.job_id] = {
@@ -56,14 +64,14 @@ export default function TrackerPage() {
         const { action, activity } = jobActions[jobId];
 
         if (action === 'JOB_SAVED') {
-          const metadata = activity.activity_metadata || {};
+          const metadata = activity.activity_metadata as any || {}; // Cast to any for easier access, provide fallback
           derivedApplications.push({
             id: activity.id.toString(), 
             jobId: jobId,
             jobTitle: metadata.jobTitle || 'N/A',
             company: metadata.company || 'N/A',
-            status: localStatusOverrides[jobId] || 'Saved',
-            lastUpdated: metadata.timestamp || activity.created_at, 
+            status: localStatusOverrides[jobId] || 'Saved', // Prioritize local override for status
+            lastUpdated: activity.created_at, 
           });
         }
       }
@@ -93,18 +101,52 @@ export default function TrackerPage() {
   }, [isLoadingAuth, currentUser, router, toast, isLoggingOut, fetchAndProcessActivities]);
 
 
-  const handleUpdateStatus = (jobId: number, status: ApplicationStatus) => {
+  const handleUpdateStatus = async (jobId: number, newStatus: ApplicationStatus) => {
+    if (!currentUser || !currentUser.id) {
+      toast({ title: "Authentication Error", description: "Cannot update status.", variant: "destructive" });
+      return;
+    }
+
+    const application = trackedApplications.find(app => app.jobId === jobId);
+    if (!application) return;
+
+    const oldStatus = application.status;
+
+    // Optimistic UI Update
     setLocalStatusOverrides(prevOverrides => ({
       ...prevOverrides,
-      [jobId]: status,
+      [jobId]: newStatus,
     }));
     setTrackedApplications(prevApps =>
       prevApps.map(app =>
-        app.jobId === jobId ? { ...app, status, lastUpdated: new Date().toISOString() } : app
+        app.jobId === jobId ? { ...app, status: newStatus, lastUpdated: new Date().toISOString() } : app
       )
     );
-    toast({ title: "Status Updated", description: `Application status changed to ${status}. (Local update)` });
-    // TODO: Consider logging "APPLICATION_STATUS_UPDATED" activity to backend if an endpoint becomes available
+    toast({ title: "Status Updated Locally", description: `Application status changed to ${newStatus}. Syncing...` });
+
+    // Log to backend if it's a significant status change (e.g., not just back to "Saved" from "Interested")
+    // For now, we log all status changes except the initial "Saved" which is handled by /jobs/{id}/save
+    if (newStatus !== oldStatus) {
+      const activityPayload: ActivityIn = {
+        user_id: currentUser.id,
+        job_id: jobId,
+        action_type: "APPLICATION_STATUS_UPDATED",
+        metadata: {
+          jobTitle: application.jobTitle,
+          company: application.company,
+          oldStatus: oldStatus,
+          newStatus: newStatus,
+        }
+      };
+      try {
+        await apiClient.post('/activity/log', activityPayload);
+        toast({ title: "Status Update Logged", description: `Change to ${newStatus} recorded on server.` });
+      } catch (error) {
+        console.error("Error logging status update to backend:", error);
+        toast({ title: "Sync Failed", description: "Could not log status update to server.", variant: "destructive" });
+        // Optionally revert optimistic update or mark as "sync pending"
+      }
+    }
   };
 
   const handleDeleteApplication = async (jobId: number) => {
