@@ -13,6 +13,7 @@ import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Briefcase } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
+import { useState, useEffect } from 'react';
 
 interface ApplicationTrackerTableProps {
   applications: TrackedApplication[];
@@ -170,5 +171,3 @@ export function ApplicationTrackerTable({ applications, onUpdateStatus, onDelete
     </Card>
   );
 }
-
-```

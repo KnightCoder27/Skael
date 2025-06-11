@@ -71,12 +71,12 @@ export default function TrackerPage() {
 
     const technologiesFormatted: Technology[] = Array.isArray(backendJob.technologies)
     ? backendJob.technologies.map((name, index) => ({
-        id: `${numericDbId}-tech-${index}`, 
+        id: `${numericDbId}-tech-${index}`,
         technology_name: name,
         technology_slug: name.toLowerCase().replace(/\s+/g, '-'),
       }))
     : [];
-    
+
     const companyName = backendJob.company || backendJob.company_object?.name || "N/A";
     const companyLogo = backendJob.company_object?.logo || `https://placehold.co/100x100.png?text=${encodeURIComponent(companyName?.[0] || 'J')}`;
 
@@ -153,12 +153,12 @@ export default function TrackerPage() {
         if (action === 'JOB_SAVED') {
           const metadata = activity.activity_metadata as any || {};
           derivedApplications.push({
-            id: activity.id.toString(), 
+            id: activity.id.toString(),
             jobId: jobId,
             jobTitle: metadata.jobTitle || 'N/A',
             company: metadata.company || 'N/A',
             status: localStatusOverrides[jobId] || 'Saved',
-            lastUpdated: activity.created_at, 
+            lastUpdated: activity.created_at,
           });
         }
       }
@@ -215,7 +215,7 @@ export default function TrackerPage() {
         user_id: currentUser.id,
         job_id: jobId,
         action_type: "APPLICATION_STATUS_UPDATED",
-        metadata: {
+        metadata: { // Backend for /activity/log expects 'metadata'
           jobTitle: application.jobTitle,
           company: application.company,
           oldStatus: oldStatus,
@@ -247,17 +247,17 @@ export default function TrackerPage() {
         user_id: currentUser.id,
         job_id: jobId,
         action_type: "JOB_UNSAVED",
-        activity_metadata: {
+        activity_metadata: { // This should be an object, not a string
             jobTitle: appToRemove.jobTitle,
             company: appToRemove.company,
-            status: "Unsaved" 
+            status: "Unsaved"
         }
     };
 
     try {
-        await apiClient.post(`/jobs/${jobId}/save`, payload); 
+        await apiClient.post(`/jobs/${jobId}/save`, payload);
         toast({ title: "Application Removed", description: "The application has been marked as unsaved." });
-        fetchAndProcessActivities(); 
+        fetchAndProcessActivities();
         setLocalStatusOverrides(prev => {
             const newOverrides = {...prev};
             delete newOverrides[jobId];
@@ -368,7 +368,7 @@ export default function TrackerPage() {
   if (isLoadingAuth || (!currentUser && !isLoggingOut)) {
     return <FullPageLoading message="Verifying session..." />;
   }
-  
+
   return (
     <div className="space-y-8">
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
@@ -405,7 +405,7 @@ export default function TrackerPage() {
           </AlertDescription>
         </Alert>
       )}
-      
+
       {!isLoadingTracker && !errorTracker && (
         <ApplicationTrackerTable
           applications={trackedApplications}
@@ -429,7 +429,7 @@ export default function TrackerPage() {
         job={selectedJobForDetailsModal}
         isOpen={isDetailsModalOpen}
         onClose={() => setIsDetailsModalOpen(false)}
-        onGenerateMaterials={openMaterialsModalFromTracker} 
+        onGenerateMaterials={openMaterialsModalFromTracker}
         // isLoadingExplanation: The modal shows AI explanation if job.matchScore is present.
         // GET /jobs/{id} doesn't return matchScore, so it won't show by default from tracker.
         // If AI explanation needs to be generated on-the-fly from tracker, modal logic needs adjustment or prop.
@@ -448,5 +448,3 @@ export default function TrackerPage() {
     </div>
   );
 }
-
-```
