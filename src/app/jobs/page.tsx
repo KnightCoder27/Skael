@@ -68,6 +68,11 @@ export default function JobExplorerPage() {
   const [errorAllJobs, setErrorAllJobs] = useState<string | null>(null);
 
   const [jobAnalysisCache, setJobAnalysisCache] = useLocalStorage<JobAnalysisCache>('job-ai-analysis-cache', {});
+  const jobAnalysisCacheRef = useRef(jobAnalysisCache);
+  useEffect(() => {
+    jobAnalysisCacheRef.current = jobAnalysisCache;
+  }, [jobAnalysisCache]);
+
   const [localUserActivities, setLocalUserActivities] = useLocalStorage<LocalUserActivity[]>('user-activity-log', []);
   const [savedJobIds, setSavedJobIds] = useState<Set<number>>(new Set());
 
@@ -116,7 +121,7 @@ export default function JobExplorerPage() {
     const companyName = backendJob.company || backendJob.company_object?.name || "N/A";
     const companyLogo = backendJob.company_object?.logo || `https://placehold.co/100x100.png?text=${encodeURIComponent(companyName?.[0] || 'J')}`;
     
-    const cachedAnalysis = (numericDbId >= 0 && jobAnalysisCache[numericDbId]) ? jobAnalysisCache[numericDbId] : {};
+    const cachedAnalysis = (numericDbId >= 0 && jobAnalysisCacheRef.current[numericDbId]) ? jobAnalysisCacheRef.current[numericDbId] : {};
 
     return {
       id: numericDbId,
@@ -154,7 +159,7 @@ export default function JobExplorerPage() {
       matchScore: cachedAnalysis.matchScore,
       matchExplanation: cachedAnalysis.matchExplanation,
     };
-  }, [jobAnalysisCache]);
+  }, []); // Removed jobAnalysisCache from dependency array, uses ref now
 
 
   const fetchRelevantJobs = useCallback(async () => {
@@ -182,7 +187,9 @@ export default function JobExplorerPage() {
       if (!cleanedPayload.hasOwnProperty('countries')) cleanedPayload.countries = [];
 
       const response = await apiClient.post<BackendJobListingResponseItem[]>('/jobs/relevant_jobs', cleanedPayload);
-      setRelevantJobsList(response.data.map(job => mapBackendJobToFrontend(job)));
+      const mappedJobs = response.data.map(job => mapBackendJobToFrontend(job));
+      setRelevantJobsList(mappedJobs);
+
     } catch (error) {
       const message = error instanceof AxiosError && error.response?.data?.detail ? error.response.data.detail : "Could not load relevant jobs.";
       setErrorRelevantJobs(message);
@@ -197,7 +204,8 @@ export default function JobExplorerPage() {
     setErrorAllJobs(null);
     try {
       const response = await apiClient.get<BackendJobListingResponseItem[]>('/jobs/list_jobs/');
-      setAllJobsList(response.data.map(job => mapBackendJobToFrontend(job)));
+      const mappedJobs = response.data.map(job => mapBackendJobToFrontend(job));
+      setAllJobsList(mappedJobs);
     } catch (error) {
       const message = error instanceof AxiosError && error.response?.data?.detail ? error.response.data.detail : "Could not load all jobs.";
       setErrorAllJobs(message);
@@ -243,39 +251,67 @@ export default function JobExplorerPage() {
           currentSavedIds.add(jobId);
         }
       }
-      setSavedJobIds(currentSavedIds);
+      
+      setSavedJobIds(prevSavedIds => {
+        if (prevSavedIds.size === currentSavedIds.size && [...prevSavedIds].every(id => currentSavedIds.has(id))) {
+          return prevSavedIds; 
+        }
+        return currentSavedIds;
+      });
       console.log("JobExplorer: Saved Job IDs populated:", currentSavedIds);
 
       if (Object.keys(newAiCacheUpdates).length > 0) {
-        setJobAnalysisCache(prevCache => ({ ...prevCache, ...newAiCacheUpdates }));
-        console.log("JobExplorer: AI Analysis cache populated from backend activities:", newAiCacheUpdates);
-  
-        const updateJobsWithCache = (jobs: JobListing[]) => 
-          jobs.map(job => {
-            if (newAiCacheUpdates[job.id]) {
-              return { ...job, ...newAiCacheUpdates[job.id] };
+        setJobAnalysisCache(prevCache => {
+          const changed = Object.keys(newAiCacheUpdates).some(
+            key => newAiCacheUpdates[Number(key)]?.matchScore !== prevCache[Number(key)]?.matchScore ||
+                   newAiCacheUpdates[Number(key)]?.matchExplanation !== prevCache[Number(key)]?.matchExplanation
+          );
+          if (changed) {
+            console.log("JobExplorer: AI Analysis cache updated from backend activities:", newAiCacheUpdates);
+            return { ...prevCache, ...newAiCacheUpdates };
+          }
+          return prevCache;
+        });
+
+        // Update job list items if new AI scores are available from newAiCacheUpdates
+        const updateJobItemsInList = (list: JobListing[]): JobListing[] => {
+          let listChanged = false;
+          const newList = list.map(job => {
+            const newlyCachedScoreData = newAiCacheUpdates[job.id];
+            if (newlyCachedScoreData && (job.matchScore !== newlyCachedScoreData.matchScore || job.matchExplanation !== newlyCachedScoreData.matchExplanation)) {
+              listChanged = true;
+              return { ...job, matchScore: newlyCachedScoreData.matchScore, matchExplanation: newlyCachedScoreData.matchExplanation };
             }
             return job;
           });
-        
-        setRelevantJobsList(prev => updateJobsWithCache(prev));
-        setAllJobsList(prev => updateJobsWithCache(prev));
-        setFetchedApiJobs(prev => updateJobsWithCache(prev));
+          return listChanged ? newList : list;
+        };
+        setRelevantJobsList(prev => updateJobItemsInList(prev));
+        setAllJobsList(prev => updateJobItemsInList(prev));
+        setFetchedApiJobs(prev => updateJobItemsInList(prev));
       }
     } catch (error) {
       console.error("Error fetching activities to populate caches and saved IDs:", error);
+       toast({ title: "Cache Sync Failed", description: "Could not sync all data from activities.", variant: "destructive" });
     }
-  }, [currentUser, setJobAnalysisCache]);
+  }, [currentUser, setJobAnalysisCache, setSavedJobIds, toast]);
 
 
   useEffect(() => {
     if (currentUser && !isLoggingOut) {
-      populateCacheAndSavedJobIds();
+      populateCacheAndSavedJobIds(); // This will populate savedJobIds and jobAnalysisCache
+      // The job fetching useEffect will then use this populated data.
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser, isLoggingOut]); // Removed populateCacheAndSavedJobIds from here; it's standalone now.
+
+  useEffect(() => {
+    if (currentUser && !isLoggingOut) {
       if (activeTab === "relevant") fetchRelevantJobs();
       else if (activeTab === "all") fetchAllJobs();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, currentUser, isLoggingOut, populateCacheAndSavedJobIds, fetchRelevantJobs, fetchAllJobs]);
+  }, [activeTab, currentUser, isLoggingOut, fetchRelevantJobs, fetchAllJobs]); // Removed populateCacheAndSavedJobIds here too
 
 
   const handleGenerateJobs = async () => {
@@ -329,7 +365,7 @@ export default function JobExplorerPage() {
       action_type: ActivityType;
       job_id?: number;
       user_id?: number; 
-      activity_metadata?: { [key: string]: any }; // Changed from metadata to activity_metadata
+      activity_metadata?: { [key: string]: any };
     }
   ) => {
     const newActivity: LocalUserActivity = {
@@ -338,7 +374,7 @@ export default function JobExplorerPage() {
       user_id: activityData.user_id ?? currentUser?.id, 
       job_id: activityData.job_id,
       action_type: activityData.action_type,
-      activity_metadata: activityData.activity_metadata, // Changed from metadata to activity_metadata
+      activity_metadata: activityData.activity_metadata,
     };
     console.log('New local activity to be logged:', newActivity);
     setLocalUserActivities(prevActivities => [newActivity, ...prevActivities]);
@@ -349,7 +385,15 @@ export default function JobExplorerPage() {
     setSelectedJobForDetails(job);
     setIsDetailsModalOpen(true);
 
-    if (job.matchScore !== undefined && job.matchExplanation) return;
+    // Use jobAnalysisCacheRef for up-to-date check
+    if (job.id >= 0 && jobAnalysisCacheRef.current[job.id]) {
+      const cachedData = jobAnalysisCacheRef.current[job.id];
+      if (job.matchScore === cachedData.matchScore && job.matchExplanation === cachedData.matchExplanation) {
+         console.log(`fetchJobDetailsWithAI: Using existing score for job ${job.id} from cache.`);
+         return; // Already has the latest score from cache
+      }
+    }
+
 
     if (typeof job.id !== 'number' || isNaN(job.id) || job.id < 0) {
         console.warn(`fetchJobDetailsWithAI: Cannot fetch AI details for job with invalid frontend ID:`, job);
@@ -357,16 +401,6 @@ export default function JobExplorerPage() {
         return;
     }
     
-    const cachedAnalysis = jobAnalysisCache[job.id];
-    if (cachedAnalysis) {
-      const updateWithCache = (prev: JobListing[]) => prev.map(j => j.id === job.id ? { ...j, ...cachedAnalysis } : j);
-      setRelevantJobsList(updateWithCache);
-      setAllJobsList(updateWithCache);
-      setFetchedApiJobs(updateWithCache);
-      setSelectedJobForDetails(prevJob => prevJob ? { ...prevJob, ...cachedAnalysis } : null);
-      return;
-    }
-
     if (!currentUser || !currentUser.id || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0) {
       toast({ title: "Profile Incomplete", description: "AI analysis requires your professional summary and skills in your profile.", variant: "destructive" });
       return;
@@ -380,10 +414,14 @@ export default function JobExplorerPage() {
         userHistory: '',
       };
       const explanationResult = await jobMatchExplanation(input);
-      const updateJobsState = (prevJobs: JobListing[]) => prevJobs.map(j => j.id === job.id ? { ...j, ...explanationResult } : j);
-      setRelevantJobsList(updateJobsState);
-      setAllJobsList(updateJobsState);
-      setFetchedApiJobs(updateJobsState);
+
+      // Update job in all relevant lists
+      const updateJobInList = (prevJobs: JobListing[]) => 
+        prevJobs.map(j => j.id === job.id ? { ...j, ...explanationResult } : j);
+      
+      setRelevantJobsList(updateJobInList);
+      setAllJobsList(updateJobInList);
+      setFetchedApiJobs(updateJobInList);
       setSelectedJobForDetails(prevJob => prevJob ? { ...prevJob, ...explanationResult } : null);
       
       if (job.id >= 0) { 
@@ -394,7 +432,7 @@ export default function JobExplorerPage() {
         action_type: "MATCH_ANALYSIS_VIEWED",
         job_id: job.id,
         user_id: currentUser.id,
-        activity_metadata: { // Changed from metadata to activity_metadata
+        activity_metadata: {
           jobTitle: job.job_title,
           company: job.company,
           matchScore: explanationResult.matchScore
@@ -415,7 +453,7 @@ export default function JobExplorerPage() {
             action_type: "AI_ANALYSIS_LOGGED_TO_DB",
             job_id: job.id,
             user_id: currentUser.id,
-            activity_metadata: { jobTitle: job.job_title, score: explanationResult.matchScore, explanation: explanationResult.matchExplanation, success: true } // Changed from metadata to activity_metadata
+            activity_metadata: { jobTitle: job.job_title, score: explanationResult.matchScore, explanation: explanationResult.matchExplanation, success: true }
           });
         } catch (analysisError) {
           console.error("Error logging AI analysis to backend:", analysisError);
@@ -424,7 +462,7 @@ export default function JobExplorerPage() {
             action_type: "AI_ANALYSIS_LOGGED_TO_DB",
             job_id: job.id,
             user_id: currentUser.id,
-            activity_metadata: { jobTitle: job.job_title, score: explanationResult.matchScore, success: false, error: analysisError instanceof Error ? analysisError.message : "Unknown error" } // Changed from metadata to activity_metadata
+            activity_metadata: { jobTitle: job.job_title, score: explanationResult.matchScore, success: false, error: analysisError instanceof Error ? analysisError.message : "Unknown error" }
           });
         }
       }
@@ -434,7 +472,7 @@ export default function JobExplorerPage() {
     } finally {
       setIsLoadingExplanation(false);
     }
-  }, [currentUser, toast, jobAnalysisCache, setJobAnalysisCache, addLocalActivity]);
+  }, [currentUser, toast, setJobAnalysisCache, addLocalActivity]);
 
   const handleViewDetails = (job: JobListing) => fetchJobDetailsWithAI(job);
 
@@ -461,7 +499,7 @@ export default function JobExplorerPage() {
         user_id: currentUser.id,
         job_id: job.id,
         action_type: actionTypeForBackend,
-        activity_metadata: metadataForActivity // No JSON.stringify() here
+        activity_metadata: metadataForActivity
     };
 
     try {
@@ -471,21 +509,21 @@ export default function JobExplorerPage() {
             description: `${job.job_title} status updated. (Synced with backend)` 
         });
         
-        if (actionTypeForBackend === "JOB_SAVED") {
-           setSavedJobIds(prev => new Set(prev).add(job.id));
-        } else {
-           setSavedJobIds(prev => {
+        setSavedJobIds(prev => {
              const next = new Set(prev);
-             next.delete(job.id);
+             if (actionTypeForBackend === "JOB_SAVED") {
+                 next.add(job.id);
+             } else {
+                 next.delete(job.id);
+             }
              return next;
-           });
-        }
+        });
         
         addLocalActivity({
             action_type: actionTypeForBackend, 
             job_id: job.id,
             user_id: currentUser.id,
-            activity_metadata: metadataForActivity // Changed from metadata to activity_metadata
+            activity_metadata: metadataForActivity
         });
 
     } catch (error) {
@@ -547,7 +585,7 @@ export default function JobExplorerPage() {
           action_type: "RESUME_GENERATED_FOR_JOB",
           job_id: jobToGenerateFor.id,
           user_id: currentUser.id,
-          activity_metadata: { // Changed from metadata to activity_metadata
+          activity_metadata: { 
             jobTitle: jobToGenerateFor.job_title,
             company: jobToGenerateFor.company,
             success: true
@@ -561,7 +599,7 @@ export default function JobExplorerPage() {
           action_type: "RESUME_GENERATED_FOR_JOB",
           job_id: jobToGenerateFor.id,
           user_id: currentUser?.id,
-          activity_metadata: { // Changed from metadata to activity_metadata
+          activity_metadata: { 
             jobTitle: jobToGenerateFor.job_title,
             company: jobToGenerateFor.company,
             success: false,
@@ -592,7 +630,7 @@ export default function JobExplorerPage() {
           action_type: "COVER_LETTER_GENERATED_FOR_JOB",
           job_id: jobToGenerateFor.id,
           user_id: currentUser.id,
-          activity_metadata: { // Changed from metadata to activity_metadata
+          activity_metadata: { 
             jobTitle: jobToGenerateFor.job_title,
             company: jobToGenerateFor.company,
             success: true
@@ -606,7 +644,7 @@ export default function JobExplorerPage() {
           action_type: "COVER_LETTER_GENERATED_FOR_JOB",
           job_id: jobToGenerateFor.id,
           user_id: currentUser?.id,
-          activity_metadata: { // Changed from metadata to activity_metadata
+          activity_metadata: { 
             jobTitle: jobToGenerateFor.job_title,
             company: jobToGenerateFor.company,
             success: false,
