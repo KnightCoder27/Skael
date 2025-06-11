@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { JobListing, TrackedApplication, LocalUserActivity, ActivityType, UserProfileForJobFetching, UserProfileForRelevantJobs, Technology, SaveJobPayload, AnalyzeJobPayload, UserActivityOut, BackendJobListingResponseItem } from '@/types';
+import type { JobListing, LocalUserActivity, ActivityType, UserProfileForJobFetching, UserProfileForRelevantJobs, Technology, SaveJobPayload, AnalyzeJobPayload, UserActivityOut, BackendJobListingResponseItem, BackendMatchScoreLogItem } from '@/types';
 import useLocalStorage from '@/hooks/use-local-storage';
 import { useAuth } from '@/contexts/AuthContext';
 import apiClient from '@/lib/apiClient';
@@ -91,7 +91,6 @@ export default function JobExplorerPage() {
   const [extractedJobPoints, setExtractedJobPoints] = useState<ExtractJobDescriptionPointsOutput | null>(null);
   const [jobForExtractedPoints, setJobForExtractedPoints] = useState<JobListing | null>(null);
 
-  // New states for robust AI analysis handling
   const [isCacheReadyForAnalysis, setIsCacheReadyForAnalysis] = useState(false);
   const [jobPendingAnalysis, setJobPendingAnalysis] = useState<JobListing | null>(null);
 
@@ -163,7 +162,7 @@ export default function JobExplorerPage() {
       matchScore: cachedAnalysis.matchScore,
       matchExplanation: cachedAnalysis.matchExplanation,
     };
-  }, []); // jobAnalysisCacheRef is stable, so empty dependency array is fine
+  }, []); 
 
 
   const fetchRelevantJobs = useCallback(async () => {
@@ -220,28 +219,24 @@ export default function JobExplorerPage() {
   }, [toast, mapBackendJobToFrontend]);
 
  const populateCacheAndSavedJobIds = useCallback(async () => {
-    if (!currentUser || !currentUser.id) return;
-    console.log("JobExplorer: Starting populateCacheAndSavedJobIds");
-    setIsCacheReadyForAnalysis(false); // Reset readiness flag
+    if (!currentUser || !currentUser.id) {
+      console.log("JobExplorer: populateCacheAndSavedJobIds - No current user or user ID.");
+      setIsCacheReadyForAnalysis(true); // Still set cache to ready to unblock UI if user not logged in
+      return;
+    }
+    console.log("JobExplorer: Starting populateCacheAndSavedJobIds for user:", currentUser.id);
+    setIsCacheReadyForAnalysis(false);
+    
+    let generalActivitiesError = null;
+    let matchScoresError = null;
+
+    // 1. Fetch general activities for saved job IDs
     try {
       const response = await apiClient.get<UserActivityOut[]>(`/activity/user/${currentUser.id}`);
       const activities = response.data;
-      const newAiCacheUpdates: JobAnalysisCache = {};
       const latestJobActions: Record<number, { action: 'JOB_SAVED' | 'JOB_UNSAVED', timestamp: string }> = {};
 
       activities.forEach(activity => {
-        // Populate AI Analysis Cache from "AI_MATCH_ANALYZED"
-        if (activity.action_type === "AI_MATCH_ANALYZED" && activity.job_id !== null && activity.job_id !== undefined && activity.activity_metadata) {
-          const metadata = activity.activity_metadata as any;
-          if (typeof metadata.score === 'number' && typeof metadata.explanation === 'string') {
-            newAiCacheUpdates[activity.job_id] = {
-              matchScore: metadata.score,
-              matchExplanation: metadata.explanation,
-            };
-            console.log(`JobExplorer: Populated AI cache for job ${activity.job_id} from activity:`, newAiCacheUpdates[activity.job_id]);
-          }
-        }
-        // Determine latest saved status
         if (activity.job_id !== null && activity.job_id !== undefined && (activity.action_type === 'JOB_SAVED' || activity.action_type === 'JOB_UNSAVED')) {
           const existing = latestJobActions[activity.job_id];
           if (!existing || new Date(activity.created_at) > new Date(existing.timestamp)) {
@@ -268,32 +263,51 @@ export default function JobExplorerPage() {
         console.log("JobExplorer: Saved Job IDs updated from activities:", currentSavedIds);
         return currentSavedIds;
       });
-      
+    } catch (error) {
+      console.error("Error fetching general activities:", error);
+      generalActivitiesError = error;
+    }
 
-      if (Object.keys(newAiCacheUpdates).length > 0) {
+    // 2. Fetch match scores from dedicated endpoint
+    try {
+      // IMPORTANT: Replace '/match-scores/user/' with your actual backend endpoint for fetching match scores
+      const matchScoresResponse = await apiClient.get<BackendMatchScoreLogItem[]>(`/match-scores/user/${currentUser.id}`);
+      const matchScores = matchScoresResponse.data;
+      const newAiCacheUpdatesFromScores: JobAnalysisCache = {};
+      matchScores.forEach(scoreLog => {
+        if (scoreLog.job_id != null) { // Check for null/undefined job_id
+          newAiCacheUpdatesFromScores[scoreLog.job_id] = {
+            matchScore: scoreLog.score,
+            matchExplanation: scoreLog.explanation,
+          };
+        }
+      });
+
+      if (Object.keys(newAiCacheUpdatesFromScores).length > 0) {
         setJobAnalysisCache(prevCache => {
-          const changed = Object.keys(newAiCacheUpdates).some(
-            key => newAiCacheUpdates[Number(key)]?.matchScore !== prevCache[Number(key)]?.matchScore ||
-                   newAiCacheUpdates[Number(key)]?.matchExplanation !== prevCache[Number(key)]?.matchExplanation
+          const changed = Object.keys(newAiCacheUpdatesFromScores).some(
+            key => newAiCacheUpdatesFromScores[Number(key)]?.matchScore !== prevCache[Number(key)]?.matchScore ||
+                   newAiCacheUpdatesFromScores[Number(key)]?.matchExplanation !== prevCache[Number(key)]?.matchExplanation
           );
           if (changed) {
-            console.log("JobExplorer: AI Analysis cache updated from backend activities:", newAiCacheUpdates);
-            return { ...prevCache, ...newAiCacheUpdates };
+            console.log("JobExplorer: AI Analysis cache updated from match scores endpoint:", newAiCacheUpdatesFromScores);
+            return { ...prevCache, ...newAiCacheUpdatesFromScores };
           }
           return prevCache;
         });
 
+        // Update existing job lists with these scores
         const updateJobItemsInList = (list: JobListing[]): JobListing[] => {
           let listChanged = false;
           const newList = list.map(job => {
-            const newlyCachedScoreData = newAiCacheUpdates[job.id];
+            const newlyCachedScoreData = newAiCacheUpdatesFromScores[job.id];
             if (newlyCachedScoreData && (job.matchScore !== newlyCachedScoreData.matchScore || job.matchExplanation !== newlyCachedScoreData.matchExplanation)) {
               listChanged = true;
               return { ...job, matchScore: newlyCachedScoreData.matchScore, matchExplanation: newlyCachedScoreData.matchExplanation };
             }
             return job;
           });
-          if(listChanged) console.log("JobExplorer: Job list updated with new AI scores from cache population.");
+          if(listChanged) console.log("JobExplorer: Job list updated with new AI scores from match scores endpoint.");
           return listChanged ? newList : list;
         };
         setRelevantJobsList(prev => updateJobItemsInList(prev));
@@ -301,20 +315,33 @@ export default function JobExplorerPage() {
         setFetchedApiJobs(prev => updateJobItemsInList(prev));
       }
     } catch (error) {
-      console.error("Error fetching activities to populate caches and saved IDs:", error);
-       toast({ title: "Cache Sync Failed", description: "Could not sync all data from activities.", variant: "destructive" });
-    } finally {
-        console.log("JobExplorer: populateCacheAndSavedJobIds finished. Setting isCacheReadyForAnalysis to true.");
-        setIsCacheReadyForAnalysis(true);
+        console.error("Error fetching match scores from backend:", error);
+        matchScoresError = error;
+        toast({
+            title: "AI Score Sync Failed",
+            description: "Could not load historical AI match scores. Ensure backend endpoint for match scores is available. New analyses will still work.",
+            variant: "destructive",
+            duration: 7000,
+        });
     }
+
+    if (generalActivitiesError && !matchScoresError) {
+      toast({ title: "Partial Cache Sync", description: "Could not sync all activity data. Saved job status might be affected.", variant: "destructive" });
+    }
+    
+    console.log("JobExplorer: populateCacheAndSavedJobIds finished. Setting isCacheReadyForAnalysis to true.");
+    setIsCacheReadyForAnalysis(true);
   }, [currentUser, setJobAnalysisCache, setSavedJobIds, toast]);
 
 
   useEffect(() => {
     if (currentUser && !isLoggingOut) {
       populateCacheAndSavedJobIds(); 
+    } else if (!currentUser && !isLoadingAuth && !isLoggingOut) {
+        // If user is not logged in and auth is not loading, still set cache as ready.
+        setIsCacheReadyForAnalysis(true);
     }
-  }, [currentUser, isLoggingOut, populateCacheAndSavedJobIds]); 
+  }, [currentUser, isLoggingOut, isLoadingAuth, populateCacheAndSavedJobIds]); 
 
   useEffect(() => {
     if (currentUser && !isLoggingOut) {
@@ -375,7 +402,7 @@ export default function JobExplorerPage() {
       action_type: ActivityType;
       job_id?: number;
       user_id?: number; 
-      activity_metadata?: { [key: string]: any };
+      activity_metadata?: { [key: string]: any }; // Changed from metadata to activity_metadata
     }
   ) => {
     const newActivity: LocalUserActivity = {
@@ -384,11 +411,12 @@ export default function JobExplorerPage() {
       user_id: activityData.user_id ?? currentUser?.id, 
       job_id: activityData.job_id,
       action_type: activityData.action_type,
-      activity_metadata: activityData.activity_metadata,
+      activity_metadata: activityData.activity_metadata, // Changed from metadata to activity_metadata
     };
     console.log('New local activity to be logged:', newActivity);
     setLocalUserActivities(prevActivities => [newActivity, ...prevActivities]);
   }, [setLocalUserActivities, currentUser]);
+
 
   const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
     console.log(`JobExplorer: performAiAnalysis called for job ${jobToAnalyze.id}`);
@@ -399,7 +427,8 @@ export default function JobExplorerPage() {
       return;
     }
 
-    setIsLoadingExplanation(true); // Ensure loading is true at the start of actual analysis
+    // Ensure loading is true here, as performAiAnalysis is now called when cache is ready but item not found, or directly.
+    if (!isLoadingExplanation) setIsLoadingExplanation(true); 
 
     try {
       const input: JobMatchExplanationInput = {
@@ -422,15 +451,14 @@ export default function JobExplorerPage() {
         setJobAnalysisCache(prevCache => ({ ...prevCache, [jobToAnalyze.id as number]: explanationResult }));
       }
 
+      // Log that AI analysis was performed (no need to log score/explanation itself here)
       addLocalActivity({
-        action_type: "AI_MATCH_ANALYZED", // Use the new distinct type
+        action_type: "AI_JOB_ANALYZED",
         job_id: jobToAnalyze.id,
         user_id: currentUser.id,
-        activity_metadata: {
+        activity_metadata: { 
           jobTitle: jobToAnalyze.job_title,
           company: jobToAnalyze.company,
-          score: explanationResult.matchScore,
-          explanation: explanationResult.matchExplanation,
           success: true
         }
       });
@@ -444,18 +472,18 @@ export default function JobExplorerPage() {
         };
         try {
           await apiClient.post(`/jobs/${jobToAnalyze.id}/analyze`, analyzePayload);
-          toast({ title: "AI Analysis Logged", description: "Match details saved to your activity.", variant: "default" });
+          toast({ title: "AI Analysis Logged", description: "Match details saved to your backend match log.", variant: "default" });
         } catch (analysisError) {
           console.error("Error logging AI analysis to backend:", analysisError);
           toast({ title: "Backend Sync Failed", description: "Could not save AI analysis details to backend.", variant: "destructive" });
-          addLocalActivity({ // Log failure to sync to backend
-            action_type: "AI_MATCH_ANALYZED",
+          addLocalActivity({ 
+            action_type: "AI_JOB_ANALYZED",
             job_id: jobToAnalyze.id,
             user_id: currentUser.id,
             activity_metadata: { 
               jobTitle: jobToAnalyze.job_title, 
-              score: explanationResult.matchScore, 
-              success: false, // Indicate backend logging failed
+              company: jobToAnalyze.company,
+              success: false, 
               error: analysisError instanceof Error ? analysisError.message : "Unknown error" 
             }
           });
@@ -466,10 +494,10 @@ export default function JobExplorerPage() {
       toast({ title: "AI Analysis Failed", description: "Could not get AI match explanation.", variant: "destructive" });
     } finally {
       setIsLoadingExplanation(false);
-      setJobPendingAnalysis(null); // Clear pending job after attempt
+      setJobPendingAnalysis(null); 
       console.log(`JobExplorer: performAiAnalysis finished for job ${jobToAnalyze.id}. isLoadingExplanation: false`);
     }
-  }, [currentUser, toast, setJobAnalysisCache, addLocalActivity]);
+  }, [currentUser, toast, setJobAnalysisCache, addLocalActivity, isLoadingExplanation]);
 
 
   const fetchJobDetailsWithAI = useCallback(async (job: JobListing) => {
@@ -477,7 +505,7 @@ export default function JobExplorerPage() {
     setSelectedJobForDetails(job); 
     setIsDetailsModalOpen(true);
     setIsLoadingExplanation(true); 
-    setJobPendingAnalysis(null); // Clear any previous pending job
+    setJobPendingAnalysis(null); 
 
     if (typeof job.id !== 'number' || isNaN(job.id) || job.id < 0) {
         console.warn(`fetchJobDetailsWithAI: Cannot fetch AI details for job with invalid frontend ID:`, job);
@@ -500,12 +528,10 @@ export default function JobExplorerPage() {
     } else {
         console.log(`JobExplorer: Cache not ready. Setting job ${job.id} as pending analysis.`);
         setJobPendingAnalysis(job);
-        // Modal will show loading spinner, useEffect below will handle it once cache is ready
     }
   }, [isCacheReadyForAnalysis, performAiAnalysis, toast]);
 
 
-  // useEffect to handle pending analysis once cache is ready
   useEffect(() => {
     if (isCacheReadyForAnalysis && jobPendingAnalysis && selectedJobForDetails?.id === jobPendingAnalysis.id) {
       console.log(`JobExplorer: Cache is ready. Processing pending analysis for job ${jobPendingAnalysis.id}.`);
@@ -518,7 +544,6 @@ export default function JobExplorerPage() {
       } else {
         console.log(`JobExplorer: Pending job ${jobPendingAnalysis.id} not in cache even after cache is ready. Performing AI analysis.`);
         performAiAnalysis(jobPendingAnalysis); 
-        // performAiAnalysis will set isLoadingExplanation to false and clear jobPendingAnalysis
       }
     }
   }, [isCacheReadyForAnalysis, jobPendingAnalysis, selectedJobForDetails, performAiAnalysis]);
@@ -571,7 +596,7 @@ export default function JobExplorerPage() {
         });
         
         addLocalActivity({
-            action_type: actionTypeForBackend, 
+            action_type: actionTypeForBackend as "JOB_SAVED" | "JOB_UNSAVED", 
             job_id: job.id,
             user_id: currentUser.id,
             activity_metadata: metadataForActivity
@@ -712,6 +737,7 @@ export default function JobExplorerPage() {
   if (isLoggingOut) return <FullPageLoading message="Logging out..." />;
   if (isLoadingAuth) return <FullPageLoading message="Authenticating..." />;
   if (!currentUser && !isLoadingAuth && !isLoggingOut) return <FullPageLoading message="Verifying session..." />;
+
 
   return (
     <div className="space-y-8">
@@ -898,5 +924,3 @@ export default function JobExplorerPage() {
     </div>
   );
 }
-
-    

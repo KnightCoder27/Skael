@@ -226,7 +226,7 @@ export interface SaveJobPayload {
   user_id: number;
   job_id: number;
   action_type: string; // e.g., "JOB_SAVED", "JOB_UNSAVED"
-  activity_metadata: { [key: string]: any } | null; // Changed from string to object
+  activity_metadata: { [key: string]: any } | null;
 }
 
 
@@ -253,14 +253,13 @@ export interface ResumeGenerateResponse {
 }
 
 export type ActivityType =
-  | "MATCH_ANALYSIS_VIEWED"
   | "JOB_SAVED"
   | "JOB_UNSAVED"
   | "RESUME_GENERATED_FOR_JOB"
   | "COVER_LETTER_GENERATED_FOR_JOB"
   | "GENERAL_RESUME_GENERATED"
   | "GENERAL_COVER_LETTER_GENERATED"
-  | "AI_MATCH_ANALYZED" // Changed from AI_ANALYSIS_LOGGED_TO_DB
+  | "AI_JOB_ANALYZED" // Indicates AI analysis was run for a job. Score/explanation fetched separately.
   | "APPLICATION_STATUS_UPDATED";
 
 // Corresponds to backend's UserActivityLog, with client-side id and timestamp
@@ -283,5 +282,10 @@ export interface UserActivityOut {
   created_at: string; // ISO 8601 datetime string
 }
 
-
-    
+// Expected structure for items from GET /match-scores/user/{user_id}
+export interface BackendMatchScoreLogItem {
+  job_id: number;
+  score: number;
+  explanation: string;
+  // created_at?: string; // Optional: if your backend sends it and you need it
+}
