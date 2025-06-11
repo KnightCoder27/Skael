@@ -1,53 +1,152 @@
 
 "use client";
 
-import { useEffect } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import useLocalStorage from '@/hooks/use-local-storage';
-import type { TrackedApplication, ApplicationStatus } from '@/types';
+import type { TrackedApplication, ApplicationStatus, LocalUserActivity, UserActivityOut, SaveJobPayload } from '@/types';
 import { ApplicationTrackerTable } from '@/components/app/application-tracker-table';
 import { Button } from '@/components/ui/button';
-import { Briefcase, FilePlus2, LogOut as LogOutIcon } from 'lucide-react';
+import { Briefcase, FilePlus2, LogOut as LogOutIcon, ServerCrash, FileWarning } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { FullPageLoading } from '@/components/app/loading-spinner';
+import { FullPageLoading, LoadingSpinner } from '@/components/app/loading-spinner';
+import apiClient from '@/lib/apiClient';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
+interface BackendActivity extends UserActivityOut {
+  // No changes needed if UserActivityOut already matches backend
+}
 
 export default function TrackerPage() {
   const { currentUser, isLoadingAuth, isLoggingOut } = useAuth();
   const router = useRouter();
-  const [trackedApplications, setTrackedApplications] = useLocalStorage<TrackedApplication[]>('tracked-applications', []);
+  // Local storage will now act more as a cache for statuses beyond "Saved"
+  const [localStatusOverrides, setLocalStatusOverrides] = useLocalStorage<Record<number, ApplicationStatus>>('application-status-overrides', {});
+  const [trackedApplications, setTrackedApplications] = useState<TrackedApplication[]>([]);
+  const [isLoadingTracker, setIsLoadingTracker] = useState(false);
+  const [errorTracker, setErrorTracker] = useState<string | null>(null);
   const { toast } = useToast();
 
-  useEffect(() => {
-    console.log(`TrackerPage Effect: isLoadingAuth=${isLoadingAuth}, currentUser.id=${currentUser?.id}, isLoggingOut=${isLoggingOut}`);
-    if (isLoggingOut) {
-        console.log("TrackerPage: Logout in progress, skipping access denied logic.");
-        return;
-    }
-    if (!isLoadingAuth) {
-      if (!currentUser) {
-        console.log("TrackerPage: Access Denied. isLoadingAuth is false, currentUser is null. Redirecting to /auth.");
-        toast({ title: "Access Denied", description: "Please log in to view your tracker.", variant: "destructive" });
-        router.push('/auth');
+  const fetchAndProcessActivities = useCallback(async () => {
+    if (!currentUser || !currentUser.id) return;
+
+    setIsLoadingTracker(true);
+    setErrorTracker(null);
+    try {
+      const response = await apiClient.get<BackendActivity[]>(`/activity/user/${currentUser.id}`);
+      const activities = response.data;
+
+      const jobActions: Record<number, { action: 'JOB_SAVED' | 'JOB_UNSAVED', activity: BackendActivity, timestamp: string }> = {};
+
+      activities.forEach(activity => {
+        if (activity.job_id !== null && activity.job_id !== undefined && (activity.action_type === 'JOB_SAVED' || activity.action_type === 'JOB_UNSAVED')) {
+          const existing = jobActions[activity.job_id];
+          if (!existing || new Date(activity.created_at) > new Date(existing.timestamp)) {
+            jobActions[activity.job_id] = {
+              action: activity.action_type as 'JOB_SAVED' | 'JOB_UNSAVED',
+              activity: activity,
+              timestamp: activity.created_at
+            };
+          }
+        }
+      });
+
+      const derivedApplications: TrackedApplication[] = [];
+      for (const jobIdStr in jobActions) {
+        const jobId = parseInt(jobIdStr, 10);
+        const { action, activity } = jobActions[jobId];
+
+        if (action === 'JOB_SAVED') {
+          const metadata = activity.activity_metadata || {};
+          derivedApplications.push({
+            id: activity.id.toString(), // Use activity ID or generate one
+            jobId: jobId,
+            jobTitle: metadata.jobTitle || 'N/A',
+            company: metadata.company || 'N/A',
+            status: localStatusOverrides[jobId] || 'Saved', // Prioritize local override, then default to Saved
+            lastUpdated: metadata.timestamp || activity.created_at, // Prefer metadata timestamp if available
+          });
+        }
       }
+      setTrackedApplications(derivedApplications);
+    } catch (error) {
+      console.error("Error fetching or processing activities for tracker:", error);
+      const message = error instanceof Error ? error.message : "Could not load tracked applications.";
+      setErrorTracker(message);
+      toast({ title: "Error Loading Tracker", description: message, variant: "destructive" });
+    } finally {
+      setIsLoadingTracker(false);
     }
-  }, [isLoadingAuth, currentUser, router, toast, isLoggingOut]);
+  }, [currentUser, toast, localStatusOverrides]);
+
+  useEffect(() => {
+    if (isLoggingOut) {
+      console.log("TrackerPage: Logout in progress, skipping access denied logic and fetch.");
+      return;
+    }
+    if (!isLoadingAuth && !currentUser) {
+      console.log("TrackerPage: Access Denied. isLoadingAuth is false, currentUser is null. Redirecting to /auth.");
+      toast({ title: "Access Denied", description: "Please log in to view your tracker.", variant: "destructive" });
+      router.push('/auth');
+    } else if (currentUser && currentUser.id) {
+      fetchAndProcessActivities();
+    }
+  }, [isLoadingAuth, currentUser, router, toast, isLoggingOut, fetchAndProcessActivities]);
 
 
   const handleUpdateStatus = (jobId: number, status: ApplicationStatus) => {
+    setLocalStatusOverrides(prevOverrides => ({
+      ...prevOverrides,
+      [jobId]: status,
+    }));
     setTrackedApplications(prevApps =>
       prevApps.map(app =>
         app.jobId === jobId ? { ...app, status, lastUpdated: new Date().toISOString() } : app
       )
     );
-    toast({ title: "Status Updated", description: `Application status changed to ${status}.` });
+    toast({ title: "Status Updated", description: `Application status changed to ${status}. (Local update)` });
+    // TODO: Consider logging "APPLICATION_STATUS_UPDATED" activity to backend if an endpoint becomes available
   };
 
-  const handleDeleteApplication = (jobId: number) => {
-    setTrackedApplications(prevApps => prevApps.filter(app => app.jobId !== jobId));
-    toast({ title: "Application Removed", description: "The application has been removed from your tracker.", variant: "destructive" });
+  const handleDeleteApplication = async (jobId: number) => {
+    if (!currentUser || !currentUser.id) {
+        toast({ title: "Error", description: "User not authenticated.", variant: "destructive" });
+        return;
+    }
+    const appToRemove = trackedApplications.find(app => app.jobId === jobId);
+    if (!appToRemove) {
+        toast({ title: "Error", description: "Application not found in current list.", variant: "destructive"});
+        return;
+    }
+
+    const payload: SaveJobPayload = {
+        user_id: currentUser.id,
+        job_id: jobId,
+        action_type: "JOB_UNSAVED",
+        activity_metadata: JSON.stringify({
+            jobTitle: appToRemove.jobTitle,
+            company: appToRemove.company,
+            status: "Unsaved" // Reflecting the action
+        })
+    };
+
+    try {
+        await apiClient.post(`/jobs/${jobId}/save`, payload); // Using the /save endpoint with JOB_UNSAVED type
+        toast({ title: "Application Removed", description: "The application has been marked as unsaved." });
+        fetchAndProcessActivities(); // Refetch to update the list from backend
+        // Clean up local status override if it existed
+        setLocalStatusOverrides(prev => {
+            const newOverrides = {...prev};
+            delete newOverrides[jobId];
+            return newOverrides;
+        });
+    } catch (error) {
+        console.error("Error unsaving job via API:", error);
+        const message = error instanceof Error ? error.message : "Could not remove application from backend.";
+        toast({ title: "Removal Failed", description: message, variant: "destructive" });
+    }
   };
 
   if (isLoggingOut) {
@@ -60,16 +159,10 @@ export default function TrackerPage() {
     );
   }
 
-  if (isLoadingAuth) {
-    return <FullPageLoading message="Authenticating..." />;
-  }
-
-  // This covers the case where auth is resolved, not logging out, but no currentUser (which means redirect should have happened)
-  if (!currentUser && !isLoadingAuth && !isLoggingOut) {
+  if (isLoadingAuth || (!currentUser && !isLoggingOut)) {
     return <FullPageLoading message="Verifying session..." />;
   }
-
-
+  
   return (
     <div className="space-y-8">
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
@@ -79,7 +172,7 @@ export default function TrackerPage() {
             Application Tracker
           </h1>
           <p className="text-muted-foreground">
-            Stay organized and monitor your job application progress.
+            Stay organized and monitor your job application progress. Saved jobs are fetched from your activity log.
           </p>
         </div>
         <Button asChild className="shadow-md hover:shadow-lg transition-shadow">
@@ -88,12 +181,43 @@ export default function TrackerPage() {
           </Link>
         </Button>
       </header>
+
+      {isLoadingTracker && (
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <LoadingSpinner size={40} />
+          <p className="mt-3 text-lg text-muted-foreground">Loading tracked applications...</p>
+        </div>
+      )}
+
+      {!isLoadingTracker && errorTracker && (
+        <Alert variant="destructive" className="my-6">
+          <ServerCrash className="h-5 w-5" />
+          <AlertTitle>Error Loading Tracker Data</AlertTitle>
+          <AlertDescription>
+            {errorTracker} Please try again later or check your connection.
+            <Button variant="link" onClick={fetchAndProcessActivities} className="ml-2 p-0 h-auto">Retry</Button>
+          </AlertDescription>
+        </Alert>
+      )}
       
-      <ApplicationTrackerTable
-        applications={trackedApplications}
-        onUpdateStatus={handleUpdateStatus}
-        onDeleteApplication={handleDeleteApplication}
-      />
+      {!isLoadingTracker && !errorTracker && (
+        <ApplicationTrackerTable
+          applications={trackedApplications}
+          onUpdateStatus={handleUpdateStatus}
+          onDeleteApplication={handleDeleteApplication}
+        />
+      )}
+       {!isLoadingTracker && !errorTracker && trackedApplications.length === 0 && (
+         <Alert variant="default" className="my-6">
+            <FileWarning className="h-5 w-5" />
+            <AlertTitle>No Saved Jobs Yet</AlertTitle>
+            <AlertDescription>
+                You haven't saved any jobs yet. Go to the <Link href="/jobs" className="font-semibold text-primary hover:underline">Job Listings</Link> page to find and save jobs.
+            </AlertDescription>
+        </Alert>
+      )}
     </div>
   );
 }
+
+    

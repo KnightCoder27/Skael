@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { JobListing, TrackedApplication, LocalUserActivity, ActivityType, UserProfileForJobFetching, UserProfileForRelevantJobs, Technology, SaveJobPayload, AnalyzeJobPayload } from '@/types';
+import type { JobListing, TrackedApplication, LocalUserActivity, ActivityType, UserProfileForJobFetching, UserProfileForRelevantJobs, Technology, SaveJobPayload, AnalyzeJobPayload, UserActivityOut } from '@/types';
 import useLocalStorage from '@/hooks/use-local-storage';
 import { useAuth } from '@/contexts/AuthContext';
 import apiClient from '@/lib/apiClient';
@@ -68,12 +68,10 @@ interface BackendJobListingResponseItem {
   industry_id?: string | null;
   fetched_data?: string | null;
   technologies?: string[] | null;
-  // Added from APIJobListingItem -> APICompanyObject
   company_object?: {
     logo?: string | null;
   } | null;
 }
-
 
 type ActiveJobTab = "generate" | "relevant" | "all";
 
@@ -84,6 +82,8 @@ const isValidDbId = (idInput: any): idInput is number | string => {
   const numId = Number(idInput);
   return !isNaN(numId) && isFinite(numId);
 };
+
+interface BackendActivity extends UserActivityOut {}
 
 
 export default function JobExplorerPage() {
@@ -125,7 +125,6 @@ export default function JobExplorerPage() {
   const [extractedJobPoints, setExtractedJobPoints] = useState<ExtractJobDescriptionPointsOutput | null>(null);
   const [jobForExtractedPoints, setJobForExtractedPoints] = useState<JobListing | null>(null);
 
-
   const mapBackendJobToFrontend = useCallback((backendJob: BackendJobListingResponseItem): JobListing => {
     let numericDbId: number;
 
@@ -154,9 +153,7 @@ export default function JobExplorerPage() {
 
     const companyLogo = backendJob.company_object?.logo || `https://placehold.co/100x100.png?text=${encodeURIComponent(backendJob.company?.[0] || 'J')}`;
     
-    // Access jobAnalysisCache directly from lexical scope
     const cachedAnalysis = (numericDbId >= 0 && jobAnalysisCache[numericDbId]) ? jobAnalysisCache[numericDbId] : {};
-
 
     return {
       id: numericDbId,
@@ -194,7 +191,7 @@ export default function JobExplorerPage() {
       matchScore: cachedAnalysis.matchScore,
       matchExplanation: cachedAnalysis.matchExplanation,
     };
-  }, [jobAnalysisCache]); // jobAnalysisCache is now correctly in the dependency array
+  }, [jobAnalysisCache]);
 
 
   const fetchRelevantJobs = useCallback(async () => {
@@ -221,12 +218,8 @@ export default function JobExplorerPage() {
       if (!cleanedPayload.hasOwnProperty('locations')) cleanedPayload.locations = [];
       if (!cleanedPayload.hasOwnProperty('countries')) cleanedPayload.countries = [];
 
-      console.log("DEBUG: Payload for /jobs/relevant_jobs:", JSON.stringify(cleanedPayload, null, 2));
       const response = await apiClient.post<BackendJobListingResponseItem[]>('/jobs/relevant_jobs', cleanedPayload);
-      console.log("DEBUG: Raw relevant_jobs response.data (first 5 items):", JSON.stringify(response.data.slice(0, 5), null, 2));
-
       setRelevantJobsList(response.data.map(job => mapBackendJobToFrontend(job)));
-
     } catch (error) {
       const message = error instanceof AxiosError && error.response?.data?.detail ? error.response.data.detail : "Could not load relevant jobs.";
       setErrorRelevantJobs(message);
@@ -241,10 +234,7 @@ export default function JobExplorerPage() {
     setErrorAllJobs(null);
     try {
       const response = await apiClient.get<BackendJobListingResponseItem[]>('/jobs/list_jobs/');
-      console.log("DEBUG: Raw list_jobs response.data (first 5 items):", JSON.stringify(response.data.slice(0, 5), null, 2));
-
       setAllJobsList(response.data.map(job => mapBackendJobToFrontend(job)));
-
     } catch (error) {
       const message = error instanceof AxiosError && error.response?.data?.detail ? error.response.data.detail : "Could not load all jobs.";
       setErrorAllJobs(message);
@@ -254,16 +244,42 @@ export default function JobExplorerPage() {
     }
   }, [toast, mapBackendJobToFrontend]);
 
-
+  // Effect to fetch and populate AI analysis cache from backend activities
   useEffect(() => {
-    if (currentUser && !isLoggingOut) {
-        if (activeTab === "relevant") {
-            fetchRelevantJobs();
-        } else if (activeTab === "all") {
-            fetchAllJobs();
+    const populateAiAnalysisCache = async () => {
+      if (!currentUser || !currentUser.id) return;
+      try {
+        const response = await apiClient.get<BackendActivity[]>(`/activity/user/${currentUser.id}`);
+        const activities = response.data;
+        const newCacheUpdates: JobAnalysisCache = {};
+        activities.forEach(activity => {
+          if (activity.action_type === "AI_ANALYSIS_LOGGED_TO_DB" && activity.job_id !== null && activity.job_id !== undefined && activity.activity_metadata) {
+            const metadata = activity.activity_metadata;
+            if (typeof metadata.score === 'number' && typeof metadata.explanation === 'string') {
+              newCacheUpdates[activity.job_id] = {
+                matchScore: metadata.score,
+                matchExplanation: metadata.explanation,
+              };
+            }
+          }
+        });
+        if (Object.keys(newCacheUpdates).length > 0) {
+          setJobAnalysisCache(prevCache => ({ ...prevCache, ...newCacheUpdates }));
+          console.log("AI Analysis cache populated from backend activities:", newCacheUpdates);
         }
+      } catch (error) {
+        console.error("Error fetching activities to populate AI analysis cache:", error);
+        // Non-critical, so no toast, just log
+      }
+    };
+
+    if (currentUser && !isLoggingOut) {
+        populateAiAnalysisCache();
+        if (activeTab === "relevant") fetchRelevantJobs();
+        else if (activeTab === "all") fetchAllJobs();
     }
-  }, [activeTab, currentUser, isLoggingOut, fetchRelevantJobs, fetchAllJobs]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, currentUser, isLoggingOut]); // Removed fetchRelevantJobs, fetchAllJobs, setJobAnalysisCache from deps as they cause loops. Cache population depends on currentUser.
 
 
   const handleGenerateJobs = async () => {
@@ -291,8 +307,6 @@ export default function JobExplorerPage() {
     if (!cleanedPayload.hasOwnProperty('locations')) cleanedPayload.locations = [];
     if (!cleanedPayload.hasOwnProperty('countries')) cleanedPayload.countries = [];
 
-    console.log("DEBUG: Payload for /jobs/fetch_jobs:", JSON.stringify(cleanedPayload, null, 2));
-
     try {
       const response = await apiClient.post<{ status: string; jobs_fetched: number; jobs: BackendJobListingResponseItem[] }>('/jobs/fetch_jobs', cleanedPayload);
       setLastFetchCount(response.data.jobs_fetched);
@@ -319,7 +333,7 @@ export default function JobExplorerPage() {
       action_type: ActivityType;
       job_id?: number;
       user_id?: number; 
-      metadata?: { [key: string]: any };
+      activity_metadata?: { [key: string]: any };
     }
   ) => {
     const newActivity: LocalUserActivity = {
@@ -328,7 +342,7 @@ export default function JobExplorerPage() {
       user_id: activityData.user_id ?? currentUser?.id, 
       job_id: activityData.job_id,
       action_type: activityData.action_type,
-      metadata: activityData.metadata,
+      activity_metadata: activityData.activity_metadata,
     };
     console.log('New local activity to be logged:', newActivity);
     setLocalUserActivities(prevActivities => [newActivity, ...prevActivities]);
@@ -336,25 +350,18 @@ export default function JobExplorerPage() {
 
 
   const fetchJobDetailsWithAI = useCallback(async (job: JobListing) => {
-    console.log(`fetchJobDetailsWithAI: Called for job ID: ${job.id}, Title: ${job.job_title}`);
-    console.log(`fetchJobDetailsWithAI: Job object has score: ${job.matchScore}, explanation: ${!!job.matchExplanation}`);
     setSelectedJobForDetails(job);
     setIsDetailsModalOpen(true);
 
-    if (job.matchScore !== undefined && job.matchExplanation) {
-      console.log(`fetchJobDetailsWithAI: Data already on job object for ID: ${job.id}. Score: ${job.matchScore}`);
-      return;
-    }
+    if (job.matchScore !== undefined && job.matchExplanation) return;
 
-    if (typeof job.id !== 'number' || isNaN(job.id)) {
+    if (typeof job.id !== 'number' || isNaN(job.id) || job.id < 0) {
         console.warn(`fetchJobDetailsWithAI: Cannot fetch AI details for job with invalid frontend ID:`, job);
         toast({ title: "Error", description: "Cannot perform AI analysis on job with invalid ID.", variant: "destructive"});
         return;
     }
     const cachedAnalysis = jobAnalysisCache[job.id];
-    console.log(`fetchJobDetailsWithAI: Checking cache for ID ${job.id}. Found:`, cachedAnalysis);
     if (cachedAnalysis) {
-      console.log(`fetchJobDetailsWithAI: Found in jobAnalysisCache for ID: ${job.id}. Score: ${cachedAnalysis.matchScore}`);
       const updateWithCache = (prev: JobListing[]) => prev.map(j => j.id === job.id ? { ...j, ...cachedAnalysis } : j);
       setRelevantJobsList(updateWithCache);
       setAllJobsList(updateWithCache);
@@ -362,7 +369,6 @@ export default function JobExplorerPage() {
       setSelectedJobForDetails(prevJob => prevJob ? { ...prevJob, ...cachedAnalysis } : null);
       return;
     }
-    console.log(`fetchJobDetailsWithAI: No cache hit for ID: ${job.id}. Proceeding to AI call.`);
     if (!currentUser || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0) {
       toast({ title: "Profile Incomplete", description: "AI analysis requires your professional summary and skills in your profile.", variant: "destructive" });
       return;
@@ -375,28 +381,28 @@ export default function JobExplorerPage() {
         userPreferences: currentUser.job_role || '',
         userHistory: '',
       };
-      console.log("fetchJobDetailsWithAI: Calling jobMatchExplanation AI flow...");
       const explanationResult = await jobMatchExplanation(input);
       const updateJobsState = (prevJobs: JobListing[]) => prevJobs.map(j => j.id === job.id ? { ...j, ...explanationResult } : j);
       setRelevantJobsList(updateJobsState);
       setAllJobsList(updateJobsState);
       setFetchedApiJobs(updateJobsState);
       setSelectedJobForDetails(prevJob => prevJob ? { ...prevJob, ...explanationResult } : null);
+      
       if (job.id >= 0) { 
-        console.log(`fetchJobDetailsWithAI: Caching AI result for job ID ${job.id}:`, explanationResult);
         setJobAnalysisCache(prevCache => ({ ...prevCache, [job.id as number]: explanationResult }));
       }
+
       addLocalActivity({
         action_type: "MATCH_ANALYSIS_VIEWED",
         job_id: job.id,
-        metadata: {
+        user_id: currentUser.id,
+        activity_metadata: {
           jobTitle: job.job_title,
           company: job.company,
           matchScore: explanationResult.matchScore
         }
       });
 
-      // Log AI analysis to backend
       if (currentUser.id && job.id >= 0) {
         const analyzePayload: AnalyzeJobPayload = {
           user_id: currentUser.id,
@@ -405,14 +411,13 @@ export default function JobExplorerPage() {
           explanation: explanationResult.matchExplanation
         };
         try {
-          console.log("Attempting to log AI analysis to backend:", analyzePayload);
           await apiClient.post(`/jobs/${job.id}/analyze`, analyzePayload);
           toast({ title: "AI Analysis Logged", description: "Match details saved to your activity.", variant: "default" });
            addLocalActivity({
             action_type: "AI_ANALYSIS_LOGGED_TO_DB",
             job_id: job.id,
             user_id: currentUser.id,
-            metadata: { jobTitle: job.job_title, score: explanationResult.matchScore, success: true }
+            activity_metadata: { jobTitle: job.job_title, score: explanationResult.matchScore, explanation: explanationResult.matchExplanation, success: true }
           });
         } catch (analysisError) {
           console.error("Error logging AI analysis to backend:", analysisError);
@@ -421,11 +426,10 @@ export default function JobExplorerPage() {
             action_type: "AI_ANALYSIS_LOGGED_TO_DB",
             job_id: job.id,
             user_id: currentUser.id,
-            metadata: { jobTitle: job.job_title, score: explanationResult.matchScore, success: false, error: analysisError instanceof Error ? analysisError.message : "Unknown error" }
+            activity_metadata: { jobTitle: job.job_title, score: explanationResult.matchScore, success: false, error: analysisError instanceof Error ? analysisError.message : "Unknown error" }
           });
         }
       }
-
     } catch (error) {
       console.error("Error fetching AI match explanation:", error);
       toast({ title: "AI Analysis Failed", description: "Could not get AI match explanation.", variant: "destructive" });
@@ -441,48 +445,26 @@ export default function JobExplorerPage() {
         toast({ title: "Error", description: "Cannot save job with temporary or invalid ID.", variant: "destructive"});
         return;
     }
+    if (!currentUser || !currentUser.id) {
+        toast({ title: "Error", description: "User not authenticated.", variant: "destructive" });
+        return;
+    }
 
     const existingApplicationIndex = trackedApplications.findIndex(app => app.jobId === job.id);
     let activityActionType: ActivityType = "JOB_SAVED";
     let toastMessage = `${job.job_title} added to your application tracker.`;
     
-    const metadataForActivity: { [key: string]: any } = {
+    const metadataForActivity = {
         jobTitle: job.job_title,
         company: job.company,
+        status: existingApplicationIndex > -1 ? "Unsaved" : "Saved" // Determine status based on action
     };
 
     if (existingApplicationIndex > -1) {
-      // Unsaving
-      setTrackedApplications(prev => prev.filter(app => app.jobId !== job.id));
+      activityActionType = "JOB_UNSAVED";
       toastMessage = `${job.job_title} removed from your tracker.`;
-      activityActionType = "JOB_UNSAVED"; // This will be logged locally
-      metadataForActivity.status = "Unsaved";
-      toast({ title: "Job Unsaved", description: toastMessage });
-      
-      // For unsaving, we still call the backend with action_type "JOB_UNSAVED"
-      // Assuming the backend can handle this or we adjust backend later.
-      if (currentUser && currentUser.id) {
-        const payload: SaveJobPayload = {
-          user_id: currentUser.id,
-          job_id: job.id,
-          action_type: "JOB_UNSAVED",
-          activity_metadata: JSON.stringify({ jobTitle: job.job_title, company: job.company })
-        };
-        try {
-          console.log(`handleSaveJob: Attempting to log unsave for job ID ${job.id} to backend:`, payload);
-          await apiClient.post(`/jobs/${job.id}/save`, payload);
-          toast({ title: "Backend Sync", description: "Job unsave activity logged with backend.", variant: "default" });
-        } catch (error) {
-            console.error("Error logging unsave to backend:", error);
-            const errorMessage = error instanceof AxiosError && error.response?.data?.detail 
-                                 ? error.response.data.detail 
-                                 : "Could not sync job unsave with backend.";
-            toast({ title: "Backend Sync Failed", description: errorMessage, variant: "destructive" });
-        }
-      }
-
+      setTrackedApplications(prev => prev.filter(app => app.jobId !== job.id));
     } else {
-      // Saving
       const newApplication: TrackedApplication = {
         id: (job.api_id || job.id.toString()) + Date.now().toString(),
         jobId: job.id,
@@ -492,37 +474,42 @@ export default function JobExplorerPage() {
         lastUpdated: new Date().toISOString()
       };
       setTrackedApplications(prev => [...prev, newApplication]);
-      metadataForActivity.status = "Saved";
-      toast({ title: "Job Saved!", description: toastMessage });
-
-      if (currentUser && currentUser.id) {
-        const payload: SaveJobPayload = {
-          user_id: currentUser.id,
-          job_id: job.id,
-          action_type: "JOB_SAVED", 
-          activity_metadata: JSON.stringify(metadataForActivity)
-        };
-        try {
-          console.log(`handleSaveJob: Attempting to save job ID ${job.id} to backend:`, payload);
-          await apiClient.post(`/jobs/${job.id}/save`, payload);
-          toast({ title: "Backend Sync", description: "Job save and activity metadata synced with backend.", variant: "default" });
-        } catch (error) {
-          console.error("Error saving job to backend:", error);
-          const errorMessage = error instanceof AxiosError && error.response?.data?.detail 
-                               ? error.response.data.detail 
-                               : "Could not sync job save with backend.";
-          toast({ title: "Backend Sync Failed", description: errorMessage, variant: "destructive" });
-        }
-      } else {
-        console.warn("handleSaveJob: Cannot sync job save to backend - currentUser or currentUser.id is missing.");
-      }
     }
-    // Local activity log should reflect the actual intended action type
+    
+    const payload: SaveJobPayload = {
+        user_id: currentUser.id,
+        job_id: job.id,
+        action_type: activityActionType,
+        activity_metadata: JSON.stringify(metadataForActivity)
+    };
+
+    try {
+        await apiClient.post(`/jobs/${job.id}/save`, payload);
+        toast({ title: activityActionType === "JOB_SAVED" ? "Job Saved!" : "Job Unsaved", description: `${toastMessage} (Synced with backend)` });
+    } catch (error) {
+        console.error(`Error ${activityActionType === "JOB_SAVED" ? "saving" : "unsaving"} job to backend:`, error);
+        const errorMessage = error instanceof AxiosError && error.response?.data?.detail 
+                           ? error.response.data.detail 
+                           : `Could not sync job ${activityActionType === "JOB_SAVED" ? "save" : "unsave"} with backend.`;
+        toast({ title: "Backend Sync Failed", description: errorMessage, variant: "destructive" });
+        // Revert client-side change on error
+        if (activityActionType === "JOB_UNSAVED") { // was trying to unsave, but failed
+            // Re-add if it was removed
+             const newApplication: TrackedApplication = {
+                id: (job.api_id || job.id.toString()) + Date.now().toString(), // Re-create if needed
+                jobId: job.id, jobTitle: job.job_title, company: job.company, status: "Saved", lastUpdated: new Date().toISOString()
+            };
+            setTrackedApplications(prev => [...prev, newApplication]);
+        } else { // was trying to save, but failed
+            setTrackedApplications(prev => prev.filter(app => app.jobId !== job.id));
+        }
+    }
+
     addLocalActivity({
       action_type: activityActionType, 
       job_id: job.id,
-      user_id: currentUser?.id,
-      metadata: metadataForActivity
+      user_id: currentUser.id,
+      activity_metadata: metadataForActivity
     });
   };
 
@@ -576,7 +563,7 @@ export default function JobExplorerPage() {
           action_type: "RESUME_GENERATED_FOR_JOB",
           job_id: jobToGenerateFor.id,
           user_id: currentUser.id,
-          metadata: {
+          activity_metadata: {
             jobTitle: jobToGenerateFor.job_title,
             company: jobToGenerateFor.company,
             success: true
@@ -590,7 +577,7 @@ export default function JobExplorerPage() {
           action_type: "RESUME_GENERATED_FOR_JOB",
           job_id: jobToGenerateFor.id,
           user_id: currentUser?.id,
-          metadata: {
+          activity_metadata: {
             jobTitle: jobToGenerateFor.job_title,
             company: jobToGenerateFor.company,
             success: false,
@@ -621,7 +608,7 @@ export default function JobExplorerPage() {
           action_type: "COVER_LETTER_GENERATED_FOR_JOB",
           job_id: jobToGenerateFor.id,
           user_id: currentUser.id,
-          metadata: {
+          activity_metadata: {
             jobTitle: jobToGenerateFor.job_title,
             company: jobToGenerateFor.company,
             success: true
@@ -635,7 +622,7 @@ export default function JobExplorerPage() {
           action_type: "COVER_LETTER_GENERATED_FOR_JOB",
           job_id: jobToGenerateFor.id,
           user_id: currentUser?.id,
-          metadata: {
+          activity_metadata: {
             jobTitle: jobToGenerateFor.job_title,
             company: jobToGenerateFor.company,
             success: false,
@@ -838,20 +825,5 @@ export default function JobExplorerPage() {
     </div>
   );
 }
-    
-
-    
-
-    
-
-
-
-
-
-    
-
-
-
-    
 
     
