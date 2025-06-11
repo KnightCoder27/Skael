@@ -207,7 +207,7 @@ export default function JobExplorerPage() {
     }
   }, [toast, mapBackendJobToFrontend]);
 
-  const populateCacheAndSavedJobIds = useCallback(async () => {
+ const populateCacheAndSavedJobIds = useCallback(async () => {
     if (!currentUser || !currentUser.id) return;
     try {
       const response = await apiClient.get<UserActivityOut[]>(`/activity/user/${currentUser.id}`);
@@ -275,7 +275,7 @@ export default function JobExplorerPage() {
       else if (activeTab === "all") fetchAllJobs();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, currentUser, isLoggingOut, populateCacheAndSavedJobIds]); // fetchRelevantJobs & fetchAllJobs added
+  }, [activeTab, currentUser, isLoggingOut, populateCacheAndSavedJobIds, fetchRelevantJobs, fetchAllJobs]);
 
 
   const handleGenerateJobs = async () => {
@@ -329,7 +329,7 @@ export default function JobExplorerPage() {
       action_type: ActivityType;
       job_id?: number;
       user_id?: number; 
-      activity_metadata?: { [key: string]: any };
+      activity_metadata?: { [key: string]: any }; // Changed from metadata to activity_metadata
     }
   ) => {
     const newActivity: LocalUserActivity = {
@@ -338,7 +338,7 @@ export default function JobExplorerPage() {
       user_id: activityData.user_id ?? currentUser?.id, 
       job_id: activityData.job_id,
       action_type: activityData.action_type,
-      activity_metadata: activityData.activity_metadata,
+      activity_metadata: activityData.activity_metadata, // Changed from metadata to activity_metadata
     };
     console.log('New local activity to be logged:', newActivity);
     setLocalUserActivities(prevActivities => [newActivity, ...prevActivities]);
@@ -394,7 +394,7 @@ export default function JobExplorerPage() {
         action_type: "MATCH_ANALYSIS_VIEWED",
         job_id: job.id,
         user_id: currentUser.id,
-        activity_metadata: { 
+        activity_metadata: { // Changed from metadata to activity_metadata
           jobTitle: job.job_title,
           company: job.company,
           matchScore: explanationResult.matchScore
@@ -415,7 +415,7 @@ export default function JobExplorerPage() {
             action_type: "AI_ANALYSIS_LOGGED_TO_DB",
             job_id: job.id,
             user_id: currentUser.id,
-            activity_metadata: { jobTitle: job.job_title, score: explanationResult.matchScore, explanation: explanationResult.matchExplanation, success: true } 
+            activity_metadata: { jobTitle: job.job_title, score: explanationResult.matchScore, explanation: explanationResult.matchExplanation, success: true } // Changed from metadata to activity_metadata
           });
         } catch (analysisError) {
           console.error("Error logging AI analysis to backend:", analysisError);
@@ -424,7 +424,7 @@ export default function JobExplorerPage() {
             action_type: "AI_ANALYSIS_LOGGED_TO_DB",
             job_id: job.id,
             user_id: currentUser.id,
-            activity_metadata: { jobTitle: job.job_title, score: explanationResult.matchScore, success: false, error: analysisError instanceof Error ? analysisError.message : "Unknown error" } 
+            activity_metadata: { jobTitle: job.job_title, score: explanationResult.matchScore, success: false, error: analysisError instanceof Error ? analysisError.message : "Unknown error" } // Changed from metadata to activity_metadata
           });
         }
       }
@@ -454,14 +454,14 @@ export default function JobExplorerPage() {
     const metadataForActivity = {
         jobTitle: job.job_title,
         company: job.company,
-        status: actionTypeForBackend === "JOB_SAVED" ? "Saved" : "Unsaved" // Keep this for local log, backend may not use status from here
+        status: actionTypeForBackend === "JOB_SAVED" ? "Saved" : "Unsaved"
     };
 
     const payload: SaveJobPayload = {
         user_id: currentUser.id,
         job_id: job.id,
         action_type: actionTypeForBackend,
-        activity_metadata: metadataForActivity // Send as object
+        activity_metadata: metadataForActivity // No JSON.stringify() here
     };
 
     try {
@@ -485,7 +485,7 @@ export default function JobExplorerPage() {
             action_type: actionTypeForBackend, 
             job_id: job.id,
             user_id: currentUser.id,
-            activity_metadata: metadataForActivity 
+            activity_metadata: metadataForActivity // Changed from metadata to activity_metadata
         });
 
     } catch (error) {
@@ -547,7 +547,7 @@ export default function JobExplorerPage() {
           action_type: "RESUME_GENERATED_FOR_JOB",
           job_id: jobToGenerateFor.id,
           user_id: currentUser.id,
-          activity_metadata: { 
+          activity_metadata: { // Changed from metadata to activity_metadata
             jobTitle: jobToGenerateFor.job_title,
             company: jobToGenerateFor.company,
             success: true
@@ -561,7 +561,7 @@ export default function JobExplorerPage() {
           action_type: "RESUME_GENERATED_FOR_JOB",
           job_id: jobToGenerateFor.id,
           user_id: currentUser?.id,
-          activity_metadata: { 
+          activity_metadata: { // Changed from metadata to activity_metadata
             jobTitle: jobToGenerateFor.job_title,
             company: jobToGenerateFor.company,
             success: false,
@@ -592,7 +592,7 @@ export default function JobExplorerPage() {
           action_type: "COVER_LETTER_GENERATED_FOR_JOB",
           job_id: jobToGenerateFor.id,
           user_id: currentUser.id,
-          activity_metadata: { 
+          activity_metadata: { // Changed from metadata to activity_metadata
             jobTitle: jobToGenerateFor.job_title,
             company: jobToGenerateFor.company,
             success: true
@@ -606,7 +606,7 @@ export default function JobExplorerPage() {
           action_type: "COVER_LETTER_GENERATED_FOR_JOB",
           job_id: jobToGenerateFor.id,
           user_id: currentUser?.id,
-          activity_metadata: { 
+          activity_metadata: { // Changed from metadata to activity_metadata
             jobTitle: jobToGenerateFor.job_title,
             company: jobToGenerateFor.company,
             success: false,
@@ -810,4 +810,4 @@ export default function JobExplorerPage() {
   );
 }
 
-```
+    
