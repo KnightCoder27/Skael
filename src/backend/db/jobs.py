@@ -240,7 +240,7 @@ def save_job(save_data : SaveJob, db: Session = Depends(get_db)):
         user_id=save_data.user_id,
         job_id=save_data.job_id,
         action_type=save_data.action_type,
-        metadata=save_data.metadata
+        metadata=save_data.activity_metadata 
     )
     db.add(activity)
     db.commit()
