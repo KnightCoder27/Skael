@@ -182,15 +182,15 @@ export interface ActivityLogResponse { // Response from POST /activity/log
 }
 
 
-// Payload for POST /jobs/{id}/save (as per user's backend snippet)
+// Payload for POST /jobs/{id}/save 
 export interface SaveJobPayload {
   user_id: number;
   job_id: number;
-  action_type: string; // "JOB_SAVED" or "JOB_UNSAVED"
-  metadata: string; // JSON string of metadata like { jobTitle, company, status }
+  action_type: string; 
+  activity_metadata: string; // JSON string of metadata like { jobTitle, company, status }
 }
 
-// Payload for POST /jobs/{id}/analyze (as per user's backend snippet)
+// Payload for POST /jobs/{id}/analyze 
 export interface AnalyzeJobPayload {
   user_id: number;
   job_id: number;
@@ -242,3 +242,4 @@ export interface UserActivityOut {
   activity_metadata: { [key: string]: any } | null;
   created_at: string; // ISO 8601 datetime string
 }
+

@@ -384,7 +384,7 @@ export default function JobExplorerPage() {
       return;
     }
 
-    if (!currentUser || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0) {
+    if (!currentUser || !currentUser.id || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0) {
       toast({ title: "Profile Incomplete", description: "AI analysis requires your professional summary and skills in your profile.", variant: "destructive" });
       return;
     }
@@ -465,7 +465,7 @@ export default function JobExplorerPage() {
         return;
     }
 
-    const isCurrentlySaved = trackedApplications.some(app => app.jobId === job.id);
+    const isCurrentlySaved = trackedApplications.some(app => app.jobId === job.id && app.status !== "Unsaved"); // Assuming "Unsaved" means effectively deleted
     const actionTypeForBackend = isCurrentlySaved ? "JOB_UNSAVED" : "JOB_SAVED";
     
     const metadataForActivity = {
@@ -478,7 +478,7 @@ export default function JobExplorerPage() {
         user_id: currentUser.id,
         job_id: job.id,
         action_type: actionTypeForBackend,
-        metadata: JSON.stringify(metadataForActivity) 
+        activity_metadata: JSON.stringify(metadataForActivity) 
     };
 
     try {
@@ -488,7 +488,6 @@ export default function JobExplorerPage() {
             description: `${job.job_title} ${actionTypeForBackend === "JOB_SAVED" ? "added to" : "removed from"} your tracker. (Synced with backend)` 
         });
         
-        // Update client-side state for immediate feedback in JobCard
         if (actionTypeForBackend === "JOB_SAVED") {
             const newApplication: TrackedApplication = {
                 id: (job.api_id || job.id.toString()) + Date.now().toString(),
@@ -831,3 +830,4 @@ export default function JobExplorerPage() {
     </div>
   );
 }
+
