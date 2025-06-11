@@ -173,7 +173,7 @@ export interface ActivityIn {
   user_id: number;
   job_id?: number | null;
   action_type: string;
-  metadata?: { [key: string]: any } | null;
+  metadata?: { [key: string]: any } | null; // Backend for /activity/log expects 'metadata'
 }
 
 export interface ActivityLogResponse { // Response from POST /activity/log
@@ -182,15 +182,15 @@ export interface ActivityLogResponse { // Response from POST /activity/log
 }
 
 
-// Payload for POST /jobs/{id}/save 
+// Payload for POST /jobs/{id}/save (as per user's backend code)
 export interface SaveJobPayload {
   user_id: number;
   job_id: number;
-  action_type: string; 
-  activity_metadata: string; // JSON string of metadata like { jobTitle, company, status }
+  action_type: string;
+  activity_metadata: string; // JSON string of metadata { jobTitle, company, status }
 }
 
-// Payload for POST /jobs/{id}/analyze 
+// Payload for POST /jobs/{id}/analyze (as per user's backend code)
 export interface AnalyzeJobPayload {
   user_id: number;
   job_id: number;
@@ -230,7 +230,7 @@ export interface LocalUserActivity {
   user_id?: number; // Corresponds to backend UserActivityLog.user_id
   job_id?: number; // Corresponds to backend UserActivityLog.job_id
   action_type: ActivityType; // Corresponds to backend UserActivityLog.action_type
-  metadata?: { [key: string]: any }; // Corresponds to backend UserActivityLog.activity_metadata
+  activity_metadata?: { [key: string]: any }; // Changed from 'metadata' to 'activity_metadata'
 }
 
 // Type for the actual structure of UserActivityLog coming from GET /activity/user/{user_id}
@@ -239,7 +239,7 @@ export interface UserActivityOut {
   user_id: number;
   job_id: number | null;
   action_type: string;
-  activity_metadata: { [key: string]: any } | null;
+  activity_metadata: { [key: string]: any } | null; // Backend DB column is activity_metadata
   created_at: string; // ISO 8601 datetime string
 }
 
