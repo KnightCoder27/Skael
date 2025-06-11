@@ -187,7 +187,7 @@ export interface SaveJobPayload {
   user_id: number;
   job_id: number;
   action_type: string; // "JOB_SAVED" or "JOB_UNSAVED"
-  activity_metadata: string; // JSON string of metadata like { jobTitle, company, status }
+  metadata: string; // JSON string of metadata like { jobTitle, company, status }
 }
 
 // Payload for POST /jobs/{id}/analyze (as per user's backend snippet)
@@ -221,7 +221,7 @@ export type ActivityType =
   | "GENERAL_RESUME_GENERATED"
   | "GENERAL_COVER_LETTER_GENERATED"
   | "AI_ANALYSIS_LOGGED_TO_DB"
-  | "APPLICATION_STATUS_UPDATED"; // New type for logging status changes
+  | "APPLICATION_STATUS_UPDATED";
 
 // Corresponds to backend's UserActivityLog, with client-side id and timestamp
 export interface LocalUserActivity {

@@ -267,7 +267,6 @@ export default function JobExplorerPage() {
           setJobAnalysisCache(prevCache => ({ ...prevCache, ...newCacheUpdates }));
           console.log("AI Analysis cache populated from backend activities:", newCacheUpdates);
 
-          // Update existing job lists with new scores
           const updateJobsWithCache = (jobs: JobListing[]) => 
             jobs.map(job => {
               if (newCacheUpdates[job.id]) {
@@ -288,13 +287,12 @@ export default function JobExplorerPage() {
 
   useEffect(() => {
     if (currentUser && !isLoggingOut) {
-      populateAiAnalysisCache(); // Populate cache
-      // Fetch jobs based on active tab AFTER cache attempt
+      populateAiAnalysisCache(); 
       if (activeTab === "relevant") fetchRelevantJobs();
       else if (activeTab === "all") fetchAllJobs();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, currentUser, isLoggingOut, populateAiAnalysisCache]); // Removed fetchRelevantJobs, fetchAllJobs from deps
+  }, [activeTab, currentUser, isLoggingOut, populateAiAnalysisCache]);
 
 
   const handleGenerateJobs = async () => {
@@ -468,7 +466,7 @@ export default function JobExplorerPage() {
     }
 
     const isCurrentlySaved = trackedApplications.some(app => app.jobId === job.id);
-    const actionTypeForBackend: "JOB_SAVED" | "JOB_UNSAVED" = isCurrentlySaved ? "JOB_UNSAVED" : "JOB_SAVED";
+    const actionTypeForBackend = isCurrentlySaved ? "JOB_UNSAVED" : "JOB_SAVED";
     
     const metadataForActivity = {
         jobTitle: job.job_title,
@@ -480,7 +478,7 @@ export default function JobExplorerPage() {
         user_id: currentUser.id,
         job_id: job.id,
         action_type: actionTypeForBackend,
-        activity_metadata: JSON.stringify(metadataForActivity) 
+        metadata: JSON.stringify(metadataForActivity) 
     };
 
     try {
