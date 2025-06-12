@@ -44,7 +44,7 @@ const profileSchema = z.object({
   
   preferred_locations: z.string().max(255, 'Preferred Locations cannot exceed 255 characters (comma-separated).').optional().nullable(),
   
-  remote_preference: z.enum(remotePreferenceOptions).optional().nullable(), // Nullable to allow clearing selection
+  remote_preference: z.enum(remotePreferenceOptions).optional().nullable(), 
   expected_salary: z.coerce.number().positive("Expected salary must be a positive number.").optional().nullable(),
   resume: z.string().url('Resume must be a valid URL (this will be the Firebase Storage URL).').max(1024, 'Resume URL too long.').optional().nullable(),
 });
@@ -73,7 +73,7 @@ export default function ProfilePage() {
       skills: null,
       experience: null,
       preferred_locations: null,
-      remote_preference: undefined, // Initialize as undefined for placeholder
+      remote_preference: undefined, 
       expected_salary: null,
       resume: null,
     }
@@ -90,7 +90,7 @@ export default function ProfilePage() {
   useEffect(() => {
     if (isLoggingOut) return;
     if (!isLoadingAuth) {
-      if (!currentUser && !firebaseUser) { // Check both for robust non-auth state
+      if (!currentUser && !firebaseUser) { 
         toast({ title: "Not Authenticated", description: "Please log in to view your profile.", variant: "destructive" });
         router.push('/auth');
       }
@@ -100,13 +100,20 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (currentUser) {
-      const currentRP = currentUser.remote_preference;
-      let formRPValue: RemotePreferenceAPI | undefined = undefined; // Default to undefined
-      if (currentRP && remotePreferenceOptions.includes(currentRP as RemotePreferenceAPI)) {
-        formRPValue = currentRP as RemotePreferenceAPI;
-      }
-      // If currentRP is null or an invalid string, formRPValue remains undefined, allowing placeholder to show.
+      const currentRPFromDB = currentUser.remote_preference;
+      let formRPValue: RemotePreferenceAPI | undefined = undefined;
 
+      if (currentRPFromDB) {
+        const lowerCaseRP = currentRPFromDB.toLowerCase();
+        if (lowerCaseRP === "remote") {
+          formRPValue = "Remote";
+        } else if (lowerCaseRP === "hybrid") {
+          formRPValue = "Hybrid";
+        } else if (lowerCaseRP === "onsite") {
+          formRPValue = "Onsite";
+        }
+      }
+      
       reset({
         username: currentUser.username || firebaseUser?.displayName || '',
         email_id: currentUser.email_id || firebaseUser?.email || '',
@@ -116,13 +123,12 @@ export default function ProfilePage() {
         skills: currentUser.skills?.join(', ') || null,
         experience: currentUser.experience ?? null,
         preferred_locations: currentUser.preferred_locations?.join(', ') || null,
-        remote_preference: formRPValue, // Use undefined for "no selection" state
+        remote_preference: formRPValue,
         expected_salary: currentUser.expected_salary ?? null,
         resume: currentUser.resume || null, 
       });
       setCurrentResumeUrl(currentUser.resume || null);
     } else if (!isLoadingAuth && !isLoggingOut && firebaseUser) {
-      // If no currentUser (backend user) but Firebase user exists (e.g., new registration not yet in DB)
       reset({
         username: firebaseUser.displayName || '',
         email_id: firebaseUser.email || '',
@@ -143,7 +149,7 @@ export default function ProfilePage() {
   const handleResumeFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      if (file.size > 5 * 1024 * 1024) { // 5MB limit
+      if (file.size > 5 * 1024 * 1024) { 
         toast({ title: "File Too Large", description: "Resume file should be less than 5MB.", variant: "destructive" });
         event.target.value = ''; 
         return;
@@ -239,7 +245,7 @@ export default function ProfilePage() {
       skills: data.skills || undefined,
       experience: data.experience ?? undefined,
       preferred_locations: data.preferred_locations || undefined,
-      remote_preference: data.remote_preference, // Can be string or undefined
+      remote_preference: data.remote_preference, 
       professional_summary: data.professional_summary || undefined,
       expected_salary: data.expected_salary ?? undefined,
       resume: newResumeUrl, 
@@ -247,7 +253,7 @@ export default function ProfilePage() {
     
     const filteredUpdatePayload = Object.fromEntries(
         Object.entries(updatePayload).filter(([_, v]) => v !== undefined)
-    ) as Partial<UserUpdateAPI>; // Ensure only defined values are sent
+    ) as Partial<UserUpdateAPI>; 
 
     try {
       await apiClient.put(`/users/${backendUserId}`, filteredUpdatePayload);
@@ -431,7 +437,7 @@ export default function ProfilePage() {
                         type="file" 
                         onChange={handleResumeFileChange} 
                         accept=".pdf,.doc,.docx"
-                        className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
+                        className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 mb-2"
                         disabled={isUploadingResume || overallSubmitting}
                     />
                     {selectedResumeFile && !isUploadingResume && (
@@ -443,7 +449,6 @@ export default function ProfilePage() {
                             <p className="text-xs text-muted-foreground text-center mt-1">Uploading: {Math.round(uploadResumeProgress)}%</p>
                         </div>
                     )}
-                    {/* Display current resume with margin if it exists */}
                     {currentResumeUrl && !selectedResumeFile && !isUploadingResume && (
                         <div className="mt-3 flex items-center justify-between p-2 border rounded-md bg-muted/50">
                             <a href={currentResumeUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center truncate">
@@ -503,10 +508,10 @@ export default function ProfilePage() {
                     <Controller
                         name="remote_preference"
                         control={control}
-                        render={({ field }) => ( // field contains { onChange, onBlur, value, ref }
+                        render={({ field }) => ( 
                             <Select 
                                 onValueChange={field.onChange} 
-                                value={field.value ?? undefined} // Ensure undefined is passed for placeholder
+                                value={field.value ?? undefined} 
                                 disabled={overallSubmitting}
                             >
                                 <SelectTrigger className={`relative w-full justify-start pl-10 pr-3 ${errors.remote_preference ? 'border-destructive' : ''}`}>
