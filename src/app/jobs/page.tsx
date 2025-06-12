@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Compass, Info, FileWarning, ServerCrash, Search, ListChecks, Bot, DatabaseZap, Filter, XCircle } from 'lucide-react';
+import { Compass, Info, FileWarning, ServerCrash, Search, ListChecks, Bot, DatabaseZap, Filter, XCircle, Settings2, Briefcase, MapPin, Users, Wifi, ListFilter, CalendarDays } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -22,6 +22,8 @@ import type { AxiosError } from 'axios';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SimpleJobListItem } from '@/components/app/simple-job-list-item';
 import { PaginationControls } from '@/components/app/PaginationControls';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 // AI Flow Imports
 import { jobMatchExplanation, type JobMatchExplanationInput } from '@/ai/flows/job-match-explanation';
@@ -41,7 +43,10 @@ interface JobAnalysisCache {
 
 type ActiveJobTab = "generate" | "relevant" | "all";
 const JOBS_PER_PAGE = 9;
-const JOB_FETCH_LIMIT = 20; // Default limit for fetching jobs from external API
+const DEFAULT_JOB_FETCH_LIMIT = 10;
+const MAX_JOB_FETCH_LIMIT = 10; // User configurable max limit
+const DEFAULT_JOB_MAX_AGE_DAYS = 30;
+
 
 const isValidDbId = (idInput: any): idInput is number | string => {
   if (idInput === null || idInput === undefined) {
@@ -71,6 +76,16 @@ export default function JobExplorerPage() {
   const [errorGenerateJobs, setErrorGenerateJobs] = useState<string | null>(null);
   const [errorRelevantJobs, setErrorRelevantJobs] = useState<string | null>(null);
   const [errorAllJobs, setErrorAllJobs] = useState<string | null>(null);
+
+  // State for "Generate Jobs" tab filters
+  const [fetchJobTitlesInput, setFetchJobTitlesInput] = useState('');
+  const [fetchSkillsInput, setFetchSkillsInput] = useState('');
+  const [fetchLocationsInput, setFetchLocationsInput] = useState('');
+  const [fetchExperienceInput, setFetchExperienceInput] = useState<string>(''); // Stored as string for input field
+  const [fetchRemotePreferenceInput, setFetchRemotePreferenceInput] = useState<'any' | 'true' | 'false'>('any');
+  const [fetchLimitInput, setFetchLimitInput] = useState<string>(DEFAULT_JOB_FETCH_LIMIT.toString());
+  const [fetchMaxAgeDaysInput, setFetchMaxAgeDaysInput] = useState<string>(DEFAULT_JOB_MAX_AGE_DAYS.toString());
+
 
   const [filterTechnology, setFilterTechnology] = useState('');
   const [filterLocation, setFilterLocation] = useState('');
@@ -106,6 +121,24 @@ export default function JobExplorerPage() {
 
   const [isCacheReadyForAnalysis, setIsCacheReadyForAnalysis] = useState(false);
   const [jobPendingAnalysis, setJobPendingAnalysis] = useState<JobListing | null>(null);
+
+  // Pre-populate fetch filters from currentUser
+  useEffect(() => {
+    if (currentUser) {
+      setFetchJobTitlesInput(currentUser.job_role || '');
+      setFetchSkillsInput(currentUser.skills?.join(', ') || '');
+      setFetchLocationsInput(currentUser.preferred_locations?.join(', ') || '');
+      setFetchExperienceInput(currentUser.experience?.toString() || '');
+      
+      let remotePref: 'any' | 'true' | 'false' = 'any';
+      if (currentUser.remote_preference === 'Remote') remotePref = 'true';
+      else if (currentUser.remote_preference === 'Onsite') remotePref = 'false';
+      else if (currentUser.remote_preference === 'Hybrid') remotePref = 'any'; // Hybrid could be considered 'any' for fetching, or you might need a 'hybrid' option if API supports
+      setFetchRemotePreferenceInput(remotePref);
+      
+      // Defaults for limit and max age are set in useState, no need to override from profile unless desired
+    }
+  }, [currentUser]);
 
 
   const mapBackendJobToFrontend = useCallback((backendJob: BackendJobListingResponseItem): JobListing => {
@@ -208,7 +241,6 @@ export default function JobExplorerPage() {
       const response = await apiClient.post<BackendJobListingResponseItem[]>('/jobs/relevant_jobs', cleanedPayload, { params: { skip, limit } });
       const mappedJobs = response.data.map(job => mapBackendJobToFrontend(job));
       setRelevantJobsList(mappedJobs);
-      // setRelevantJobsCurrentPage(page); // Page state updated by pagination controls
       setHasNextRelevantPage(mappedJobs.length === JOBS_PER_PAGE);
 
     } catch (error) {
@@ -234,7 +266,6 @@ export default function JobExplorerPage() {
       const response = await apiClient.get<BackendJobListingResponseItem[]>('/jobs/list_jobs/', { params: { skip, limit } });
       const mappedJobs = response.data.map(job => mapBackendJobToFrontend(job));
       setAllJobsList(mappedJobs);
-      // setAllJobsCurrentPage(page); // Page state updated by pagination controls
       setHasNextAllPage(mappedJobs.length === JOBS_PER_PAGE);
     } catch (error) {
       const message = error instanceof AxiosError && error.response?.data?.detail ? error.response.data.detail : "Could not load all jobs.";
@@ -268,7 +299,6 @@ export default function JobExplorerPage() {
       const response = await apiClient.get<BackendJobListingResponseItem[]>(finalEndpoint);
       const mappedJobs = response.data.map(job => mapBackendJobToFrontend(job));
       setAllJobsList(mappedJobs);
-      // setAllJobsCurrentPage(page); // Page state updated by pagination controls
       setHasNextAllPage(mappedJobs.length === JOBS_PER_PAGE);
 
       if (mappedJobs.length === 0 && (filterTechnology || filterLocation)) {
@@ -289,8 +319,6 @@ export default function JobExplorerPage() {
     setFilterTechnology('');
     setFilterLocation('');
     setAllJobsCurrentPage(1); 
-    // The main useEffect will now pick up the change in allJobsCurrentPage and filter states
-    // and call fetchAllJobs(1) because filters are now empty.
   }, []);
 
 
@@ -319,14 +347,6 @@ export default function JobExplorerPage() {
         console.log(`JobExplorer: Populated ${Object.keys(newAiCacheUpdates).length} AI analysis entries from currentUser.match_scores.`);
     } else {
         console.log("JobExplorer: currentUser.match_scores is NOT available or not an array. Historical AI scores cannot be populated from user object.");
-        // Toasting here might be too noisy if it's expected that not all users have scores.
-        // Consider if this toast is always necessary.
-        // toast({
-        //     title: "Historical AI Scores Not Loaded",
-        //     description: "Your profile data from the backend does not include historical match scores. New analyses will be performed as needed.",
-        //     variant: "default",
-        //     duration: 7000,
-        // });
     }
     
     try {
@@ -451,14 +471,23 @@ export default function JobExplorerPage() {
     setFetchedApiJobs([]);
     setLastFetchCount(null);
 
+    const limitNum = parseInt(fetchLimitInput, 10);
+    const currentFetchLimit = isNaN(limitNum) || limitNum <= 0 ? DEFAULT_JOB_FETCH_LIMIT : Math.min(limitNum, MAX_JOB_FETCH_LIMIT);
+    const currentMaxAgeDays = parseInt(fetchMaxAgeDaysInput, 10) || DEFAULT_JOB_MAX_AGE_DAYS;
+
+    let remoteValue: boolean | null = null;
+    if (fetchRemotePreferenceInput === 'true') remoteValue = true;
+    else if (fetchRemotePreferenceInput === 'false') remoteValue = false;
+
     const payload: UserProfileForJobFetching = {
-      job_titles: currentUser.job_role ? [currentUser.job_role] : [],
-      skills: currentUser.skills || [],
-      experience: currentUser.experience ?? 0,
-      locations: currentUser.preferred_locations || [],
-      countries: [],
-      remote: currentUser.remote_preference === "Remote" ? true : (currentUser.remote_preference === "Onsite" ? false : null),
-      limit: JOB_FETCH_LIMIT, // Pass the limit here
+      job_titles: fetchJobTitlesInput.split(',').map(s => s.trim()).filter(s => s),
+      skills: fetchSkillsInput.split(',').map(s => s.trim()).filter(s => s),
+      experience: fetchExperienceInput ? parseInt(fetchExperienceInput, 10) : null,
+      locations: fetchLocationsInput.split(',').map(s => s.trim()).filter(s => s),
+      countries: [], // Keep empty for now, or add UI if needed
+      remote: remoteValue,
+      limit: currentFetchLimit,
+      posted_at_max_age_days: currentMaxAgeDays,
     };
 
     const cleanedPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== undefined && v !== null && (Array.isArray(v) ? v.length > 0 : true)));
@@ -466,8 +495,8 @@ export default function JobExplorerPage() {
     if (!cleanedPayload.hasOwnProperty('skills')) cleanedPayload.skills = [];
     if (!cleanedPayload.hasOwnProperty('locations')) cleanedPayload.locations = [];
     if (!cleanedPayload.hasOwnProperty('countries')) cleanedPayload.countries = [];
-    if (!cleanedPayload.hasOwnProperty('limit')) cleanedPayload.limit = JOB_FETCH_LIMIT;
-
+    if (!cleanedPayload.hasOwnProperty('limit')) cleanedPayload.limit = DEFAULT_JOB_FETCH_LIMIT;
+    if (!cleanedPayload.hasOwnProperty('posted_at_max_age_days')) cleanedPayload.posted_at_max_age_days = DEFAULT_JOB_MAX_AGE_DAYS;
 
     try {
       const response = await apiClient.post<{ status: string; jobs_fetched: number; jobs: BackendJobListingResponseItem[] }>('/jobs/fetch_jobs', cleanedPayload);
@@ -477,7 +506,7 @@ export default function JobExplorerPage() {
         toast({ title: "Job Fetch Successful", description: `${response.data.jobs_fetched} job(s) were processed. See results below.` });
       } else {
         setFetchedApiJobs([]); 
-        toast({ title: "Job Fetch Complete", description: "No new jobs were found from the external API." });
+        toast({ title: "Job Fetch Complete", description: "No new jobs were found from the external API matching your criteria." });
       }
     } catch (error) {
       const message = error instanceof AxiosError && error.response?.data?.detail ? error.response.data.detail : "Failed to initiate job fetching from external API.";
@@ -524,7 +553,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
 
     try {
         const input: JobMatchExplanationInput = {
-            jobDescription: jobToAnalyze.description || '', // Backend now provides summarized description
+            jobDescription: jobToAnalyze.description || '',
             userProfile: currentUser.professional_summary || '',
             userPreferences: currentUser.job_role || '',
             userHistory: '', 
@@ -553,7 +582,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                     jobTitle: jobToAnalyze.job_title,
                     company: jobToAnalyze.company,
                     success: true,
-                    score: explanationResult.matchScore, // Include score in metadata
+                    score: explanationResult.matchScore,
                 }
             };
             try {
@@ -565,7 +594,6 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
             }
         }
         
-        // Log to local storage as well if needed for immediate UI, but backend is primary
         addLocalActivity({ 
             action_type: "AI_JOB_ANALYZED", 
             job_id: jobToAnalyze.id,
@@ -578,7 +606,6 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
             }
         });
 
-        // Save analysis to MatchScoreLog via /jobs/{id}/analyze
         if (currentUser.id && jobToAnalyze.id >= 0) { 
             const analyzePayload: AnalyzeJobPayload = {
                 user_id: currentUser.id,
@@ -838,42 +865,6 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
     }
   };
 
-  // const handleMarkAsApplied = async (job: JobListing) => {
-  //   if (!currentUser || !currentUser.id || typeof job.id !== 'number' || isNaN(job.id) || job.id < 0) {
-  //     toast({ title: "Error", description: "Cannot mark job as applied. User or job ID invalid.", variant: "destructive" });
-  //     return;
-  //   }
-
-  //   const formData = new FormData();
-  //   formData.append('user_id', currentUser.id.toString());
-  //   formData.append('job_id', job.id.toString());
-
-  //   try {
-  //     await apiClient.post(`/resumes/apply`, formData, {
-  //       headers: {
-  //         'Content-Type': 'multipart/form-data', 
-  //       },
-  //     });
-  //     toast({ title: "Application Logged", description: `Application for ${job.job_title} has been logged.` });
-  //     addLocalActivity({
-  //       action_type: "JOB_APPLIED",
-  //       job_id: job.id,
-  //       user_id: currentUser.id,
-  //       activity_metadata: { jobTitle: job.job_title, company: job.company }
-  //     });
-  //     if (!savedJobIds.has(job.id)) {
-  //       handleSaveJob(job); 
-  //     }
-  //   } catch (error) {
-  //     console.error("Error marking job as applied:", error);
-  //     const message = error instanceof AxiosError && error.response?.data?.detail 
-  //                      ? error.response.data.detail 
-  //                      : "Could not log application.";
-  //     toast({ title: "Logging Failed", description: message, variant: "destructive" });
-  //   }
-  // };
-
-
   const isProfileIncompleteForAIFeatures = currentUser && (!currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0);
 
   if (isLoggingOut) return <FullPageLoading message="Logging out..." />;
@@ -914,15 +905,63 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
         </TabsList>
 
         <TabsContent value="generate" className="space-y-6">
-          <div className="p-6 border rounded-lg bg-card shadow">
-            <h2 className="text-xl font-semibold mb-2 flex items-center"><DatabaseZap className="mr-2 h-5 w-5 text-primary"/>Fetch New Jobs via External API</h2>
-            <p className="text-muted-foreground mb-4">
-              Click the button below to fetch the latest job listings (up to {JOB_FETCH_LIMIT}) based on your profile from our external job provider. This process may take some time.
-            </p>
-            <Button onClick={handleGenerateJobs} disabled={isLoadingGenerateJobs} size="lg">
-              {isLoadingGenerateJobs ? <LoadingSpinner className="mr-2" /> : <Bot className="mr-2 h-5 w-5" />}
-              {isLoadingGenerateJobs ? 'Fetching Jobs...' : `Fetch New Jobs (Max ${JOB_FETCH_LIMIT})`}
-            </Button>
+            <Card className="p-6 border rounded-lg bg-card shadow">
+                <CardHeader className="p-0 mb-4">
+                    <CardTitle className="text-xl font-semibold flex items-center"><Settings2 className="mr-2 h-5 w-5 text-primary"/>Configure Job Fetch Parameters</CardTitle>
+                    <CardDescription>Adjust these criteria to refine the jobs fetched from the external API. Defaults are based on your profile.</CardDescription>
+                </CardHeader>
+                <CardContent className="p-0 space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <Label htmlFor="fetch-job-titles">Job Titles (comma-separated)</Label>
+                            <Input id="fetch-job-titles" placeholder="e.g., Software Engineer, Product Manager" value={fetchJobTitlesInput} onChange={(e) => setFetchJobTitlesInput(e.target.value)} className="mt-1" />
+                        </div>
+                        <div>
+                            <Label htmlFor="fetch-skills">Skills (comma-separated)</Label>
+                            <Input id="fetch-skills" placeholder="e.g., Python, React, Project Management" value={fetchSkillsInput} onChange={(e) => setFetchSkillsInput(e.target.value)} className="mt-1" />
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <Label htmlFor="fetch-locations">Locations (comma-separated)</Label>
+                            <Input id="fetch-locations" placeholder="e.g., New York, Remote, London" value={fetchLocationsInput} onChange={(e) => setFetchLocationsInput(e.target.value)} className="mt-1" />
+                        </div>
+                        <div>
+                            <Label htmlFor="fetch-experience">Years of Experience</Label>
+                            <Input id="fetch-experience" type="number" placeholder="e.g., 5" value={fetchExperienceInput} onChange={(e) => setFetchExperienceInput(e.target.value)} className="mt-1" />
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <Label htmlFor="fetch-remote">Remote Preference</Label>
+                            <Select value={fetchRemotePreferenceInput} onValueChange={(value) => setFetchRemotePreferenceInput(value as 'any' | 'true' | 'false')}>
+                                <SelectTrigger className="w-full mt-1">
+                                    <SelectValue placeholder="Select preference" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="any">Any</SelectItem>
+                                    <SelectItem value="true">Remote Only</SelectItem>
+                                    <SelectItem value="false">On-site/Hybrid</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div>
+                            <Label htmlFor="fetch-limit">Max Jobs to Fetch</Label>
+                            <Input id="fetch-limit" type="number" min="1" max={MAX_JOB_FETCH_LIMIT.toString()} placeholder={`1-${MAX_JOB_FETCH_LIMIT}`} value={fetchLimitInput} onChange={(e) => setFetchLimitInput(e.target.value)} className="mt-1" />
+                            <p className="text-xs text-muted-foreground mt-1">Max: {MAX_JOB_FETCH_LIMIT}</p>
+                        </div>
+                        <div>
+                            <Label htmlFor="fetch-max-age">Max Job Posting Age (Days)</Label>
+                            <Input id="fetch-max-age" type="number" min="1" placeholder="e.g., 30" value={fetchMaxAgeDaysInput} onChange={(e) => setFetchMaxAgeDaysInput(e.target.value)} className="mt-1" />
+                        </div>
+                    </div>
+                     <Button onClick={handleGenerateJobs} disabled={isLoadingGenerateJobs} size="lg" className="w-full md:w-auto mt-4">
+                        {isLoadingGenerateJobs ? <LoadingSpinner className="mr-2" /> : <DatabaseZap className="mr-2 h-5 w-5" />}
+                        {isLoadingGenerateJobs ? 'Fetching Jobs...' : `Fetch Up to ${Math.min(Number(fetchLimitInput) || DEFAULT_JOB_FETCH_LIMIT, MAX_JOB_FETCH_LIMIT)} Jobs`}
+                    </Button>
+                </CardContent>
+            </Card>
+
             {errorGenerateJobs && (
               <Alert variant="destructive" className="mt-4">
                 <ServerCrash className="h-5 w-5" />
@@ -930,7 +969,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                 <AlertDescription>{errorGenerateJobs}</AlertDescription>
               </Alert>
             )}
-          </div>
+          
           {isLoadingGenerateJobs && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <LoadingSpinner size={40} />
@@ -940,7 +979,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
           {!isLoadingGenerateJobs && lastFetchCount !== null && (
             <div className="mt-6">
               <h3 className="text-lg font-semibold mb-3">
-                {lastFetchCount > 0 ? `${lastFetchCount} job(s) fetched from the API:` : (lastFetchCount === 0 ? "No new jobs found from the API." : "")}
+                {lastFetchCount > 0 ? `${lastFetchCount} job(s) fetched from the API:` : (lastFetchCount === 0 ? "No new jobs found from the API matching your criteria." : "")}
               </h3>
               {fetchedApiJobs.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -1105,7 +1144,6 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
         isOpen={isDetailsModalOpen}
         onClose={() => setIsDetailsModalOpen(false)}
         onGenerateMaterials={openMaterialsModal}
-        // onMarkAsApplied={handleMarkAsApplied} // Commented out
         isLoadingExplanation={isLoadingExplanation}
       />
       <ApplicationMaterialsModal

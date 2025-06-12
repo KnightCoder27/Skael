@@ -98,6 +98,7 @@ export interface UserProfileForJobFetching { // For POST /jobs/fetch_jobs
   countries?: string[]; // e.g., ["IN", "US"]
   remote?: boolean | null; // null for any, true for remote, false for not remote
   limit?: number; // Number of jobs to fetch
+  posted_at_max_age_days?: number; // Max age of job postings in days
 }
 
 // UserProfileForRelevantJobs now mirrors UserProfileForJobFetching as per clarification
