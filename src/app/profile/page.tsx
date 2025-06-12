@@ -53,7 +53,7 @@ const profileSchema = z.object({
 type ProfileFormValues = z.infer<typeof profileSchema>;
 
 export default function ProfilePage() {
-  const { currentUser, firebaseUser, isLoadingAuth, backendUserId, setBackendUser, refetchBackendUser, isLoggingOut } = useAuth();
+  const { currentUser, firebaseUser, isLoadingAuth, backendUserId, setBackendUser, refetchBackendUser, isLoggingOut, setIsLoggingOut } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
 
@@ -61,6 +61,7 @@ export default function ProfilePage() {
   const [isUploadingResume, setIsUploadingResume] = useState(false);
   const [uploadResumeProgress, setUploadResumeProgress] = useState<number | null>(null);
   const [currentResumeUrl, setCurrentResumeUrl] = useState<string | null>(null);
+  const [hasPopulatedFromCurrentUser, setHasPopulatedFromCurrentUser] = useState(false);
 
 
   const form = useForm<ProfileFormValues>({
@@ -79,7 +80,7 @@ export default function ProfilePage() {
       resume: null,
     }
   });
-  const { register, handleSubmit, formState: { errors, isSubmitting: isFormSubmitting }, reset, control, setValue, watch } = form;
+  const { register, handleSubmit, formState: { errors, isSubmitting: isFormSubmitting }, reset, control, setValue, watch, getValues } = form;
 
   const watchedResumeUrl = watch("resume");
 
@@ -89,40 +90,33 @@ export default function ProfilePage() {
 
 
   useEffect(() => {
-    if (isLoggingOut) return;
-    if (!isLoadingAuth) {
-      if (!currentUser && !firebaseUser) { 
+    if (isLoggingOut) return; // Defer to logout process
+    if (!isLoadingAuth && !currentUser && !firebaseUser) { 
         toast({ title: "Not Authenticated", description: "Please log in to view your profile.", variant: "destructive" });
         router.push('/auth');
-      }
     }
   }, [isLoadingAuth, currentUser, firebaseUser, router, toast, isLoggingOut]);
 
 
   useEffect(() => {
-    if (isLoadingAuth || isLoggingOut) {
-      return; 
+    if (isLoadingAuth) return; 
+
+    if (isLoggingOut) {
+        setHasPopulatedFromCurrentUser(false);
+        return;
     }
 
     let formValuesToReset: Partial<ProfileFormValues> = {
-      username: '',
-      email_id: '',
-      phone_number: null,
-      professional_summary: null,
-      job_role: null,
-      skills: null,
-      experience: null,
-      preferred_locations: null,
-      remote_preference: undefined,
-      expected_salary: null,
-      resume: null,
+      username: '', email_id: '', phone_number: null, professional_summary: null, job_role: null,
+      skills: null, experience: null, preferred_locations: null, remote_preference: undefined,
+      expected_salary: null, resume: null,
     };
     let newResumeUrlToSet: string | null = null;
 
     if (currentUser && currentUser.id) {
-      const currentRPFromDBRaw: string | null | undefined = currentUser.remote_preference;
-      console.log(`[PROFILE_DEBUG] Effect run for currentUser ID: ${currentUser.id}. Raw remote_preference from DB for this run: "${currentRPFromDBRaw}"`);
+      console.log(`[PROFILE_DEBUG] Effect run for currentUser ID: ${currentUser.id}. Raw remote_preference from DB for this run: "${currentUser.remote_preference}"`);
       
+      const currentRPFromDBRaw: string | null | undefined = currentUser.remote_preference;
       let formRPValue: RemotePreferenceAPI | undefined = undefined;
 
       if (typeof currentRPFromDBRaw === 'string' && currentRPFromDBRaw.trim() !== '') {
@@ -132,10 +126,10 @@ export default function ProfilePage() {
           case "remote": formRPValue = "Remote"; break;
           case "hybrid": formRPValue = "Hybrid"; break;
           case "onsite": formRPValue = "Onsite"; break;
-          default: console.warn(`[PROFILE_DEBUG] Unexpected remote_preference value from DB: ${currentRPFromDBRaw} for currentUser ID: ${currentUser.id}`); break;
+          default: console.warn(`[PROFILE_DEBUG] Unexpected remote_preference value from DB: ${currentRPFromDBRaw} for currentUser ID: ${currentUser.id}. Will use placeholder.`); break;
         }
       } else if (currentRPFromDBRaw !== null && currentRPFromDBRaw !== undefined) {
-          console.warn(`[PROFILE_DEBUG] remote_preference from DB is not a non-empty string or is null/undefined. Value: "${currentRPFromDBRaw}" for currentUser ID: ${currentUser.id}`);
+          console.warn(`[PROFILE_DEBUG] remote_preference from DB is not a non-empty string or is null/undefined. Value: "${currentRPFromDBRaw}" for currentUser ID: ${currentUser.id}. Will use placeholder.`);
       }
       console.log(`[PROFILE_DEBUG] Final formRPValue for this reset call (currentUser ID: ${currentUser.id}): "${formRPValue}"`);
       
@@ -153,27 +147,30 @@ export default function ProfilePage() {
         resume: currentUser.resume || null, 
       };
       newResumeUrlToSet = currentUser.resume || null;
+      setHasPopulatedFromCurrentUser(true);
 
-    } else if (firebaseUser) { // No backend currentUser, but have Firebase user (e.g., new registration)
-      console.log("[PROFILE_DEBUG] Resetting form based on firebaseUser only.");
+    } else if (firebaseUser && !currentUser && !hasPopulatedFromCurrentUser) { 
+      console.log("[PROFILE_DEBUG] Resetting form based on firebaseUser only (profile not yet fully loaded or new user).");
       formValuesToReset = {
         username: firebaseUser.displayName || '',
         email_id: firebaseUser.email || '',
-        // ... other fields reset to empty/null/undefined
         remote_preference: undefined,
       };
       newResumeUrlToSet = null;
-    } else {
-      console.log("[PROFILE_DEBUG] No user data. Resetting form to initial defaults.");
-      // formValuesToReset remains the initial empty structure
-      newResumeUrlToSet = null;
+    } else if (!firebaseUser && !currentUser) {
+       console.log("[PROFILE_DEBUG] No user data. Resetting form to initial defaults. hasPopulatedFromCurrentUser set to false.");
+       setHasPopulatedFromCurrentUser(false);
     }
     
-    console.log("[PROFILE_DEBUG] Calling reset with values:", formValuesToReset);
-    reset(formValuesToReset);
-    setCurrentResumeUrl(newResumeUrlToSet);
+    if(Object.keys(formValuesToReset).length > 0 || newResumeUrlToSet !== currentResumeUrl) {
+        console.log("[PROFILE_DEBUG] Calling reset with values:", formValuesToReset);
+        reset(formValuesToReset);
+        setCurrentResumeUrl(newResumeUrlToSet);
+    }
 
-  }, [currentUser, firebaseUser, reset, isLoadingAuth, isLoggingOut]);
+  // Key dependencies: currentUser reference, firebaseUser reference, isLoadingAuth, isLoggingOut, hasPopulatedFromCurrentUser
+  // reset is stable from react-hook-form
+  }, [currentUser, firebaseUser, reset, isLoadingAuth, isLoggingOut, hasPopulatedFromCurrentUser, currentResumeUrl]);
 
 
   const handleResumeFileChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -315,6 +312,7 @@ export default function ProfilePage() {
       toast({ title: "Error", description: "User session not found. Cannot delete account.", variant: "destructive" });
       return;
     }
+    setIsLoggingOut(true); // Indicate a critical operation is in progress
     try {
       if (currentUser?.resume) {
         try {
@@ -327,13 +325,14 @@ export default function ProfilePage() {
       }
       await apiClient.delete(`/users/${backendUserId}`);
       await deleteFirebaseUser(firebaseUser);
-      setBackendUser(null); 
+      // AuthContext will handle clearing firebaseUser and currentUser via onAuthStateChanged
+      // No need to call setBackendUser(null) directly here as it's handled by AuthContext's logout flow
       toast({
         title: "Account Deleted",
         description: "Your account has been permanently deleted.",
         variant: "destructive",
       });
-      router.push('/auth'); 
+      // router.push('/auth'); // AuthContext will trigger redirect via its useEffect on firebaseUser becoming null
     } catch (error) {
       console.error("Error deleting account:", error);
       let errorMessage = "Could not delete account. Please try again.";
@@ -343,6 +342,7 @@ export default function ProfilePage() {
         errorMessage = "Failed to delete Firebase account. You might need to re-authenticate.";
       }
       toast({ title: "Deletion Failed", description: errorMessage, variant: "destructive" });
+      setIsLoggingOut(false); // Reset if deletion failed
     }
   };
 
@@ -467,14 +467,15 @@ export default function ProfilePage() {
                         type="file" 
                         onChange={handleResumeFileChange} 
                         accept=".pdf,.doc,.docx"
-                        className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 mb-1"
+                        className="mb-1 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
                         disabled={isUploadingResume || overallSubmitting}
                     />
+                    <p className="text-xs text-muted-foreground mt-1">Optional. PDF or Word doc, max 5MB.</p>
                     {selectedResumeFile && !isUploadingResume && (
                         <p className="text-xs text-muted-foreground mt-1">Selected: {selectedResumeFile.name}. Ready to upload on save.</p>
                     )}
                     {currentResumeUrl && !selectedResumeFile && !isUploadingResume && (
-                        <div className="mt-3 mb-2 flex items-center justify-between p-2 border rounded-md bg-muted/50">
+                        <div className="mt-2 flex items-center justify-between p-2 border rounded-md bg-muted/50">
                             <a href={currentResumeUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center truncate">
                                 <Paperclip className="w-4 h-4 mr-2 shrink-0" />
                                 <span className="truncate">{currentResumeUrl.split('/').pop()?.split('?')[0].substring(currentResumeUrl.lastIndexOf('_') + 1) || "View Current Resume"}</span>
@@ -491,7 +492,6 @@ export default function ProfilePage() {
                             <p className="text-xs text-muted-foreground text-center mt-1">Uploading: {Math.round(uploadResumeProgress)}%</p>
                         </div>
                     )}
-                    <p className="text-xs text-muted-foreground mt-1">Optional. PDF or Word doc, max 5MB.</p>
                     {errors.resume && <p className="text-sm text-destructive">{errors.resume.message}</p>}
                     <input type="hidden" {...register('resume')} /> 
                 </div>
@@ -539,7 +539,7 @@ export default function ProfilePage() {
                         name="remote_preference"
                         control={control}
                         render={({ field }) => {
-                            console.log("[PROFILE_DEBUG] Controller field.value for remote_preference:", field.value);
+                            console.log("[PROFILE_DEBUG] Controller field.value for remote_preference:", field.value); 
                             return (
                                 <Select 
                                     onValueChange={field.onChange} 
