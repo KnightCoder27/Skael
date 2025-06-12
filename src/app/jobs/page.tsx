@@ -11,8 +11,10 @@ import { JobDetailsModal } from '@/components/app/job-details-modal';
 import { ApplicationMaterialsModal } from '@/components/app/application-materials-modal';
 import { FullPageLoading, LoadingSpinner } from '@/components/app/loading-spinner';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Compass, Info, FileWarning, ServerCrash, Search, ListChecks, Bot, DatabaseZap } from 'lucide-react';
+import { Compass, Info, FileWarning, ServerCrash, Search, ListChecks, Bot, DatabaseZap, Filter, XCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -66,6 +68,11 @@ export default function JobExplorerPage() {
   const [errorGenerateJobs, setErrorGenerateJobs] = useState<string | null>(null);
   const [errorRelevantJobs, setErrorRelevantJobs] = useState<string | null>(null);
   const [errorAllJobs, setErrorAllJobs] = useState<string | null>(null);
+
+  // For direct filtering on "All Jobs" tab
+  const [filterTechnology, setFilterTechnology] = useState('');
+  const [filterLocation, setFilterLocation] = useState('');
+
 
   const [jobAnalysisCache, setJobAnalysisCache] = useLocalStorage<JobAnalysisCache>('job-ai-analysis-cache', {});
   const jobAnalysisCacheRef = useRef(jobAnalysisCache);
@@ -218,6 +225,41 @@ export default function JobExplorerPage() {
     }
   }, [toast, mapBackendJobToFrontend]);
 
+
+  const handleApplyFilters = async () => {
+    setIsLoadingAllJobs(true);
+    setErrorAllJobs(null);
+    try {
+      const params = new URLSearchParams();
+      if (filterTechnology) params.append('technology', filterTechnology);
+      if (filterLocation) params.append('location', filterLocation);
+      
+      const endpoint = params.toString() ? `/jobs/?${params.toString()}` : '/jobs/list_jobs/';
+      
+      const response = await apiClient.get<BackendJobListingResponseItem[]>(endpoint);
+      const mappedJobs = response.data.map(job => mapBackendJobToFrontend(job));
+      setAllJobsList(mappedJobs);
+      if (mappedJobs.length === 0 && (filterTechnology || filterLocation)) {
+        toast({ title: "No Jobs Found", description: "No jobs matched your filter criteria." });
+      } else if (filterTechnology || filterLocation) {
+         toast({ title: "Filters Applied", description: `Showing jobs matching your criteria.` });
+      }
+    } catch (error) {
+      const message = error instanceof AxiosError && error.response?.data?.detail ? error.response.data.detail : "Could not load filtered jobs.";
+      setErrorAllJobs(message);
+      toast({ title: "Failed to Load Filtered Jobs", description: message, variant: "destructive" });
+    } finally {
+      setIsLoadingAllJobs(false);
+    }
+  };
+
+  const handleClearFilters = () => {
+    setFilterTechnology('');
+    setFilterLocation('');
+    fetchAllJobs(); // Reload all jobs
+  };
+
+
  const populateCacheAndSavedJobIds = useCallback(async () => {
     if (!currentUser || !currentUser.id) {
       console.log("JobExplorer: populateCacheAndSavedJobIds - No current user or user ID.");
@@ -228,8 +270,31 @@ export default function JobExplorerPage() {
     setIsCacheReadyForAnalysis(false);
     
     let generalActivitiesError = null;
+    const newAiCacheUpdatesFromProfile: JobAnalysisCache = {};
 
-    // 1. Fetch general activities for saved job IDs
+    // 1. Populate AI cache from currentUser.match_scores (if backend provides it)
+    console.log("JobExplorer: Checking currentUser.match_scores:", currentUser?.match_scores);
+    if (currentUser.match_scores && Array.isArray(currentUser.match_scores)) {
+        currentUser.match_scores.forEach(scoreLog => {
+            if (scoreLog.job_id != null && scoreLog.score != null && scoreLog.explanation != null) {
+                newAiCacheUpdatesFromProfile[scoreLog.job_id] = {
+                    matchScore: scoreLog.score,
+                    matchExplanation: scoreLog.explanation,
+                };
+            }
+        });
+        console.log(`JobExplorer: Populated ${Object.keys(newAiCacheUpdatesFromProfile).length} AI analysis entries from currentUser.match_scores.`);
+    } else {
+        console.log("JobExplorer: currentUser.match_scores is NOT available or not an array. Historical AI scores cannot be populated from user object.");
+        toast({
+            title: "Historical AI Scores Not Loaded",
+            description: "Your profile data from the backend does not include historical match scores. New analyses will be performed as needed.",
+            variant: "default",
+            duration: 10000,
+        });
+    }
+    
+    // 2. Fetch general activities for saved job IDs
     try {
       const response = await apiClient.get<UserActivityOut[]>(`/activity/user/${currentUser.id}`);
       const activities = response.data;
@@ -267,45 +332,24 @@ export default function JobExplorerPage() {
       generalActivitiesError = error;
     }
 
-    // 2. Populate jobAnalysisCache from currentUser.match_scores (if backend provides it)
-    const newAiCacheUpdatesFromUser: JobAnalysisCache = {};
-    if (currentUser.match_scores && Array.isArray(currentUser.match_scores)) {
-      console.log("JobExplorer: Found currentUser.match_scores, attempting to populate cache.", currentUser.match_scores.length);
-      currentUser.match_scores.forEach(scoreLog => {
-        if (scoreLog.job_id != null && scoreLog.score != null && scoreLog.explanation != null) {
-          newAiCacheUpdatesFromUser[scoreLog.job_id] = {
-            matchScore: scoreLog.score,
-            matchExplanation: scoreLog.explanation,
-          };
-        }
-      });
-    } else {
-        console.log("JobExplorer: currentUser.match_scores is not available or not an array. Historical AI scores cannot be populated from user object.");
-        toast({
-            title: "Historical AI Scores Not Loaded",
-            description: "Your profile data from the backend does not include historical match scores. Ensure GET /users/{id} provides this.",
-            variant: "default", // Not destructive, as new analyses will still work
-            duration: 10000,
-        });
-    }
-
-    if (Object.keys(newAiCacheUpdatesFromUser).length > 0) {
+    // Merge AI cache from profile with existing cache
+    if (Object.keys(newAiCacheUpdatesFromProfile).length > 0) {
         setJobAnalysisCache(prevCache => {
-          const changed = Object.keys(newAiCacheUpdatesFromUser).some(
-            key => newAiCacheUpdatesFromUser[Number(key)]?.matchScore !== prevCache[Number(key)]?.matchScore ||
-                   newAiCacheUpdatesFromUser[Number(key)]?.matchExplanation !== prevCache[Number(key)]?.matchExplanation
+          const changed = Object.keys(newAiCacheUpdatesFromProfile).some(
+            key => newAiCacheUpdatesFromProfile[Number(key)]?.matchScore !== prevCache[Number(key)]?.matchScore ||
+                   newAiCacheUpdatesFromProfile[Number(key)]?.matchExplanation !== prevCache[Number(key)]?.matchExplanation
           );
           if (changed) {
-            console.log("JobExplorer: AI Analysis cache updated from currentUser.match_scores:", newAiCacheUpdatesFromUser);
-            return { ...prevCache, ...newAiCacheUpdatesFromUser };
+            console.log("JobExplorer: AI Analysis cache updated from currentUser.match_scores.");
+            return { ...prevCache, ...newAiCacheUpdatesFromProfile };
           }
           return prevCache;
         });
 
-        const updateJobItemsInList = (list: JobListing[]): JobListing[] => {
+        const updateJobItemsInList = (list: JobListing[], sourceCache: JobAnalysisCache): JobListing[] => {
           let listChanged = false;
           const newList = list.map(job => {
-            const newlyCachedScoreData = newAiCacheUpdatesFromUser[job.id];
+            const newlyCachedScoreData = sourceCache[job.id];
             if (newlyCachedScoreData && (job.matchScore !== newlyCachedScoreData.matchScore || job.matchExplanation !== newlyCachedScoreData.matchExplanation)) {
               listChanged = true;
               return { ...job, matchScore: newlyCachedScoreData.matchScore, matchExplanation: newlyCachedScoreData.matchExplanation };
@@ -315,9 +359,9 @@ export default function JobExplorerPage() {
           if(listChanged) console.log("JobExplorer: Job list updated with new AI scores from currentUser.match_scores.");
           return listChanged ? newList : list;
         };
-        setRelevantJobsList(prev => updateJobItemsInList(prev));
-        setAllJobsList(prev => updateJobItemsInList(prev));
-        setFetchedApiJobs(prev => updateJobItemsInList(prev));
+        setRelevantJobsList(prev => updateJobItemsInList(prev, newAiCacheUpdatesFromProfile));
+        setAllJobsList(prev => updateJobItemsInList(prev, newAiCacheUpdatesFromProfile));
+        setFetchedApiJobs(prev => updateJobItemsInList(prev, newAiCacheUpdatesFromProfile));
       }
     
     if (generalActivitiesError) {
@@ -338,10 +382,12 @@ export default function JobExplorerPage() {
   }, [currentUser, isLoggingOut, isLoadingAuth, populateCacheAndSavedJobIds]); 
 
   useEffect(() => {
-    if (currentUser && !isLoggingOut && isCacheReadyForAnalysis) { // Ensure cache is ready before fetching jobs that might depend on it
+    if (currentUser && !isLoggingOut && isCacheReadyForAnalysis) { 
       if (activeTab === "relevant") fetchRelevantJobs();
-      else if (activeTab === "all") fetchAllJobs();
+      else if (activeTab === "all" && !filterTechnology && !filterLocation) fetchAllJobs(); // Only fetch all if no filters active
+      else if (activeTab === "all" && (filterTechnology || filterLocation)) handleApplyFilters(); // Apply filters if tab is active
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, currentUser, isLoggingOut, fetchRelevantJobs, fetchAllJobs, isCacheReadyForAnalysis]);
 
 
@@ -421,7 +467,6 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
         return;
     }
 
-    // Ensure loading is true here, as performAiAnalysis can be called directly or after cache check
     if (!isLoadingExplanation) setIsLoadingExplanation(true); 
 
     try {
@@ -429,7 +474,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
             jobDescription: jobToAnalyze.description || '',
             userProfile: currentUser.professional_summary || '',
             userPreferences: currentUser.job_role || '',
-            userHistory: '', // Let the tool fetch if needed, or pass a summary if available
+            userHistory: '', 
         };
         const explanationResult = await jobMatchExplanation(input);
 
@@ -441,24 +486,22 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
         setFetchedApiJobs(updateJobInList);
         setSelectedJobForDetails(prevJob => prevJob && prevJob.id === jobToAnalyze.id ? { ...prevJob, ...explanationResult } : prevJob);
         
-        if (jobToAnalyze.id >= 0) { // Only cache jobs with valid (non-temporary) IDs
+        if (jobToAnalyze.id >= 0) { 
           setJobAnalysisCache(prevCache => ({ ...prevCache, [jobToAnalyze.id as number]: explanationResult }));
         }
 
         addLocalActivity({
-            action_type: "AI_JOB_ANALYZED", // General analysis event type
+            action_type: "AI_JOB_ANALYZED",
             job_id: jobToAnalyze.id,
             user_id: currentUser.id,
             activity_metadata: { 
                 jobTitle: jobToAnalyze.job_title,
                 company: jobToAnalyze.company,
                 success: true,
-                // No need to duplicate score/explanation here, it's in MatchScoreLog
             }
         });
 
-        // Log to backend's MatchScoreLog (or similar) via /jobs/{id}/analyze
-        if (currentUser.id && jobToAnalyze.id >= 0) { // Check for valid job ID
+        if (currentUser.id && jobToAnalyze.id >= 0) { 
             const analyzePayload: AnalyzeJobPayload = {
                 user_id: currentUser.id,
                 job_id: jobToAnalyze.id,
@@ -865,16 +908,51 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
         </TabsContent>
 
         <TabsContent value="all" className="space-y-6">
+          <div className="p-4 border rounded-lg bg-card shadow-sm mb-6">
+            <h3 className="text-lg font-semibold mb-3 flex items-center"><Filter className="mr-2 h-5 w-5 text-primary" />Filter All Jobs</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="filter-tech" className="text-sm font-medium">Technology</Label>
+                <Input 
+                  id="filter-tech"
+                  placeholder="e.g., Python, React" 
+                  value={filterTechnology}
+                  onChange={(e) => setFilterTechnology(e.target.value)} 
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="filter-loc" className="text-sm font-medium">Location</Label>
+                <Input 
+                  id="filter-loc"
+                  placeholder="e.g., New York, Remote" 
+                  value={filterLocation}
+                  onChange={(e) => setFilterLocation(e.target.value)}
+                  className="mt-1"
+                />
+              </div>
+            </div>
+            <div className="mt-4 flex gap-2">
+              <Button onClick={handleApplyFilters} disabled={isLoadingAllJobs}>
+                {isLoadingAllJobs && (filterTechnology || filterLocation) ? <LoadingSpinner className="mr-2" /> : <Search className="mr-2 h-4 w-4" />}
+                Apply Filters
+              </Button>
+              <Button variant="outline" onClick={handleClearFilters} disabled={isLoadingAllJobs || (!filterTechnology && !filterLocation)}>
+                <XCircle className="mr-2 h-4 w-4" /> Clear Filters
+              </Button>
+            </div>
+          </div>
+
           {isLoadingAllJobs && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <LoadingSpinner size={40} />
-              <p className="mt-3 text-lg text-muted-foreground">Loading all jobs...</p>
+              <p className="mt-3 text-lg text-muted-foreground">Loading jobs...</p>
             </div>
           )}
           {!isLoadingAllJobs && errorAllJobs && (
             <Alert variant="destructive" className="my-6">
               <ServerCrash className="h-5 w-5" />
-              <AlertTitle>Error Loading All Jobs</AlertTitle>
+              <AlertTitle>Error Loading Jobs</AlertTitle>
               <AlertDescription>{errorAllJobs}</AlertDescription>
             </Alert>
           )}
@@ -882,7 +960,9 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
             <div className="text-center py-12">
               <FileWarning className="mx-auto h-12 w-12 text-muted-foreground" />
               <h3 className="mt-2 text-xl font-semibold">No Jobs Found</h3>
-              <p className="mt-1 text-muted-foreground">No jobs were found in our database currently. Try generating jobs from the "Generate Jobs" tab.</p>
+              <p className="mt-1 text-muted-foreground">
+                {filterTechnology || filterLocation ? "No jobs match your current filters." : "No jobs were found in our database. Try generating jobs from the \"Generate Jobs\" tab."}
+              </p>
             </div>
           )}
           {!isLoadingAllJobs && !errorAllJobs && allJobsList.length > 0 && (
