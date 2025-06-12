@@ -97,6 +97,7 @@ export interface UserProfileForJobFetching { // For POST /jobs/fetch_jobs
   locations?: string[];
   countries?: string[]; // e.g., ["IN", "US"]
   remote?: boolean | null; // null for any, true for remote, false for not remote
+  limit?: number; // Number of jobs to fetch
 }
 
 // UserProfileForRelevantJobs now mirrors UserProfileForJobFetching as per clarification
@@ -302,7 +303,3 @@ export interface FeedbackIn {
   feedback: string;
   metadata?: { [key: string]: any };
 }
-
-    
-
-    

@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { JobListing, LocalUserActivity, ActivityType, UserProfileForJobFetching, UserProfileForRelevantJobs, Technology, SaveJobPayload, AnalyzeJobPayload, UserActivityOut, BackendJobListingResponseItem, BackendMatchScoreLogItem } from '@/types'; // Removed ApplyJobFormData
+import type { JobListing, LocalUserActivity, ActivityType, UserProfileForJobFetching, UserProfileForRelevantJobs, Technology, SaveJobPayload, AnalyzeJobPayload, UserActivityOut, BackendJobListingResponseItem, BackendMatchScoreLogItem, ActivityIn } from '@/types';
 import useLocalStorage from '@/hooks/use-local-storage';
 import { useAuth } from '@/contexts/AuthContext';
 import apiClient from '@/lib/apiClient';
@@ -41,6 +41,7 @@ interface JobAnalysisCache {
 
 type ActiveJobTab = "generate" | "relevant" | "all";
 const JOBS_PER_PAGE = 9;
+const JOB_FETCH_LIMIT = 20; // Default limit for fetching jobs from external API
 
 const isValidDbId = (idInput: any): idInput is number | string => {
   if (idInput === null || idInput === undefined) {
@@ -304,7 +305,6 @@ export default function JobExplorerPage() {
     
     const newAiCacheUpdates: JobAnalysisCache = {};
     let generalActivitiesError = null;
-    let matchScoresError = null;
 
     console.log("JobExplorer: Checking currentUser.match_scores:", currentUser?.match_scores);
     if (currentUser.match_scores && Array.isArray(currentUser.match_scores)) {
@@ -319,12 +319,14 @@ export default function JobExplorerPage() {
         console.log(`JobExplorer: Populated ${Object.keys(newAiCacheUpdates).length} AI analysis entries from currentUser.match_scores.`);
     } else {
         console.log("JobExplorer: currentUser.match_scores is NOT available or not an array. Historical AI scores cannot be populated from user object.");
-        toast({
-            title: "Historical AI Scores Not Loaded",
-            description: "Your profile data from the backend does not include historical match scores. New analyses will be performed as needed. This is expected if your backend GET /users/{id} doesn't include them yet.",
-            variant: "default",
-            duration: 7000,
-        });
+        // Toasting here might be too noisy if it's expected that not all users have scores.
+        // Consider if this toast is always necessary.
+        // toast({
+        //     title: "Historical AI Scores Not Loaded",
+        //     description: "Your profile data from the backend does not include historical match scores. New analyses will be performed as needed.",
+        //     variant: "default",
+        //     duration: 7000,
+        // });
     }
     
     try {
@@ -456,6 +458,7 @@ export default function JobExplorerPage() {
       locations: currentUser.preferred_locations || [],
       countries: [],
       remote: currentUser.remote_preference === "Remote" ? true : (currentUser.remote_preference === "Onsite" ? false : null),
+      limit: JOB_FETCH_LIMIT, // Pass the limit here
     };
 
     const cleanedPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== undefined && v !== null && (Array.isArray(v) ? v.length > 0 : true)));
@@ -463,6 +466,8 @@ export default function JobExplorerPage() {
     if (!cleanedPayload.hasOwnProperty('skills')) cleanedPayload.skills = [];
     if (!cleanedPayload.hasOwnProperty('locations')) cleanedPayload.locations = [];
     if (!cleanedPayload.hasOwnProperty('countries')) cleanedPayload.countries = [];
+    if (!cleanedPayload.hasOwnProperty('limit')) cleanedPayload.limit = JOB_FETCH_LIMIT;
+
 
     try {
       const response = await apiClient.post<{ status: string; jobs_fetched: number; jobs: BackendJobListingResponseItem[] }>('/jobs/fetch_jobs', cleanedPayload);
@@ -519,7 +524,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
 
     try {
         const input: JobMatchExplanationInput = {
-            jobDescription: jobToAnalyze.description || '',
+            jobDescription: jobToAnalyze.description || '', // Backend now provides summarized description
             userProfile: currentUser.professional_summary || '',
             userPreferences: currentUser.job_role || '',
             userHistory: '', 
@@ -538,7 +543,30 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
           setJobAnalysisCache(prevCache => ({ ...prevCache, [jobToAnalyze.id as number]: explanationResult }));
         }
 
-        addLocalActivity({ // Logs the event of analysis
+        // Log AI_JOB_ANALYZED activity to backend
+        if (currentUser.id && jobToAnalyze.id >= 0) {
+            const activityPayload: ActivityIn = {
+                user_id: currentUser.id,
+                job_id: jobToAnalyze.id,
+                action_type: "AI_JOB_ANALYZED",
+                metadata: {
+                    jobTitle: jobToAnalyze.job_title,
+                    company: jobToAnalyze.company,
+                    success: true,
+                    score: explanationResult.matchScore, // Include score in metadata
+                }
+            };
+            try {
+                await apiClient.post('/activity/log', activityPayload);
+                toast({ title: "AI Analysis Logged", description: "AI analysis event recorded on server.", variant: "default" });
+            } catch (logError) {
+                console.error("Error logging AI_JOB_ANALYZED activity to backend:", logError);
+                toast({ title: "Logging Failed", description: "Could not log AI analysis event to server.", variant: "destructive" });
+            }
+        }
+        
+        // Log to local storage as well if needed for immediate UI, but backend is primary
+        addLocalActivity({ 
             action_type: "AI_JOB_ANALYZED", 
             job_id: jobToAnalyze.id,
             user_id: currentUser.id,
@@ -546,9 +574,11 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                 jobTitle: jobToAnalyze.job_title,
                 company: jobToAnalyze.company,
                 success: true,
+                score: explanationResult.matchScore,
             }
         });
 
+        // Save analysis to MatchScoreLog via /jobs/{id}/analyze
         if (currentUser.id && jobToAnalyze.id >= 0) { 
             const analyzePayload: AnalyzeJobPayload = {
                 user_id: currentUser.id,
@@ -887,11 +917,11 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
           <div className="p-6 border rounded-lg bg-card shadow">
             <h2 className="text-xl font-semibold mb-2 flex items-center"><DatabaseZap className="mr-2 h-5 w-5 text-primary"/>Fetch New Jobs via External API</h2>
             <p className="text-muted-foreground mb-4">
-              Click the button below to fetch the latest job listings based on your profile from our external job provider. This process may take some time.
+              Click the button below to fetch the latest job listings (up to {JOB_FETCH_LIMIT}) based on your profile from our external job provider. This process may take some time.
             </p>
             <Button onClick={handleGenerateJobs} disabled={isLoadingGenerateJobs} size="lg">
               {isLoadingGenerateJobs ? <LoadingSpinner className="mr-2" /> : <Bot className="mr-2 h-5 w-5" />}
-              {isLoadingGenerateJobs ? 'Fetching Jobs...' : 'Fetch New Jobs'}
+              {isLoadingGenerateJobs ? 'Fetching Jobs...' : `Fetch New Jobs (Max ${JOB_FETCH_LIMIT})`}
             </Button>
             {errorGenerateJobs && (
               <Alert variant="destructive" className="mt-4">
@@ -1092,9 +1122,3 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
     </div>
   );
 }
-
-    
-
-    
-
-    
