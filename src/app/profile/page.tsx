@@ -44,7 +44,7 @@ const profileSchema = z.object({
   
   preferred_locations: z.string().max(255, 'Preferred Locations cannot exceed 255 characters (comma-separated).').optional().nullable(),
   
-  remote_preference: z.enum(remotePreferenceOptions).optional().nullable(),
+  remote_preference: z.enum(remotePreferenceOptions).optional().nullable(), // Nullable to allow clearing selection
   expected_salary: z.coerce.number().positive("Expected salary must be a positive number.").optional().nullable(),
   resume: z.string().url('Resume must be a valid URL (this will be the Firebase Storage URL).').max(1024, 'Resume URL too long.').optional().nullable(),
 });
@@ -65,7 +65,17 @@ export default function ProfilePage() {
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
-      resume: null, // Initialize resume as null
+      username: '',
+      email_id: '',
+      phone_number: null,
+      professional_summary: null,
+      job_role: null,
+      skills: null,
+      experience: null,
+      preferred_locations: null,
+      remote_preference: undefined, // Initialize as undefined for placeholder
+      expected_salary: null,
+      resume: null,
     }
   });
   const { register, handleSubmit, formState: { errors, isSubmitting: isFormSubmitting }, reset, control, setValue, watch } = form;
@@ -80,16 +90,23 @@ export default function ProfilePage() {
   useEffect(() => {
     if (isLoggingOut) return;
     if (!isLoadingAuth) {
-      if (!currentUser) {
+      if (!currentUser && !firebaseUser) { // Check both for robust non-auth state
         toast({ title: "Not Authenticated", description: "Please log in to view your profile.", variant: "destructive" });
         router.push('/auth');
       }
     }
-  }, [isLoadingAuth, currentUser, router, toast, isLoggingOut]);
+  }, [isLoadingAuth, currentUser, firebaseUser, router, toast, isLoggingOut]);
 
 
   useEffect(() => {
     if (currentUser) {
+      const currentRP = currentUser.remote_preference;
+      let formRPValue: RemotePreferenceAPI | undefined = undefined; // Default to undefined
+      if (currentRP && remotePreferenceOptions.includes(currentRP as RemotePreferenceAPI)) {
+        formRPValue = currentRP as RemotePreferenceAPI;
+      }
+      // If currentRP is null or an invalid string, formRPValue remains undefined, allowing placeholder to show.
+
       reset({
         username: currentUser.username || firebaseUser?.displayName || '',
         email_id: currentUser.email_id || firebaseUser?.email || '',
@@ -99,16 +116,27 @@ export default function ProfilePage() {
         skills: currentUser.skills?.join(', ') || null,
         experience: currentUser.experience ?? null,
         preferred_locations: currentUser.preferred_locations?.join(', ') || null,
-        remote_preference: currentUser.remote_preference as RemotePreferenceAPI || null,
+        remote_preference: formRPValue, // Use undefined for "no selection" state
         expected_salary: currentUser.expected_salary ?? null,
-        resume: currentUser.resume || null, // This will now be the Firebase Storage URL
+        resume: currentUser.resume || null, 
       });
       setCurrentResumeUrl(currentUser.resume || null);
     } else if (!isLoadingAuth && !isLoggingOut && firebaseUser) {
+      // If no currentUser (backend user) but Firebase user exists (e.g., new registration not yet in DB)
       reset({
         username: firebaseUser.displayName || '',
         email_id: firebaseUser.email || '',
+        phone_number: null,
+        professional_summary: null,
+        job_role: null,
+        skills: null,
+        experience: null,
+        preferred_locations: null,
+        remote_preference: undefined,
+        expected_salary: null,
+        resume: null,
       });
+      setCurrentResumeUrl(null);
     }
   }, [currentUser, firebaseUser, reset, isLoadingAuth, isLoggingOut]);
 
@@ -117,13 +145,13 @@ export default function ProfilePage() {
     if (file) {
       if (file.size > 5 * 1024 * 1024) { // 5MB limit
         toast({ title: "File Too Large", description: "Resume file should be less than 5MB.", variant: "destructive" });
-        event.target.value = ''; // Clear the input
+        event.target.value = ''; 
         return;
       }
       const allowedTypes = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
       if (!allowedTypes.includes(file.type)) {
         toast({ title: "Invalid File Type", description: "Please upload a PDF or Word document.", variant: "destructive" });
-        event.target.value = ''; // Clear the input
+        event.target.value = ''; 
         return;
       }
       setSelectedResumeFile(file);
@@ -135,18 +163,17 @@ export default function ProfilePage() {
   const handleRemoveResume = async () => {
     if (!currentResumeUrl || !firebaseUser) return;
 
-    setIsUploadingResume(true); // Use same state for "processing"
+    setIsUploadingResume(true); 
     try {
-      const fileRef = storageRef(storage, currentResumeUrl); // Firebase Storage URL can be directly used
+      const fileRef = storageRef(storage, currentResumeUrl); 
       await deleteObject(fileRef);
       
-      // Update backend by setting resume to null
       if (backendUserId) {
         await apiClient.put(`/users/${backendUserId}`, { resume: null });
-        setValue('resume', null); // Update form state
+        setValue('resume', null); 
         setCurrentResumeUrl(null);
         setSelectedResumeFile(null);
-        await refetchBackendUser(); // Refresh currentUser to reflect change
+        await refetchBackendUser(); 
         toast({ title: "Resume Removed", description: "Your resume has been removed." });
       }
     } catch (error) {
@@ -164,7 +191,7 @@ export default function ProfilePage() {
       return;
     }
     
-    let newResumeUrl = data.resume; // Start with the current resume URL from form (might be null)
+    let newResumeUrl: string | null | undefined = data.resume; 
 
     if (selectedResumeFile) {
       setIsUploadingResume(true);
@@ -185,10 +212,11 @@ export default function ProfilePage() {
               reject(error);
             },
             async () => {
-              newResumeUrl = await getDownloadURL(uploadTask.snapshot.ref);
-              setValue('resume', newResumeUrl); // Update form field with the new URL
-              setCurrentResumeUrl(newResumeUrl); // Update display state
-              setSelectedResumeFile(null); // Clear selected file after upload
+              const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+              newResumeUrl = downloadURL;
+              setValue('resume', newResumeUrl); 
+              setCurrentResumeUrl(newResumeUrl); 
+              setSelectedResumeFile(null); 
               resolve();
             }
           );
@@ -197,7 +225,7 @@ export default function ProfilePage() {
         toast({ title: "Resume Upload Failed", description: "Could not upload your resume. Please try again.", variant: "destructive" });
         setIsUploadingResume(false);
         setUploadResumeProgress(null);
-        return; // Stop submission if upload fails
+        return; 
       } finally {
         setIsUploadingResume(false);
         setUploadResumeProgress(null);
@@ -211,19 +239,19 @@ export default function ProfilePage() {
       skills: data.skills || undefined,
       experience: data.experience ?? undefined,
       preferred_locations: data.preferred_locations || undefined,
-      remote_preference: data.remote_preference || undefined,
+      remote_preference: data.remote_preference, // Can be string or undefined
       professional_summary: data.professional_summary || undefined,
       expected_salary: data.expected_salary ?? undefined,
-      resume: newResumeUrl, // This will be the new Firebase Storage URL or null
+      resume: newResumeUrl, 
     };
     
     const filteredUpdatePayload = Object.fromEntries(
         Object.entries(updatePayload).filter(([_, v]) => v !== undefined)
-    );
+    ) as Partial<UserUpdateAPI>; // Ensure only defined values are sent
 
     try {
       await apiClient.put(`/users/${backendUserId}`, filteredUpdatePayload);
-      await refetchBackendUser(); // This will update currentUser, which then updates the form
+      await refetchBackendUser(); 
       toast({
         title: 'Profile Updated',
         description: 'Your profile information has been saved successfully.',
@@ -252,14 +280,12 @@ export default function ProfilePage() {
       return;
     }
     try {
-      // Attempt to delete resume from Firebase Storage if it exists
       if (currentUser?.resume) {
         try {
             const oldResumeRef = storageRef(storage, currentUser.resume);
             await deleteObject(oldResumeRef);
             console.log("Old resume deleted from Firebase Storage during account deletion.");
         } catch (storageError) {
-            // Log error but continue with account deletion, as file might not exist or user might not have permission
             console.warn("Could not delete resume from storage during account deletion:", storageError);
         }
       }
@@ -298,7 +324,7 @@ export default function ProfilePage() {
     return <FullPageLoading message="Loading profile..." />;
   }
 
-  if (!currentUser && !isLoadingAuth && !isLoggingOut) {
+  if (!currentUser && !isLoadingAuth && !isLoggingOut && !firebaseUser) {
      return <FullPageLoading message="Verifying session..." />;
   }
   
@@ -408,15 +434,18 @@ export default function ProfilePage() {
                         className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
                         disabled={isUploadingResume || overallSubmitting}
                     />
-                     <input type="hidden" {...register('resume')} /> {/* Hidden input to hold the URL for react-hook-form */}
+                    {selectedResumeFile && !isUploadingResume && (
+                        <p className="text-xs text-muted-foreground mt-1">Selected: {selectedResumeFile.name}. Ready to upload on save.</p>
+                    )}
                     {isUploadingResume && uploadResumeProgress !== null && (
                         <div className="mt-2">
                             <Progress value={uploadResumeProgress} className="w-full h-2" />
                             <p className="text-xs text-muted-foreground text-center mt-1">Uploading: {Math.round(uploadResumeProgress)}%</p>
                         </div>
                     )}
+                    {/* Display current resume with margin if it exists */}
                     {currentResumeUrl && !selectedResumeFile && !isUploadingResume && (
-                        <div className="mt-2 flex items-center justify-between p-2 border rounded-md bg-muted/50">
+                        <div className="mt-3 flex items-center justify-between p-2 border rounded-md bg-muted/50">
                             <a href={currentResumeUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center truncate">
                                 <Paperclip className="w-4 h-4 mr-2 shrink-0" />
                                 <span className="truncate">{currentResumeUrl.split('/').pop()?.split('?')[0].substring(currentResumeUrl.lastIndexOf('_') + 1) || "View Current Resume"}</span>
@@ -427,11 +456,9 @@ export default function ProfilePage() {
                             </Button>
                         </div>
                     )}
-                    {selectedResumeFile && !isUploadingResume && (
-                        <p className="text-xs text-muted-foreground mt-1">Selected: {selectedResumeFile.name}. Ready to upload on save.</p>
-                    )}
-                    <p className="text-xs text-muted-foreground">Optional. PDF or Word doc, max 5MB.</p>
+                    <p className="text-xs text-muted-foreground mt-1">Optional. PDF or Word doc, max 5MB.</p>
                     {errors.resume && <p className="text-sm text-destructive">{errors.resume.message}</p>}
+                    <input type="hidden" {...register('resume')} /> 
                 </div>
             </div>
 
@@ -476,8 +503,12 @@ export default function ProfilePage() {
                     <Controller
                         name="remote_preference"
                         control={control}
-                        render={({ field }) => (
-                            <Select onValueChange={field.onChange} value={field.value ?? undefined} disabled={overallSubmitting}>
+                        render={({ field }) => ( // field contains { onChange, onBlur, value, ref }
+                            <Select 
+                                onValueChange={field.onChange} 
+                                value={field.value ?? undefined} // Ensure undefined is passed for placeholder
+                                disabled={overallSubmitting}
+                            >
                                 <SelectTrigger className={`relative w-full justify-start pl-10 pr-3 ${errors.remote_preference ? 'border-destructive' : ''}`}>
                                      <CloudSun className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                                     <SelectValue placeholder="Select preference" />
@@ -612,3 +643,4 @@ export default function ProfilePage() {
     </div>
   );
 }
+
