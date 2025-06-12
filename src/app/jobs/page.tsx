@@ -220,6 +220,11 @@ export default function JobExplorerPage() {
   }, [currentUser, toast, mapBackendJobToFrontend]);
 
   const fetchAllJobs = useCallback(async (page = 1) => {
+    if (!currentUser) {
+      setErrorAllJobs("Please log in to view all jobs.");
+      setAllJobsList([]);
+      return;
+    }
     setIsLoadingAllJobs(true);
     setErrorAllJobs(null);
     try {
@@ -237,10 +242,15 @@ export default function JobExplorerPage() {
     } finally {
       setIsLoadingAllJobs(false);
     }
-  }, [toast, mapBackendJobToFrontend]);
+  }, [currentUser, toast, mapBackendJobToFrontend]);
 
 
-  const handleApplyFilters = async (page = 1) => {
+  const handleApplyFilters = useCallback(async (page = 1) => {
+    if (!currentUser) {
+      setErrorAllJobs("Please log in to filter jobs.");
+      setAllJobsList([]);
+      return;
+    }
     setIsLoadingAllJobs(true);
     setErrorAllJobs(null);
     try {
@@ -252,12 +262,7 @@ export default function JobExplorerPage() {
       params.append('skip', skip.toString());
       params.append('limit', limit.toString());
       
-      const endpoint = (filterTechnology || filterLocation) ? `/jobs/?${params.toString()}` : '/jobs/list_jobs/';
-      if (!(filterTechnology || filterLocation)) { // If no filters, still use list_jobs with pagination
-          params.delete('technology'); // Ensure these are not accidentally sent to list_jobs
-          params.delete('location');
-      }
-      const finalEndpoint = (filterTechnology || filterLocation) ? `/jobs/?${params.toString()}` : `/jobs/list_jobs/?${params.toString()}`;
+      const finalEndpoint = `/jobs/?${params.toString()}`;
 
       const response = await apiClient.get<BackendJobListingResponseItem[]>(finalEndpoint);
       const mappedJobs = response.data.map(job => mapBackendJobToFrontend(job));
@@ -277,20 +282,23 @@ export default function JobExplorerPage() {
     } finally {
       setIsLoadingAllJobs(false);
     }
-  };
+  }, [currentUser, toast, mapBackendJobToFrontend, filterTechnology, filterLocation]);
 
-  const handleClearFilters = () => {
+  const handleClearFilters = useCallback(() => {
     setFilterTechnology('');
     setFilterLocation('');
-    setAllJobsCurrentPage(1);
-    fetchAllJobs(1);
-  };
+    setAllJobsCurrentPage(1); // Reset page to 1 for all jobs
+    // Fetch all jobs without filters (fetchAllJobs handles page 1 by default)
+    if (currentUser) {
+        fetchAllJobs(1);
+    }
+  }, [currentUser, fetchAllJobs]);
 
 
  const populateCacheAndSavedJobIds = useCallback(async () => {
     if (!currentUser || !currentUser.id) {
       console.log("JobExplorer: populateCache - No current user or user ID. Cache not populated from backend.");
-      setIsCacheReadyForAnalysis(true); // Still set to true, means "attempt to populate cache is done (or not needed)"
+      setIsCacheReadyForAnalysis(true); 
       return;
     }
     console.log("JobExplorer: Starting populateCacheAndSavedJobIds for user:", currentUser.id);
@@ -407,11 +415,30 @@ export default function JobExplorerPage() {
 
   useEffect(() => {
     if (currentUser && !isLoggingOut && isCacheReadyForAnalysis) { 
-      if (activeTab === "relevant") fetchRelevantJobs(relevantJobsCurrentPage);
-      else if (activeTab === "all" && !filterTechnology && !filterLocation) fetchAllJobs(allJobsCurrentPage);
-      else if (activeTab === "all" && (filterTechnology || filterLocation)) handleApplyFilters(allJobsCurrentPage);
+      if (activeTab === "relevant") {
+        fetchRelevantJobs(relevantJobsCurrentPage);
+      } else if (activeTab === "all") {
+        if (!filterTechnology && !filterLocation) {
+          fetchAllJobs(allJobsCurrentPage);
+        } else {
+          // When filters are active, apply them. Page state is handled by allJobsCurrentPage.
+          handleApplyFilters(allJobsCurrentPage);
+        }
+      }
     }
-  }, [activeTab, currentUser, isLoggingOut, fetchRelevantJobs, fetchAllJobs, handleApplyFilters, isCacheReadyForAnalysis, relevantJobsCurrentPage, allJobsCurrentPage, filterTechnology, filterLocation]);
+  }, [
+    activeTab, 
+    currentUser, 
+    isLoggingOut, 
+    isCacheReadyForAnalysis, 
+    relevantJobsCurrentPage, 
+    allJobsCurrentPage, 
+    filterTechnology, 
+    filterLocation,
+    fetchRelevantJobs, // These are stable callbacks
+    fetchAllJobs,       // These are stable callbacks
+    handleApplyFilters  // This is a stable callback
+  ]);
 
 
   const handleGenerateJobs = async () => {
@@ -482,7 +509,7 @@ export default function JobExplorerPage() {
 
 
 const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
-    console.log(`JobExplorer: performAiAnalysis called for job ${jobToAnalyze.id}. isLoadingExplanation: ${isLoadingExplanation}`);
+    console.log(`JobExplorer: performAiAnalysis called for job ${jobToAnalyze.id}.`);
     if (!currentUser || !currentUser.id || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0) {
         toast({ title: "Profile Incomplete", description: "AI analysis requires your professional summary and skills in your profile.", variant: "destructive" });
         setIsLoadingExplanation(false); 
@@ -490,7 +517,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
         return;
     }
 
-    if (!isLoadingExplanation) setIsLoadingExplanation(true); 
+    setIsLoadingExplanation(true); // Set loading true at the start of actual analysis
 
     try {
         const input: JobMatchExplanationInput = {
@@ -558,14 +585,14 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
         setJobPendingAnalysis(null); 
         console.log(`JobExplorer: performAiAnalysis finished for job ${jobToAnalyze.id}. isLoadingExplanation: false`);
     }
-  }, [currentUser, toast, setJobAnalysisCache, addLocalActivity, isLoadingExplanation]);
+  }, [currentUser, toast, setJobAnalysisCache, addLocalActivity]);
 
 
   const fetchJobDetailsWithAI = useCallback(async (job: JobListing) => {
     console.log(`JobExplorer: fetchJobDetailsWithAI called for job ${job.id}. isCacheReadyForAnalysis: ${isCacheReadyForAnalysis}`);
     setSelectedJobForDetails(job); 
     setIsDetailsModalOpen(true);
-    setIsLoadingExplanation(true); 
+    setIsLoadingExplanation(true); // Set loading true when modal opens
     setJobPendingAnalysis(null); 
 
     if (typeof job.id !== 'number' || isNaN(job.id) || job.id < 0) {
@@ -579,16 +606,16 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
     if (cachedData && cachedData.matchScore !== undefined && cachedData.matchExplanation !== undefined) {
       console.log(`JobExplorer: Using cached AI analysis for job ${job.id} from jobAnalysisCacheRef.`);
       setSelectedJobForDetails(prevJob => prevJob ? { ...prevJob, ...cachedData } : null);
-      setIsLoadingExplanation(false);
+      setIsLoadingExplanation(false); // Cache hit, stop loading
       return; 
     }
     
     if (isCacheReadyForAnalysis) {
         console.log(`JobExplorer: Cache is ready, proceeding to performAiAnalysis for job ${job.id} as it's not in cache.`);
-        await performAiAnalysis(job);
+        await performAiAnalysis(job); // This will set isLoadingExplanation to false in its finally block
     } else {
         console.log(`JobExplorer: Cache not ready. Setting job ${job.id} as pending analysis.`);
-        setJobPendingAnalysis(job);
+        setJobPendingAnalysis(job); // isLoadingExplanation remains true
     }
   }, [isCacheReadyForAnalysis, performAiAnalysis, toast]);
 
@@ -807,7 +834,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
     try {
       await apiClient.post(`/resumes/apply`, formData, {
         headers: {
-          'Content-Type': 'multipart/form-data', // Backend expects form data
+          'Content-Type': 'multipart/form-data', 
         },
       });
       toast({ title: "Application Logged", description: `Application for ${job.job_title} has been logged.` });
@@ -817,10 +844,8 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
         user_id: currentUser.id,
         activity_metadata: { jobTitle: job.job_title, company: job.company }
       });
-      // Optionally, trigger a refresh of the tracker page or related state
-      // For now, also ensure the job is considered "saved" if applied to
       if (!savedJobIds.has(job.id)) {
-        handleSaveJob(job); // This will ensure it appears in tracker if not already saved
+        handleSaveJob(job); 
       }
     } catch (error) {
       console.error("Error marking job as applied:", error);
@@ -968,7 +993,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
               </div>
               <PaginationControls
                 currentPage={relevantJobsCurrentPage}
-                onPageChange={(page) => fetchRelevantJobs(page)}
+                onPageChange={(page) => setRelevantJobsCurrentPage(page)}
                 canGoPrevious={relevantJobsCurrentPage > 1}
                 canGoNext={hasNextRelevantPage}
                 isLoading={isLoadingRelevantJobs}
@@ -1003,7 +1028,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
               </div>
             </div>
             <div className="mt-4 flex gap-2">
-              <Button onClick={() => handleApplyFilters(1)} disabled={isLoadingAllJobs}>
+              <Button onClick={() => setAllJobsCurrentPage(1)} disabled={isLoadingAllJobs}> {/* Reset to page 1 on new filter apply */}
                 {isLoadingAllJobs && (filterTechnology || filterLocation) ? <LoadingSpinner className="mr-2" /> : <Search className="mr-2 h-4 w-4" />}
                 Apply Filters
               </Button>
@@ -1048,7 +1073,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
               </div>
               <PaginationControls
                 currentPage={allJobsCurrentPage}
-                onPageChange={(page) => filterTechnology || filterLocation ? handleApplyFilters(page) : fetchAllJobs(page)}
+                onPageChange={(page) => setAllJobsCurrentPage(page)}
                 canGoPrevious={allJobsCurrentPage > 1}
                 canGoNext={hasNextAllPage}
                 isLoading={isLoadingAllJobs}
@@ -1080,5 +1105,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
     </div>
   );
 }
+
+    
 
     
