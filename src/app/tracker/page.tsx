@@ -6,7 +6,7 @@ import useLocalStorage from '@/hooks/use-local-storage';
 import type { TrackedApplication, ApplicationStatus, UserActivityOut, ActivityIn, JobListing, BackendJobListingResponseItem, Technology } from '@/types';
 import { ApplicationTrackerTable } from '@/components/app/application-tracker-table';
 import { Button } from '@/components/ui/button';
-import { Briefcase, FilePlus2, LogOut as LogOutIcon, ServerCrash, FileWarning, Eye } from 'lucide-react';
+import { Briefcase, FilePlus2, LogOut as LogOutIcon, ServerCrash, FileWarning, Eye, MessageSquare } from 'lucide-react'; // Added MessageSquare
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
@@ -17,6 +17,8 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import type { SaveJobPayload } from '@/types';
 import { JobDetailsModal } from '@/components/app/job-details-modal';
 import { ApplicationMaterialsModal } from '@/components/app/application-materials-modal';
+import { FeedbackDialog } from '@/components/app/feedback-dialog'; // Import FeedbackDialog
+import { Card, CardContent } from '@/components/ui/card'; // Import Card for feedback section
 
 // AI Flow Imports (for materials generation)
 import { extractJobDescriptionPoints, type ExtractJobDescriptionPointsInput, type ExtractJobDescriptionPointsOutput } from '@/ai/flows/job-description-point-extractor';
@@ -445,6 +447,24 @@ export default function TrackerPage() {
         onGenerateResume={handleTriggerAIResumeGeneration}
         onGenerateCoverLetter={handleTriggerAICoverLetterGeneration}
       />
+
+      {currentUser && (
+        <Card className="mt-10">
+            <CardContent className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <p className="text-muted-foreground text-sm">
+                    Have suggestions or found an issue with the tracker?
+                </p>
+                <FeedbackDialog
+                    source="tracker-page"
+                    triggerButton={
+                        <Button variant="outline">
+                            <MessageSquare className="mr-2 h-4 w-4" /> Share Feedback
+                        </Button>
+                    }
+                />
+            </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

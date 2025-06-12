@@ -17,12 +17,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
-import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon } from 'lucide-react';
+import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon, MessageSquare } from 'lucide-react'; // Added MessageSquare
 import { FullPageLoading } from '@/components/app/loading-spinner';
 import apiClient from '@/lib/apiClient';
 import { auth as firebaseAuth, db } from '@/lib/firebase';
 import { deleteUser as deleteFirebaseUser } from 'firebase/auth';
 import { AxiosError } from 'axios';
+import { FeedbackDialog } from '@/components/app/feedback-dialog'; // Import FeedbackDialog
 
 
 const remotePreferenceOptions: RemotePreferenceAPI[] = ["Remote", "Hybrid", "Onsite"];
@@ -414,6 +415,36 @@ export default function ProfilePage() {
           These tools will use your saved profile information. Ensure your profile is up-to-date for best results.
         </CardFooter>
       </Card>
+      
+      {currentUser && (
+        <>
+            <Separator className="my-10" />
+            <Card className="shadow-lg">
+                <CardHeader>
+                    <CardTitle className="font-headline text-xl flex items-center">
+                        <MessageSquare className="mr-2 h-6 w-6 text-primary" /> Site Feedback
+                    </CardTitle>
+                    <CardDescription>
+                        Encountered an issue or have a suggestion for the profile page or the site in general?
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <FeedbackDialog
+                        source="profile-page"
+                        triggerButton={
+                            <Button variant="outline" size="lg">
+                                <MessageSquare className="mr-2 h-5 w-5" /> Share Your Feedback
+                            </Button>
+                        }
+                    />
+                </CardContent>
+                 <CardFooter className="text-xs text-muted-foreground pt-4">
+                    Your feedback helps us improve the platform.
+                </CardFooter>
+            </Card>
+        </>
+      )}
+
 
       <Separator className="my-10" />
 
