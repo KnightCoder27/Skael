@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { MapPin, Briefcase, DollarSign, FileText, ExternalLink, Percent, Sparkles, CalendarDays, Clock3, CheckCircle } from 'lucide-react'; // Added CheckCircle
+import { MapPin, Briefcase, DollarSign, FileText, ExternalLink, Percent, Sparkles, CalendarDays, Clock3, CheckCircle } from 'lucide-react';
 import { LoadingSpinner } from './loading-spinner';
 import Image from 'next/image';
 
@@ -16,11 +16,11 @@ interface JobDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onGenerateMaterials: (job: JobListing) => void; 
-  onMarkAsApplied: (job: JobListing) => void; // New prop
+  // onMarkAsApplied: (job: JobListing) => void; // Commented out
   isLoadingExplanation?: boolean;
 }
 
-export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, onMarkAsApplied, isLoadingExplanation }: JobDetailsModalProps) {
+export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, /*onMarkAsApplied,*/ isLoadingExplanation }: JobDetailsModalProps) {
   if (!job) return null;
 
   const getMatchScoreVariant = () => {
@@ -123,12 +123,14 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, onM
             </Button>
           </div>
           <div className="flex gap-2 flex-col sm:flex-row">
+            {/*
             <Button 
                 onClick={() => onMarkAsApplied(job)} 
                 variant="default" 
                 className="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white">
                 <CheckCircle className="w-4 h-4 mr-2" /> Mark as Applied
             </Button>
+            */}
             <Button variant="ghost" onClick={onClose} className="w-full sm:w-auto">Close</Button>
           </div>
         </DialogFooter>
@@ -136,5 +138,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, onM
     </Dialog>
   );
 }
+
+    
 
     

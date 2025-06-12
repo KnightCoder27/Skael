@@ -28,7 +28,6 @@ export interface BackendMatchScoreLogItem {
   job_id: number;
   score: number;
   explanation: string;
-  // created_at?: string; // Optional: if your backend sends it and you need it
 }
 
 /**
@@ -247,11 +246,11 @@ export interface AnalyzeJobPayload {
   explanation: string;
 }
 
-// For POST /resumes/apply (Form Data)
-export interface ApplyJobFormData {
-  user_id: number;
-  job_id: number;
-}
+// // For POST /resumes/apply (Form Data) - Commented out as requested
+// export interface ApplyJobFormData {
+//   user_id: number;
+//   job_id: number;
+// }
 
 
 // For Resumes
@@ -274,9 +273,9 @@ export type ActivityType =
   | "COVER_LETTER_GENERATED_FOR_JOB"
   | "GENERAL_RESUME_GENERATED"
   | "GENERAL_COVER_LETTER_GENERATED"
-  | "AI_JOB_ANALYZED" // Simplified: logs the event an analysis was run
-  | "APPLICATION_STATUS_UPDATED"
-  | "JOB_APPLIED"; // For marking a job as applied
+  | "AI_JOB_ANALYZED" // Simple log that an analysis was run
+  | "APPLICATION_STATUS_UPDATED";
+  // | "JOB_APPLIED"; // Commented out as requested
 
 // Corresponds to backend's UserActivityLog, with client-side id and timestamp
 export interface LocalUserActivity {
@@ -303,5 +302,7 @@ export interface FeedbackIn {
   feedback: string;
   metadata?: { [key: string]: any };
 }
+
+    
 
     
