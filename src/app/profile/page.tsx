@@ -29,7 +29,7 @@ import { Progress } from '@/components/ui/progress';
 
 
 const remotePreferenceOptions: RemotePreferenceAPI[] = ["Remote", "Hybrid", "Onsite"];
-console.log("[PROFILE_DEBUG] Defined remotePreferenceOptions:", remotePreferenceOptions); // Debugging line
+console.log("[PROFILE_DEBUG] Defined remotePreferenceOptions:", remotePreferenceOptions);
 
 const profileSchema = z.object({
   username: z.string().min(2, 'Name should be at least 2 characters.').max(50, 'Name cannot exceed 50 characters.'),
@@ -100,36 +100,46 @@ export default function ProfilePage() {
 
 
   useEffect(() => {
-    if (currentUser) {
-      const currentRPFromDBRaw: string | null | undefined = currentUser.remote_preference;
-      console.log("[PROFILE_DEBUG] Raw remote_preference from DB (currentUser.remote_preference):", `"${currentRPFromDBRaw}"`);
+    if (isLoadingAuth || isLoggingOut) {
+      return; 
+    }
 
+    let formValuesToReset: Partial<ProfileFormValues> = {
+      username: '',
+      email_id: '',
+      phone_number: null,
+      professional_summary: null,
+      job_role: null,
+      skills: null,
+      experience: null,
+      preferred_locations: null,
+      remote_preference: undefined,
+      expected_salary: null,
+      resume: null,
+    };
+    let newResumeUrlToSet: string | null = null;
+
+    if (currentUser && currentUser.id) {
+      const currentRPFromDBRaw: string | null | undefined = currentUser.remote_preference;
+      console.log(`[PROFILE_DEBUG] Effect run for currentUser ID: ${currentUser.id}. Raw remote_preference from DB for this run: "${currentRPFromDBRaw}"`);
+      
       let formRPValue: RemotePreferenceAPI | undefined = undefined;
 
       if (typeof currentRPFromDBRaw === 'string' && currentRPFromDBRaw.trim() !== '') {
         const normalizedRP = currentRPFromDBRaw.toLowerCase().trim();
-        console.log("[PROFILE_DEBUG] Normalized (trimmed, lowercased) remote_preference:", `"${normalizedRP}"`);
-
+        console.log(`[PROFILE_DEBUG] Normalized (trimmed, lowercased) remote_preference: "${normalizedRP}" for currentUser ID: ${currentUser.id}`);
         switch (normalizedRP) {
-          case "remote":
-            formRPValue = "Remote";
-            break;
-          case "hybrid":
-            formRPValue = "Hybrid";
-            break;
-          case "onsite":
-            formRPValue = "Onsite";
-            break;
-          default:
-            console.warn(`[PROFILE_DEBUG] Unexpected remote_preference value from DB after normalization: '${normalizedRP}'. Original: '${currentRPFromDBRaw}'`);
-            break;
+          case "remote": formRPValue = "Remote"; break;
+          case "hybrid": formRPValue = "Hybrid"; break;
+          case "onsite": formRPValue = "Onsite"; break;
+          default: console.warn(`[PROFILE_DEBUG] Unexpected remote_preference value from DB: ${currentRPFromDBRaw} for currentUser ID: ${currentUser.id}`); break;
         }
       } else if (currentRPFromDBRaw !== null && currentRPFromDBRaw !== undefined) {
-          console.warn(`[PROFILE_DEBUG] remote_preference from DB is not a non-empty string or is null/undefined. Value:`, `"${currentRPFromDBRaw}"`);
+          console.warn(`[PROFILE_DEBUG] remote_preference from DB is not a non-empty string or is null/undefined. Value: "${currentRPFromDBRaw}" for currentUser ID: ${currentUser.id}`);
       }
-      console.log("[PROFILE_DEBUG] Final formRPValue to be set in form reset:", `"${formRPValue}"`);
+      console.log(`[PROFILE_DEBUG] Final formRPValue for this reset call (currentUser ID: ${currentUser.id}): "${formRPValue}"`);
       
-      reset({
+      formValuesToReset = {
         username: currentUser.username || firebaseUser?.displayName || '',
         email_id: currentUser.email_id || firebaseUser?.email || '',
         phone_number: currentUser.phone_number || null,
@@ -141,25 +151,30 @@ export default function ProfilePage() {
         remote_preference: formRPValue,
         expected_salary: currentUser.expected_salary ?? null,
         resume: currentUser.resume || null, 
-      });
-      setCurrentResumeUrl(currentUser.resume || null);
-    } else if (!isLoadingAuth && !isLoggingOut && firebaseUser) {
-      reset({
+      };
+      newResumeUrlToSet = currentUser.resume || null;
+
+    } else if (firebaseUser) { // No backend currentUser, but have Firebase user (e.g., new registration)
+      console.log("[PROFILE_DEBUG] Resetting form based on firebaseUser only.");
+      formValuesToReset = {
         username: firebaseUser.displayName || '',
         email_id: firebaseUser.email || '',
-        phone_number: null,
-        professional_summary: null,
-        job_role: null,
-        skills: null,
-        experience: null,
-        preferred_locations: null,
+        // ... other fields reset to empty/null/undefined
         remote_preference: undefined,
-        expected_salary: null,
-        resume: null,
-      });
-      setCurrentResumeUrl(null);
+      };
+      newResumeUrlToSet = null;
+    } else {
+      console.log("[PROFILE_DEBUG] No user data. Resetting form to initial defaults.");
+      // formValuesToReset remains the initial empty structure
+      newResumeUrlToSet = null;
     }
+    
+    console.log("[PROFILE_DEBUG] Calling reset with values:", formValuesToReset);
+    reset(formValuesToReset);
+    setCurrentResumeUrl(newResumeUrlToSet);
+
   }, [currentUser, firebaseUser, reset, isLoadingAuth, isLoggingOut]);
+
 
   const handleResumeFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -452,17 +467,11 @@ export default function ProfilePage() {
                         type="file" 
                         onChange={handleResumeFileChange} 
                         accept=".pdf,.doc,.docx"
-                        className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 mb-2"
+                        className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 mb-1"
                         disabled={isUploadingResume || overallSubmitting}
                     />
                     {selectedResumeFile && !isUploadingResume && (
                         <p className="text-xs text-muted-foreground mt-1">Selected: {selectedResumeFile.name}. Ready to upload on save.</p>
-                    )}
-                    {isUploadingResume && uploadResumeProgress !== null && (
-                        <div className="mt-2">
-                            <Progress value={uploadResumeProgress} className="w-full h-2" />
-                            <p className="text-xs text-muted-foreground text-center mt-1">Uploading: {Math.round(uploadResumeProgress)}%</p>
-                        </div>
                     )}
                     {currentResumeUrl && !selectedResumeFile && !isUploadingResume && (
                         <div className="mt-3 mb-2 flex items-center justify-between p-2 border rounded-md bg-muted/50">
@@ -474,6 +483,12 @@ export default function ProfilePage() {
                                 <XCircle className="w-4 h-4" />
                                 <span className="sr-only">Remove resume</span>
                             </Button>
+                        </div>
+                    )}
+                     {isUploadingResume && uploadResumeProgress !== null && (
+                        <div className="mt-2">
+                            <Progress value={uploadResumeProgress} className="w-full h-2" />
+                            <p className="text-xs text-muted-foreground text-center mt-1">Uploading: {Math.round(uploadResumeProgress)}%</p>
                         </div>
                     )}
                     <p className="text-xs text-muted-foreground mt-1">Optional. PDF or Word doc, max 5MB.</p>
