@@ -21,6 +21,7 @@ import { useRouter } from 'next/navigation';
 import type { AxiosError } from 'axios';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SimpleJobListItem } from '@/components/app/simple-job-list-item';
+import { PaginationControls } from '@/components/app/PaginationControls'; // Added PaginationControls
 
 // AI Flow Imports
 import { jobMatchExplanation, type JobMatchExplanationInput } from '@/ai/flows/job-match-explanation';
@@ -39,6 +40,7 @@ interface JobAnalysisCache {
 }
 
 type ActiveJobTab = "generate" | "relevant" | "all";
+const JOBS_PER_PAGE = 9; // For pagination
 
 const isValidDbId = (idInput: any): idInput is number | string => {
   if (idInput === null || idInput === undefined) {
@@ -72,6 +74,12 @@ export default function JobExplorerPage() {
   // For direct filtering on "All Jobs" tab
   const [filterTechnology, setFilterTechnology] = useState('');
   const [filterLocation, setFilterLocation] = useState('');
+
+  // Pagination state
+  const [relevantJobsCurrentPage, setRelevantJobsCurrentPage] = useState(1);
+  const [allJobsCurrentPage, setAllJobsCurrentPage] = useState(1);
+  const [hasNextRelevantPage, setHasNextRelevantPage] = useState(true);
+  const [hasNextAllPage, setHasNextAllPage] = useState(true);
 
 
   const [jobAnalysisCache, setJobAnalysisCache] = useLocalStorage<JobAnalysisCache>('job-ai-analysis-cache', {});
@@ -169,10 +177,11 @@ export default function JobExplorerPage() {
       matchScore: cachedAnalysis.matchScore,
       matchExplanation: cachedAnalysis.matchExplanation,
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); 
 
 
-  const fetchRelevantJobs = useCallback(async () => {
+  const fetchRelevantJobs = useCallback(async (page = 1) => {
     if (!currentUser) {
       setErrorRelevantJobs("Please log in to view relevant jobs.");
       setRelevantJobsList([]);
@@ -196,9 +205,14 @@ export default function JobExplorerPage() {
       if (!cleanedPayload.hasOwnProperty('locations')) cleanedPayload.locations = [];
       if (!cleanedPayload.hasOwnProperty('countries')) cleanedPayload.countries = [];
 
-      const response = await apiClient.post<BackendJobListingResponseItem[]>('/jobs/relevant_jobs', cleanedPayload);
+      const skip = (page - 1) * JOBS_PER_PAGE;
+      const limit = JOBS_PER_PAGE;
+
+      const response = await apiClient.post<BackendJobListingResponseItem[]>('/jobs/relevant_jobs', cleanedPayload, { params: { skip, limit } });
       const mappedJobs = response.data.map(job => mapBackendJobToFrontend(job));
       setRelevantJobsList(mappedJobs);
+      setRelevantJobsCurrentPage(page);
+      setHasNextRelevantPage(mappedJobs.length === JOBS_PER_PAGE);
 
     } catch (error) {
       const message = error instanceof AxiosError && error.response?.data?.detail ? error.response.data.detail : "Could not load relevant jobs.";
@@ -209,13 +223,17 @@ export default function JobExplorerPage() {
     }
   }, [currentUser, toast, mapBackendJobToFrontend]);
 
-  const fetchAllJobs = useCallback(async () => {
+  const fetchAllJobs = useCallback(async (page = 1) => {
     setIsLoadingAllJobs(true);
     setErrorAllJobs(null);
     try {
-      const response = await apiClient.get<BackendJobListingResponseItem[]>('/jobs/list_jobs/');
+      const skip = (page - 1) * JOBS_PER_PAGE;
+      const limit = JOBS_PER_PAGE;
+      const response = await apiClient.get<BackendJobListingResponseItem[]>('/jobs/list_jobs/', { params: { skip, limit } });
       const mappedJobs = response.data.map(job => mapBackendJobToFrontend(job));
       setAllJobsList(mappedJobs);
+      setAllJobsCurrentPage(page);
+      setHasNextAllPage(mappedJobs.length === JOBS_PER_PAGE);
     } catch (error) {
       const message = error instanceof AxiosError && error.response?.data?.detail ? error.response.data.detail : "Could not load all jobs.";
       setErrorAllJobs(message);
@@ -226,19 +244,26 @@ export default function JobExplorerPage() {
   }, [toast, mapBackendJobToFrontend]);
 
 
-  const handleApplyFilters = async () => {
+  const handleApplyFilters = async (page = 1) => {
     setIsLoadingAllJobs(true);
     setErrorAllJobs(null);
     try {
+      const skip = (page - 1) * JOBS_PER_PAGE;
+      const limit = JOBS_PER_PAGE;
       const params = new URLSearchParams();
       if (filterTechnology) params.append('technology', filterTechnology);
       if (filterLocation) params.append('location', filterLocation);
+      params.append('skip', skip.toString());
+      params.append('limit', limit.toString());
       
-      const endpoint = params.toString() ? `/jobs/?${params.toString()}` : '/jobs/list_jobs/';
+      const endpoint = `/jobs/?${params.toString()}`;
       
       const response = await apiClient.get<BackendJobListingResponseItem[]>(endpoint);
       const mappedJobs = response.data.map(job => mapBackendJobToFrontend(job));
       setAllJobsList(mappedJobs);
+      setAllJobsCurrentPage(page);
+      setHasNextAllPage(mappedJobs.length === JOBS_PER_PAGE);
+
       if (mappedJobs.length === 0 && (filterTechnology || filterLocation)) {
         toast({ title: "No Jobs Found", description: "No jobs matched your filter criteria." });
       } else if (filterTechnology || filterLocation) {
@@ -256,7 +281,8 @@ export default function JobExplorerPage() {
   const handleClearFilters = () => {
     setFilterTechnology('');
     setFilterLocation('');
-    fetchAllJobs(); // Reload all jobs
+    setAllJobsCurrentPage(1); // Reset to first page
+    fetchAllJobs(1); // Reload all jobs from page 1
   };
 
 
@@ -272,7 +298,6 @@ export default function JobExplorerPage() {
     let generalActivitiesError = null;
     const newAiCacheUpdatesFromProfile: JobAnalysisCache = {};
 
-    // 1. Populate AI cache from currentUser.match_scores (if backend provides it)
     console.log("JobExplorer: Checking currentUser.match_scores:", currentUser?.match_scores);
     if (currentUser.match_scores && Array.isArray(currentUser.match_scores)) {
         currentUser.match_scores.forEach(scoreLog => {
@@ -290,11 +315,10 @@ export default function JobExplorerPage() {
             title: "Historical AI Scores Not Loaded",
             description: "Your profile data from the backend does not include historical match scores. New analyses will be performed as needed.",
             variant: "default",
-            duration: 10000,
+            duration: 7000, // Slightly longer duration for this info toast
         });
     }
     
-    // 2. Fetch general activities for saved job IDs
     try {
       const response = await apiClient.get<UserActivityOut[]>(`/activity/user/${currentUser.id}`);
       const activities = response.data;
@@ -332,7 +356,6 @@ export default function JobExplorerPage() {
       generalActivitiesError = error;
     }
 
-    // Merge AI cache from profile with existing cache
     if (Object.keys(newAiCacheUpdatesFromProfile).length > 0) {
         setJobAnalysisCache(prevCache => {
           const changed = Object.keys(newAiCacheUpdatesFromProfile).some(
@@ -383,9 +406,9 @@ export default function JobExplorerPage() {
 
   useEffect(() => {
     if (currentUser && !isLoggingOut && isCacheReadyForAnalysis) { 
-      if (activeTab === "relevant") fetchRelevantJobs();
-      else if (activeTab === "all" && !filterTechnology && !filterLocation) fetchAllJobs(); // Only fetch all if no filters active
-      else if (activeTab === "all" && (filterTechnology || filterLocation)) handleApplyFilters(); // Apply filters if tab is active
+      if (activeTab === "relevant") fetchRelevantJobs(relevantJobsCurrentPage); // Fetch current page
+      else if (activeTab === "all" && !filterTechnology && !filterLocation) fetchAllJobs(allJobsCurrentPage);
+      else if (activeTab === "all" && (filterTechnology || filterLocation)) handleApplyFilters(allJobsCurrentPage);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, currentUser, isLoggingOut, fetchRelevantJobs, fetchAllJobs, isCacheReadyForAnalysis]);
@@ -535,7 +558,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
         setJobPendingAnalysis(null); 
         console.log(`JobExplorer: performAiAnalysis finished for job ${jobToAnalyze.id}. isLoadingExplanation: false`);
     }
-}, [currentUser, toast, setJobAnalysisCache, addLocalActivity, isLoadingExplanation]);
+  }, [currentUser, toast, setJobAnalysisCache, addLocalActivity, isLoadingExplanation]);
 
 
   const fetchJobDetailsWithAI = useCallback(async (job: JobListing) => {
@@ -866,7 +889,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
         </TabsContent>
 
         <TabsContent value="relevant" className="space-y-6">
-          {isLoadingRelevantJobs && (
+          {isLoadingRelevantJobs && relevantJobsList.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <LoadingSpinner size={40} />
               <p className="mt-3 text-lg text-muted-foreground">Loading relevant jobs...</p>
@@ -891,19 +914,28 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
               )}
             </div>
           )}
-          {!isLoadingRelevantJobs && !errorRelevantJobs && relevantJobsList.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {relevantJobsList.map((job, index) => (
-                <JobCard
-                  key={job.api_id ? `relevant-api-${job.api_id}` : `relevant-db-${job.id}-${index}`}
-                  job={job}
-                  onViewDetails={handleViewDetails}
-                  onSaveJob={handleSaveJob}
-                  onGenerateMaterials={openMaterialsModal}
-                  isSaved={savedJobIds.has(job.id)}
-                />
-              ))}
-            </div>
+          {relevantJobsList.length > 0 && (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {relevantJobsList.map((job, index) => (
+                  <JobCard
+                    key={job.api_id ? `relevant-api-${job.api_id}` : `relevant-db-${job.id}-${index}`}
+                    job={job}
+                    onViewDetails={handleViewDetails}
+                    onSaveJob={handleSaveJob}
+                    onGenerateMaterials={openMaterialsModal}
+                    isSaved={savedJobIds.has(job.id)}
+                  />
+                ))}
+              </div>
+              <PaginationControls
+                currentPage={relevantJobsCurrentPage}
+                onPageChange={(page) => fetchRelevantJobs(page)}
+                canGoPrevious={relevantJobsCurrentPage > 1}
+                canGoNext={hasNextRelevantPage}
+                isLoading={isLoadingRelevantJobs}
+              />
+            </>
           )}
         </TabsContent>
 
@@ -933,7 +965,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
               </div>
             </div>
             <div className="mt-4 flex gap-2">
-              <Button onClick={handleApplyFilters} disabled={isLoadingAllJobs}>
+              <Button onClick={() => handleApplyFilters(1)} disabled={isLoadingAllJobs}>
                 {isLoadingAllJobs && (filterTechnology || filterLocation) ? <LoadingSpinner className="mr-2" /> : <Search className="mr-2 h-4 w-4" />}
                 Apply Filters
               </Button>
@@ -943,7 +975,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
             </div>
           </div>
 
-          {isLoadingAllJobs && (
+          {isLoadingAllJobs && allJobsList.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <LoadingSpinner size={40} />
               <p className="mt-3 text-lg text-muted-foreground">Loading jobs...</p>
@@ -965,16 +997,25 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
               </p>
             </div>
           )}
-          {!isLoadingAllJobs && !errorAllJobs && allJobsList.length > 0 && (
-            <div className="space-y-4">
-              {allJobsList.map((job, index) => (
-                <SimpleJobListItem
-                  key={job.api_id ? `all-api-${job.api_id}` : `all-db-${job.id}-${index}`}
-                  job={job}
-                  onViewDetails={handleViewDetails}
-                />
-              ))}
-            </div>
+          {allJobsList.length > 0 && (
+            <>
+              <div className="space-y-4">
+                {allJobsList.map((job, index) => (
+                  <SimpleJobListItem
+                    key={job.api_id ? `all-api-${job.api_id}` : `all-db-${job.id}-${index}`}
+                    job={job}
+                    onViewDetails={handleViewDetails}
+                  />
+                ))}
+              </div>
+              <PaginationControls
+                currentPage={allJobsCurrentPage}
+                onPageChange={(page) => filterTechnology || filterLocation ? handleApplyFilters(page) : fetchAllJobs(page)}
+                canGoPrevious={allJobsCurrentPage > 1}
+                canGoNext={hasNextAllPage}
+                isLoading={isLoadingAllJobs}
+              />
+            </>
           )}
         </TabsContent>
       </Tabs>
