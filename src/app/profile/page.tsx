@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, ChangeEvent } from 'react';
 import { useForm, type SubmitHandler, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -17,13 +17,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
-import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon, MessageSquare } from 'lucide-react'; // Added MessageSquare
-import { FullPageLoading } from '@/components/app/loading-spinner';
+import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon, MessageSquare, UploadCloud, Paperclip, XCircle } from 'lucide-react';
+import { FullPageLoading, LoadingSpinner } from '@/components/app/loading-spinner';
 import apiClient from '@/lib/apiClient';
-import { auth as firebaseAuth, db } from '@/lib/firebase';
+import { auth as firebaseAuth, storage } from '@/lib/firebase'; // Import storage
 import { deleteUser as deleteFirebaseUser } from 'firebase/auth';
+import { ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage"; // Firebase storage functions
 import { AxiosError } from 'axios';
-import { FeedbackDialog } from '@/components/app/feedback-dialog'; // Import FeedbackDialog
+import { FeedbackDialog } from '@/components/app/feedback-dialog';
+import { Progress } from '@/components/ui/progress';
 
 
 const remotePreferenceOptions: RemotePreferenceAPI[] = ["Remote", "Hybrid", "Onsite"];
@@ -44,7 +46,7 @@ const profileSchema = z.object({
   
   remote_preference: z.enum(remotePreferenceOptions).optional().nullable(),
   expected_salary: z.coerce.number().positive("Expected salary must be a positive number.").optional().nullable(),
-  resume: z.string().url('Please enter a valid URL for your resume.').max(255, 'Resume URL cannot exceed 255 characters.').optional().nullable(),
+  resume: z.string().url('Resume must be a valid URL (this will be the Firebase Storage URL).').max(1024, 'Resume URL too long.').optional().nullable(),
 });
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
@@ -54,29 +56,36 @@ export default function ProfilePage() {
   const { toast } = useToast();
   const router = useRouter();
 
+  const [selectedResumeFile, setSelectedResumeFile] = useState<File | null>(null);
+  const [isUploadingResume, setIsUploadingResume] = useState(false);
+  const [uploadResumeProgress, setUploadResumeProgress] = useState<number | null>(null);
+  const [currentResumeUrl, setCurrentResumeUrl] = useState<string | null>(null);
+
+
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
+    defaultValues: {
+      resume: null, // Initialize resume as null
+    }
   });
-  const { register, handleSubmit, formState: { errors, isSubmitting }, reset, control } = form;
+  const { register, handleSubmit, formState: { errors, isSubmitting: isFormSubmitting }, reset, control, setValue, watch } = form;
+
+  const watchedResumeUrl = watch("resume");
 
   useEffect(() => {
-    console.log(`ProfilePage Effect: isLoadingAuth=${isLoadingAuth}, currentUser.id=${currentUser?.id}, isLoggingOut=${isLoggingOut}`);
-    if (isLoggingOut) {
-      console.log("ProfilePage: Logout in progress, skipping access denied logic.");
-      return;
-    }
+    setCurrentResumeUrl(watchedResumeUrl ?? null);
+  }, [watchedResumeUrl]);
+
+
+  useEffect(() => {
+    if (isLoggingOut) return;
     if (!isLoadingAuth) {
       if (!currentUser) {
-        console.log("ProfilePage: Access Denied. isLoadingAuth is false, currentUser is null. Redirecting to /auth.");
         toast({ title: "Not Authenticated", description: "Please log in to view your profile.", variant: "destructive" });
         router.push('/auth');
-      } else if (firebaseUser?.email && (!currentUser.email_id || currentUser.email_id !== firebaseUser.email)) {
-         // This case is less likely now with unified backend ID fetching but kept for safety.
-         // If backend user is loaded but somehow email doesn't match firebase, prioritize firebase email for display form.
-        reset({ email_id: firebaseUser.email, username: firebaseUser.displayName || currentUser.username || "" });
       }
     }
-  }, [isLoadingAuth, currentUser, firebaseUser, router, toast, isLoggingOut, reset]);
+  }, [isLoadingAuth, currentUser, router, toast, isLoggingOut]);
 
 
   useEffect(() => {
@@ -92,33 +101,109 @@ export default function ProfilePage() {
         preferred_locations: currentUser.preferred_locations?.join(', ') || null,
         remote_preference: currentUser.remote_preference as RemotePreferenceAPI || null,
         expected_salary: currentUser.expected_salary ?? null,
-        resume: currentUser.resume || null,
+        resume: currentUser.resume || null, // This will now be the Firebase Storage URL
       });
+      setCurrentResumeUrl(currentUser.resume || null);
     } else if (!isLoadingAuth && !isLoggingOut && firebaseUser) {
-      // If no currentUser from backend yet, but firebaseUser exists (and not loading/logging out)
-      // prefill with whatever Firebase knows, especially email and display name.
       reset({
         username: firebaseUser.displayName || '',
         email_id: firebaseUser.email || '',
-        phone_number: null,
-        professional_summary: null,
-        job_role: null,
-        skills: null,
-        experience: null,
-        preferred_locations: null,
-        remote_preference: null,
-        expected_salary: null,
-        resume: null,
       });
     }
   }, [currentUser, firebaseUser, reset, isLoadingAuth, isLoggingOut]);
 
+  const handleResumeFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) { // 5MB limit
+        toast({ title: "File Too Large", description: "Resume file should be less than 5MB.", variant: "destructive" });
+        event.target.value = ''; // Clear the input
+        return;
+      }
+      const allowedTypes = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
+      if (!allowedTypes.includes(file.type)) {
+        toast({ title: "Invalid File Type", description: "Please upload a PDF or Word document.", variant: "destructive" });
+        event.target.value = ''; // Clear the input
+        return;
+      }
+      setSelectedResumeFile(file);
+    } else {
+      setSelectedResumeFile(null);
+    }
+  };
+
+  const handleRemoveResume = async () => {
+    if (!currentResumeUrl || !firebaseUser) return;
+
+    setIsUploadingResume(true); // Use same state for "processing"
+    try {
+      const fileRef = storageRef(storage, currentResumeUrl); // Firebase Storage URL can be directly used
+      await deleteObject(fileRef);
+      
+      // Update backend by setting resume to null
+      if (backendUserId) {
+        await apiClient.put(`/users/${backendUserId}`, { resume: null });
+        setValue('resume', null); // Update form state
+        setCurrentResumeUrl(null);
+        setSelectedResumeFile(null);
+        await refetchBackendUser(); // Refresh currentUser to reflect change
+        toast({ title: "Resume Removed", description: "Your resume has been removed." });
+      }
+    } catch (error) {
+      console.error("Error removing resume:", error);
+      toast({ title: "Removal Failed", description: "Could not remove resume. It might have already been deleted or there was a network issue.", variant: "destructive" });
+    } finally {
+      setIsUploadingResume(false);
+    }
+  };
+
+
   const onSubmit: SubmitHandler<ProfileFormValues> = async (data) => {
-    if (!backendUserId) {
+    if (!backendUserId || !firebaseUser) {
       toast({ title: "Error", description: "User session not found. Cannot update profile.", variant: "destructive" });
       return;
     }
     
+    let newResumeUrl = data.resume; // Start with the current resume URL from form (might be null)
+
+    if (selectedResumeFile) {
+      setIsUploadingResume(true);
+      setUploadResumeProgress(0);
+      const filePath = `users/${firebaseUser.uid}/uploaded_resumes/${Date.now()}_${selectedResumeFile.name}`;
+      const fileStorageRef = storageRef(storage, filePath);
+      const uploadTask = uploadBytesResumable(fileStorageRef, selectedResumeFile);
+
+      try {
+        await new Promise<void>((resolve, reject) => {
+          uploadTask.on('state_changed',
+            (snapshot) => {
+              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+              setUploadResumeProgress(progress);
+            },
+            (error) => {
+              console.error("Upload error:", error);
+              reject(error);
+            },
+            async () => {
+              newResumeUrl = await getDownloadURL(uploadTask.snapshot.ref);
+              setValue('resume', newResumeUrl); // Update form field with the new URL
+              setCurrentResumeUrl(newResumeUrl); // Update display state
+              setSelectedResumeFile(null); // Clear selected file after upload
+              resolve();
+            }
+          );
+        });
+      } catch (error) {
+        toast({ title: "Resume Upload Failed", description: "Could not upload your resume. Please try again.", variant: "destructive" });
+        setIsUploadingResume(false);
+        setUploadResumeProgress(null);
+        return; // Stop submission if upload fails
+      } finally {
+        setIsUploadingResume(false);
+        setUploadResumeProgress(null);
+      }
+    }
+
     const updatePayload: UserUpdateAPI = {
       username: data.username,
       number: data.phone_number || undefined,
@@ -129,17 +214,16 @@ export default function ProfilePage() {
       remote_preference: data.remote_preference || undefined,
       professional_summary: data.professional_summary || undefined,
       expected_salary: data.expected_salary ?? undefined,
-      resume: data.resume || undefined,
+      resume: newResumeUrl, // This will be the new Firebase Storage URL or null
     };
-
+    
     const filteredUpdatePayload = Object.fromEntries(
         Object.entries(updatePayload).filter(([_, v]) => v !== undefined)
     );
 
-
     try {
       await apiClient.put(`/users/${backendUserId}`, filteredUpdatePayload);
-      await refetchBackendUser();
+      await refetchBackendUser(); // This will update currentUser, which then updates the form
       toast({
         title: 'Profile Updated',
         description: 'Your profile information has been saved successfully.',
@@ -168,15 +252,26 @@ export default function ProfilePage() {
       return;
     }
     try {
+      // Attempt to delete resume from Firebase Storage if it exists
+      if (currentUser?.resume) {
+        try {
+            const oldResumeRef = storageRef(storage, currentUser.resume);
+            await deleteObject(oldResumeRef);
+            console.log("Old resume deleted from Firebase Storage during account deletion.");
+        } catch (storageError) {
+            // Log error but continue with account deletion, as file might not exist or user might not have permission
+            console.warn("Could not delete resume from storage during account deletion:", storageError);
+        }
+      }
       await apiClient.delete(`/users/${backendUserId}`);
       await deleteFirebaseUser(firebaseUser);
-      setBackendUser(null); // This will trigger AuthContext to clear FirebaseUser too via onAuthStateChanged
+      setBackendUser(null); 
       toast({
         title: "Account Deleted",
         description: "Your account has been permanently deleted.",
         variant: "destructive",
       });
-      router.push('/auth'); // onAuthStateChanged will handle redirect via useEffect in AuthPage if needed
+      router.push('/auth'); 
     } catch (error) {
       console.error("Error deleting account:", error);
       let errorMessage = "Could not delete account. Please try again.";
@@ -203,12 +298,11 @@ export default function ProfilePage() {
     return <FullPageLoading message="Loading profile..." />;
   }
 
-  // This covers the case where auth is resolved, not logging out, but no currentUser (which means redirect should have happened)
-  // It acts as a fallback display if redirection is somehow delayed.
   if (!currentUser && !isLoadingAuth && !isLoggingOut) {
      return <FullPageLoading message="Verifying session..." />;
   }
   
+  const overallSubmitting = isFormSubmitting || isUploadingResume;
 
   return (
     <div className="space-y-8">
@@ -245,7 +339,7 @@ export default function ProfilePage() {
                   {...register('email_id')}
                   placeholder="you@example.com"
                   className={errors.email_id ? 'border-destructive' : ''}
-                  readOnly // Email should be read-only after registration
+                  readOnly 
                 />
                 {errors.email_id && <p className="text-sm text-destructive">{errors.email_id.message}</p>}
               </div>
@@ -303,13 +397,40 @@ export default function ProfilePage() {
                     <p className="text-xs text-muted-foreground">Optional.</p>
                     {errors.experience && <p className="text-sm text-destructive">{errors.experience.message}</p>}
                 </div>
+                
                 <div className="space-y-2">
-                    <Label htmlFor="resume">Resume URL</Label>
-                     <div className="relative flex items-center">
-                        <FileText className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                        <Input id="resume" {...register('resume')} placeholder="https://example.com/your-resume.pdf" className={`pl-10 ${errors.resume ? 'border-destructive' : ''}`} />
-                    </div>
-                    <p className="text-xs text-muted-foreground">Optional.</p>
+                    <Label htmlFor="resume-upload">Your Resume</Label>
+                    <Input 
+                        id="resume-upload" 
+                        type="file" 
+                        onChange={handleResumeFileChange} 
+                        accept=".pdf,.doc,.docx"
+                        className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
+                        disabled={isUploadingResume || overallSubmitting}
+                    />
+                     <input type="hidden" {...register('resume')} /> {/* Hidden input to hold the URL for react-hook-form */}
+                    {isUploadingResume && uploadResumeProgress !== null && (
+                        <div className="mt-2">
+                            <Progress value={uploadResumeProgress} className="w-full h-2" />
+                            <p className="text-xs text-muted-foreground text-center mt-1">Uploading: {Math.round(uploadResumeProgress)}%</p>
+                        </div>
+                    )}
+                    {currentResumeUrl && !selectedResumeFile && !isUploadingResume && (
+                        <div className="mt-2 flex items-center justify-between p-2 border rounded-md bg-muted/50">
+                            <a href={currentResumeUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center truncate">
+                                <Paperclip className="w-4 h-4 mr-2 shrink-0" />
+                                <span className="truncate">{currentResumeUrl.split('/').pop()?.split('?')[0].substring(currentResumeUrl.lastIndexOf('_') + 1) || "View Current Resume"}</span>
+                            </a>
+                            <Button type="button" variant="ghost" size="icon" onClick={handleRemoveResume} className="h-7 w-7 text-destructive hover:bg-destructive/10" disabled={overallSubmitting}>
+                                <XCircle className="w-4 h-4" />
+                                <span className="sr-only">Remove resume</span>
+                            </Button>
+                        </div>
+                    )}
+                    {selectedResumeFile && !isUploadingResume && (
+                        <p className="text-xs text-muted-foreground mt-1">Selected: {selectedResumeFile.name}. Ready to upload on save.</p>
+                    )}
+                    <p className="text-xs text-muted-foreground">Optional. PDF or Word doc, max 5MB.</p>
                     {errors.resume && <p className="text-sm text-destructive">{errors.resume.message}</p>}
                 </div>
             </div>
@@ -356,7 +477,7 @@ export default function ProfilePage() {
                         name="remote_preference"
                         control={control}
                         render={({ field }) => (
-                            <Select onValueChange={field.onChange} value={field.value ?? undefined}>
+                            <Select onValueChange={field.onChange} value={field.value ?? undefined} disabled={overallSubmitting}>
                                 <SelectTrigger className={`relative w-full justify-start pl-10 pr-3 ${errors.remote_preference ? 'border-destructive' : ''}`}>
                                      <CloudSun className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                                     <SelectValue placeholder="Select preference" />
@@ -376,7 +497,7 @@ export default function ProfilePage() {
                     <Label htmlFor="expected_salary">Expected Salary (Numeric)</Label>
                      <div className="relative flex items-center">
                         <DollarSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                        <Input id="expected_salary" type="number" {...register('expected_salary')} placeholder="e.g., 120000" className={`pl-10 ${errors.expected_salary ? 'border-destructive' : ''}`} />
+                        <Input id="expected_salary" type="number" {...register('expected_salary')} placeholder="e.g., 120000" className={`pl-10 ${errors.expected_salary ? 'border-destructive' : ''}`} disabled={overallSubmitting}/>
                     </div>
                     <p className="text-xs text-muted-foreground">Optional. Enter as a number (e.g., 120000 for $120,000).</p>
                     {errors.expected_salary && <p className="text-sm text-destructive">{errors.expected_salary.message}</p>}
@@ -384,9 +505,10 @@ export default function ProfilePage() {
             </div>
           </CardContent>
           <CardFooter className="flex-col items-start gap-4 sm:flex-row sm:justify-between sm:items-center pt-6 border-t">
-            <Button type="submit" disabled={isSubmitting} size="lg" className="shadow-md hover:shadow-lg transition-shadow">
-              {isSubmitting ? 'Saving...' : 'Save Profile'}
-              {!isSubmitting && <Edit3 className="ml-2 h-4 w-4" />}
+            <Button type="submit" disabled={overallSubmitting} size="lg" className="shadow-md hover:shadow-lg transition-shadow">
+              {isUploadingResume ? <UploadCloud className="mr-2 h-4 w-4 animate-pulse" /> : (isFormSubmitting ? <LoadingSpinner size={16} className="mr-2" /> : null)}
+              {isUploadingResume ? 'Uploading Resume...' : (isFormSubmitting ? 'Saving Profile...' : 'Save Profile')}
+              {!overallSubmitting && <Edit3 className="ml-2 h-4 w-4" />}
             </Button>
           </CardFooter>
         </form>
@@ -470,7 +592,7 @@ export default function ProfilePage() {
                    <AlertTriangle className="mr-2 h-5 w-5 text-destructive" /> Are you absolutely sure?
                 </AlertDialogTitle>
                 <AlertDialogDescription>
-                  This action cannot be undone. This will permanently delete your account from our backend and Firebase Authentication.
+                  This action cannot be undone. This will permanently delete your account from our backend, Firebase Authentication, and attempt to remove your uploaded resume from Firebase Storage.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -483,7 +605,7 @@ export default function ProfilePage() {
           </AlertDialog>
         </CardContent>
         <CardFooter className="text-xs text-muted-foreground pt-4">
-          Deleting your account will remove all your saved information.
+          Deleting your account will remove all your saved information and uploaded files.
         </CardFooter>
       </Card>
 
