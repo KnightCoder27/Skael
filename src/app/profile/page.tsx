@@ -29,6 +29,7 @@ import { Progress } from '@/components/ui/progress';
 
 
 const remotePreferenceOptions: RemotePreferenceAPI[] = ["Remote", "Hybrid", "Onsite"];
+console.log("[PROFILE_DEBUG] Defined remotePreferenceOptions:", remotePreferenceOptions); // Debugging line
 
 const profileSchema = z.object({
   username: z.string().min(2, 'Name should be at least 2 characters.').max(50, 'Name cannot exceed 50 characters.'),
@@ -522,23 +523,26 @@ export default function ProfilePage() {
                     <Controller
                         name="remote_preference"
                         control={control}
-                        render={({ field }) => ( 
-                            <Select 
-                                onValueChange={field.onChange} 
-                                value={field.value ?? undefined} 
-                                disabled={overallSubmitting}
-                            >
-                                <SelectTrigger className={`relative w-full justify-start pl-10 pr-3 ${errors.remote_preference ? 'border-destructive' : ''}`}>
-                                     <CloudSun className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                                    <SelectValue placeholder="Select preference" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {remotePreferenceOptions.map(option => (
-                                        <SelectItem key={option} value={option}>{option}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        )}
+                        render={({ field }) => {
+                            console.log("[PROFILE_DEBUG] Controller field.value for remote_preference:", field.value);
+                            return (
+                                <Select 
+                                    onValueChange={field.onChange} 
+                                    value={field.value ?? undefined} 
+                                    disabled={overallSubmitting}
+                                >
+                                    <SelectTrigger className={`relative w-full justify-start pl-10 pr-3 ${errors.remote_preference ? 'border-destructive' : ''}`}>
+                                        <CloudSun className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                                        <SelectValue placeholder="Select preference" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {remotePreferenceOptions.map(option => (
+                                            <SelectItem key={option} value={option}>{option}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            );
+                        }}
                     />
                     <p className="text-xs text-muted-foreground">Optional.</p>
                     {errors.remote_preference && <p className="text-sm text-destructive">{errors.remote_preference.message}</p>}
