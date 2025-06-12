@@ -20,9 +20,9 @@ import { useRouter } from 'next/navigation';
 import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon, MessageSquare, UploadCloud, Paperclip, XCircle } from 'lucide-react';
 import { FullPageLoading, LoadingSpinner } from '@/components/app/loading-spinner';
 import apiClient from '@/lib/apiClient';
-import { auth as firebaseAuth, storage } from '@/lib/firebase'; // Import storage
+import { auth as firebaseAuth, storage } from '@/lib/firebase';
 import { deleteUser as deleteFirebaseUser } from 'firebase/auth';
-import { ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage"; // Firebase storage functions
+import { ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
 import { AxiosError } from 'axios';
 import { FeedbackDialog } from '@/components/app/feedback-dialog';
 import { Progress } from '@/components/ui/progress';
@@ -44,7 +44,7 @@ const profileSchema = z.object({
   
   preferred_locations: z.string().max(255, 'Preferred Locations cannot exceed 255 characters (comma-separated).').optional().nullable(),
   
-  remote_preference: z.enum(remotePreferenceOptions).optional().nullable(), 
+  remote_preference: z.enum(remotePreferenceOptions, { errorMap: () => ({ message: "Please select a valid remote preference."}) }).optional().nullable(), 
   expected_salary: z.coerce.number().positive("Expected salary must be a positive number.").optional().nullable(),
   resume: z.string().url('Resume must be a valid URL (this will be the Firebase Storage URL).').max(1024, 'Resume URL too long.').optional().nullable(),
 });
@@ -100,19 +100,33 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (currentUser) {
-      const currentRPFromDB = currentUser.remote_preference;
+      const currentRPFromDBRaw: string | null | undefined = currentUser.remote_preference;
+      console.log("[PROFILE_DEBUG] Raw remote_preference from DB (currentUser.remote_preference):", `"${currentRPFromDBRaw}"`);
+
       let formRPValue: RemotePreferenceAPI | undefined = undefined;
 
-      if (currentRPFromDB) {
-        const lowerCaseRP = currentRPFromDB.toLowerCase();
-        if (lowerCaseRP === "remote") {
-          formRPValue = "Remote";
-        } else if (lowerCaseRP === "hybrid") {
-          formRPValue = "Hybrid";
-        } else if (lowerCaseRP === "onsite") {
-          formRPValue = "Onsite";
+      if (typeof currentRPFromDBRaw === 'string' && currentRPFromDBRaw.trim() !== '') {
+        const normalizedRP = currentRPFromDBRaw.toLowerCase().trim();
+        console.log("[PROFILE_DEBUG] Normalized (trimmed, lowercased) remote_preference:", `"${normalizedRP}"`);
+
+        switch (normalizedRP) {
+          case "remote":
+            formRPValue = "Remote";
+            break;
+          case "hybrid":
+            formRPValue = "Hybrid";
+            break;
+          case "onsite":
+            formRPValue = "Onsite";
+            break;
+          default:
+            console.warn(`[PROFILE_DEBUG] Unexpected remote_preference value from DB after normalization: '${normalizedRP}'. Original: '${currentRPFromDBRaw}'`);
+            break;
         }
+      } else if (currentRPFromDBRaw !== null && currentRPFromDBRaw !== undefined) {
+          console.warn(`[PROFILE_DEBUG] remote_preference from DB is not a non-empty string or is null/undefined. Value:`, `"${currentRPFromDBRaw}"`);
       }
+      console.log("[PROFILE_DEBUG] Final formRPValue to be set in form reset:", `"${formRPValue}"`);
       
       reset({
         username: currentUser.username || firebaseUser?.displayName || '',
@@ -245,7 +259,7 @@ export default function ProfilePage() {
       skills: data.skills || undefined,
       experience: data.experience ?? undefined,
       preferred_locations: data.preferred_locations || undefined,
-      remote_preference: data.remote_preference, 
+      remote_preference: data.remote_preference || undefined, 
       professional_summary: data.professional_summary || undefined,
       expected_salary: data.expected_salary ?? undefined,
       resume: newResumeUrl, 
@@ -450,7 +464,7 @@ export default function ProfilePage() {
                         </div>
                     )}
                     {currentResumeUrl && !selectedResumeFile && !isUploadingResume && (
-                        <div className="mt-3 flex items-center justify-between p-2 border rounded-md bg-muted/50">
+                        <div className="mt-3 mb-2 flex items-center justify-between p-2 border rounded-md bg-muted/50">
                             <a href={currentResumeUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center truncate">
                                 <Paperclip className="w-4 h-4 mr-2 shrink-0" />
                                 <span className="truncate">{currentResumeUrl.split('/').pop()?.split('?')[0].substring(currentResumeUrl.lastIndexOf('_') + 1) || "View Current Resume"}</span>
