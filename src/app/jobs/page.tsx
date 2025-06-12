@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Compass, Info, FileWarning, ServerCrash, Search, ListChecks, Bot, DatabaseZap, Filter, XCircle, Settings2, Briefcase, MapPin, Users, Wifi, ListFilter, CalendarDays } from 'lucide-react';
+import { Compass, Info, FileWarning, ServerCrash, Search, ListChecks, Bot, DatabaseZap, Filter, XCircle, Settings2, Briefcase, MapPin, Users, Wifi, ListFilter, CalendarDays, Tag, BookText, MapPinned, Star, CheckSquare } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -44,7 +44,7 @@ interface JobAnalysisCache {
 type ActiveJobTab = "generate" | "relevant" | "all";
 const JOBS_PER_PAGE = 9;
 const DEFAULT_JOB_FETCH_LIMIT = 10;
-const MAX_JOB_FETCH_LIMIT = 10; // User configurable max limit
+const MAX_JOB_FETCH_LIMIT = 10; 
 const DEFAULT_JOB_MAX_AGE_DAYS = 30;
 
 
@@ -81,7 +81,7 @@ export default function JobExplorerPage() {
   const [fetchJobTitlesInput, setFetchJobTitlesInput] = useState('');
   const [fetchSkillsInput, setFetchSkillsInput] = useState('');
   const [fetchLocationsInput, setFetchLocationsInput] = useState('');
-  const [fetchExperienceInput, setFetchExperienceInput] = useState<string>(''); // Stored as string for input field
+  const [fetchExperienceInput, setFetchExperienceInput] = useState<string>(''); 
   const [fetchRemotePreferenceInput, setFetchRemotePreferenceInput] = useState<'any' | 'true' | 'false'>('any');
   const [fetchLimitInput, setFetchLimitInput] = useState<string>(DEFAULT_JOB_FETCH_LIMIT.toString());
   const [fetchMaxAgeDaysInput, setFetchMaxAgeDaysInput] = useState<string>(DEFAULT_JOB_MAX_AGE_DAYS.toString());
@@ -125,18 +125,18 @@ export default function JobExplorerPage() {
   // Pre-populate fetch filters from currentUser
   useEffect(() => {
     if (currentUser) {
-      setFetchJobTitlesInput(currentUser.job_role || '');
+      setFetchJobTitlesInput(currentUser.desired_job_role || ''); // Use desired_job_role
       setFetchSkillsInput(currentUser.skills?.join(', ') || '');
       setFetchLocationsInput(currentUser.preferred_locations?.join(', ') || '');
       setFetchExperienceInput(currentUser.experience?.toString() || '');
       
       let remotePref: 'any' | 'true' | 'false' = 'any';
-      if (currentUser.remote_preference === 'Remote') remotePref = 'true';
-      else if (currentUser.remote_preference === 'Onsite') remotePref = 'false';
-      else if (currentUser.remote_preference === 'Hybrid') remotePref = 'any'; // Hybrid could be considered 'any' for fetching, or you might need a 'hybrid' option if API supports
+      const userRemotePref = currentUser.remote_preference?.toString().toLowerCase();
+      if (userRemotePref === 'remote') remotePref = 'true';
+      else if (userRemotePref === 'onsite') remotePref = 'false';
+      else if (userRemotePref === 'hybrid') remotePref = 'any'; 
       setFetchRemotePreferenceInput(remotePref);
       
-      // Defaults for limit and max age are set in useState, no need to override from profile unless desired
     }
   }, [currentUser]);
 
@@ -221,7 +221,7 @@ export default function JobExplorerPage() {
     setErrorRelevantJobs(null);
     try {
       const payload: UserProfileForRelevantJobs = {
-        job_titles: currentUser.job_role ? [currentUser.job_role] : [],
+        job_titles: currentUser.desired_job_role ? [currentUser.desired_job_role] : [], // Use desired_job_role
         skills: currentUser.skills || [],
         experience: currentUser.experience ?? 0,
         locations: currentUser.preferred_locations || [],
@@ -473,7 +473,10 @@ export default function JobExplorerPage() {
 
     const limitNum = parseInt(fetchLimitInput, 10);
     const currentFetchLimit = isNaN(limitNum) || limitNum <= 0 ? DEFAULT_JOB_FETCH_LIMIT : Math.min(limitNum, MAX_JOB_FETCH_LIMIT);
-    const currentMaxAgeDays = parseInt(fetchMaxAgeDaysInput, 10) || DEFAULT_JOB_MAX_AGE_DAYS;
+    
+    const maxAgeNum = parseInt(fetchMaxAgeDaysInput, 10);
+    const currentMaxAgeDays = isNaN(maxAgeNum) || maxAgeNum <=0 ? DEFAULT_JOB_MAX_AGE_DAYS : maxAgeNum;
+
 
     let remoteValue: boolean | null = null;
     if (fetchRemotePreferenceInput === 'true') remoteValue = true;
@@ -484,19 +487,21 @@ export default function JobExplorerPage() {
       skills: fetchSkillsInput.split(',').map(s => s.trim()).filter(s => s),
       experience: fetchExperienceInput ? parseInt(fetchExperienceInput, 10) : null,
       locations: fetchLocationsInput.split(',').map(s => s.trim()).filter(s => s),
-      countries: [], // Keep empty for now, or add UI if needed
+      countries: [], 
       remote: remoteValue,
       limit: currentFetchLimit,
       posted_at_max_age_days: currentMaxAgeDays,
     };
 
     const cleanedPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== undefined && v !== null && (Array.isArray(v) ? v.length > 0 : true)));
+    // Ensure array fields exist if not provided
     if (!cleanedPayload.hasOwnProperty('job_titles')) cleanedPayload.job_titles = [];
     if (!cleanedPayload.hasOwnProperty('skills')) cleanedPayload.skills = [];
     if (!cleanedPayload.hasOwnProperty('locations')) cleanedPayload.locations = [];
     if (!cleanedPayload.hasOwnProperty('countries')) cleanedPayload.countries = [];
     if (!cleanedPayload.hasOwnProperty('limit')) cleanedPayload.limit = DEFAULT_JOB_FETCH_LIMIT;
     if (!cleanedPayload.hasOwnProperty('posted_at_max_age_days')) cleanedPayload.posted_at_max_age_days = DEFAULT_JOB_MAX_AGE_DAYS;
+
 
     try {
       const response = await apiClient.post<{ status: string; jobs_fetched: number; jobs: BackendJobListingResponseItem[] }>('/jobs/fetch_jobs', cleanedPayload);
@@ -555,7 +560,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
         const input: JobMatchExplanationInput = {
             jobDescription: jobToAnalyze.description || '',
             userProfile: currentUser.professional_summary || '',
-            userPreferences: currentUser.job_role || '',
+            userPreferences: currentUser.desired_job_role || '', // Use desired_job_role
             userHistory: '', 
         };
         const explanationResult = await jobMatchExplanation(input);
@@ -913,27 +918,27 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                 <CardContent className="p-0 space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <Label htmlFor="fetch-job-titles">Job Titles (comma-separated)</Label>
+                            <Label htmlFor="fetch-job-titles" className="flex items-center text-sm font-medium"><Tag className="mr-2 h-4 w-4 text-muted-foreground" />Job Titles (comma-separated)</Label>
                             <Input id="fetch-job-titles" placeholder="e.g., Software Engineer, Product Manager" value={fetchJobTitlesInput} onChange={(e) => setFetchJobTitlesInput(e.target.value)} className="mt-1" />
                         </div>
                         <div>
-                            <Label htmlFor="fetch-skills">Skills (comma-separated)</Label>
+                            <Label htmlFor="fetch-skills" className="flex items-center text-sm font-medium"><Star className="mr-2 h-4 w-4 text-muted-foreground" />Skills (comma-separated)</Label>
                             <Input id="fetch-skills" placeholder="e.g., Python, React, Project Management" value={fetchSkillsInput} onChange={(e) => setFetchSkillsInput(e.target.value)} className="mt-1" />
                         </div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <Label htmlFor="fetch-locations">Locations (comma-separated)</Label>
+                            <Label htmlFor="fetch-locations" className="flex items-center text-sm font-medium"><MapPinned className="mr-2 h-4 w-4 text-muted-foreground" />Locations (comma-separated)</Label>
                             <Input id="fetch-locations" placeholder="e.g., New York, Remote, London" value={fetchLocationsInput} onChange={(e) => setFetchLocationsInput(e.target.value)} className="mt-1" />
                         </div>
                         <div>
-                            <Label htmlFor="fetch-experience">Years of Experience</Label>
+                            <Label htmlFor="fetch-experience" className="flex items-center text-sm font-medium"><CheckSquare className="mr-2 h-4 w-4 text-muted-foreground" />Years of Experience</Label>
                             <Input id="fetch-experience" type="number" placeholder="e.g., 5" value={fetchExperienceInput} onChange={(e) => setFetchExperienceInput(e.target.value)} className="mt-1" />
                         </div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
-                            <Label htmlFor="fetch-remote">Remote Preference</Label>
+                            <Label htmlFor="fetch-remote" className="flex items-center text-sm font-medium"><Wifi className="mr-2 h-4 w-4 text-muted-foreground" />Remote Preference</Label>
                             <Select value={fetchRemotePreferenceInput} onValueChange={(value) => setFetchRemotePreferenceInput(value as 'any' | 'true' | 'false')}>
                                 <SelectTrigger className="w-full mt-1">
                                     <SelectValue placeholder="Select preference" />
@@ -946,12 +951,12 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                             </Select>
                         </div>
                         <div>
-                            <Label htmlFor="fetch-limit">Max Jobs to Fetch</Label>
+                             <Label htmlFor="fetch-limit" className="flex items-center text-sm font-medium"><ListFilter className="mr-2 h-4 w-4 text-muted-foreground" />Max Jobs to Fetch</Label>
                             <Input id="fetch-limit" type="number" min="1" max={MAX_JOB_FETCH_LIMIT.toString()} placeholder={`1-${MAX_JOB_FETCH_LIMIT}`} value={fetchLimitInput} onChange={(e) => setFetchLimitInput(e.target.value)} className="mt-1" />
                             <p className="text-xs text-muted-foreground mt-1">Max: {MAX_JOB_FETCH_LIMIT}</p>
                         </div>
                         <div>
-                            <Label htmlFor="fetch-max-age">Max Job Posting Age (Days)</Label>
+                            <Label htmlFor="fetch-max-age" className="flex items-center text-sm font-medium"><CalendarDays className="mr-2 h-4 w-4 text-muted-foreground" />Max Job Posting Age (Days)</Label>
                             <Input id="fetch-max-age" type="number" min="1" placeholder="e.g., 30" value={fetchMaxAgeDaysInput} onChange={(e) => setFetchMaxAgeDaysInput(e.target.value)} className="mt-1" />
                         </div>
                     </div>
@@ -1160,3 +1165,4 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
     </div>
   );
 }
+

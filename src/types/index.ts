@@ -39,7 +39,7 @@ export interface User {
   username: string;
   email_id: string;
   phone_number?: string | null;
-  job_role?: string | null;
+  desired_job_role?: string | null; // Changed from job_role to match backend UserOut
   skills?: string[];
   experience?: number | null;
   preferred_locations?: string[];
@@ -304,3 +304,4 @@ export interface FeedbackIn {
   feedback: string;
   metadata?: { [key: string]: any };
 }
+
