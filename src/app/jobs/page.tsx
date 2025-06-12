@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { JobListing, LocalUserActivity, ActivityType, UserProfileForJobFetching, UserProfileForRelevantJobs, Technology, SaveJobPayload, AnalyzeJobPayload, UserActivityOut, BackendJobListingResponseItem, BackendMatchScoreLogItem } from '@/types';
+import type { JobListing, LocalUserActivity, ActivityType, UserProfileForJobFetching, UserProfileForRelevantJobs, Technology, SaveJobPayload, AnalyzeJobPayload, UserActivityOut, BackendJobListingResponseItem, BackendMatchScoreLogItem, ApplyJobFormData } from '@/types';
 import useLocalStorage from '@/hooks/use-local-storage';
 import { useAuth } from '@/contexts/AuthContext';
 import apiClient from '@/lib/apiClient';
@@ -21,7 +21,7 @@ import { useRouter } from 'next/navigation';
 import type { AxiosError } from 'axios';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SimpleJobListItem } from '@/components/app/simple-job-list-item';
-import { PaginationControls } from '@/components/app/PaginationControls'; // Added PaginationControls
+import { PaginationControls } from '@/components/app/PaginationControls';
 
 // AI Flow Imports
 import { jobMatchExplanation, type JobMatchExplanationInput } from '@/ai/flows/job-match-explanation';
@@ -40,7 +40,7 @@ interface JobAnalysisCache {
 }
 
 type ActiveJobTab = "generate" | "relevant" | "all";
-const JOBS_PER_PAGE = 9; // For pagination
+const JOBS_PER_PAGE = 9;
 
 const isValidDbId = (idInput: any): idInput is number | string => {
   if (idInput === null || idInput === undefined) {
@@ -71,16 +71,13 @@ export default function JobExplorerPage() {
   const [errorRelevantJobs, setErrorRelevantJobs] = useState<string | null>(null);
   const [errorAllJobs, setErrorAllJobs] = useState<string | null>(null);
 
-  // For direct filtering on "All Jobs" tab
   const [filterTechnology, setFilterTechnology] = useState('');
   const [filterLocation, setFilterLocation] = useState('');
 
-  // Pagination state
   const [relevantJobsCurrentPage, setRelevantJobsCurrentPage] = useState(1);
   const [allJobsCurrentPage, setAllJobsCurrentPage] = useState(1);
   const [hasNextRelevantPage, setHasNextRelevantPage] = useState(true);
   const [hasNextAllPage, setHasNextAllPage] = useState(true);
-
 
   const [jobAnalysisCache, setJobAnalysisCache] = useLocalStorage<JobAnalysisCache>('job-ai-analysis-cache', {});
   const jobAnalysisCacheRef = useRef(jobAnalysisCache);
@@ -177,7 +174,6 @@ export default function JobExplorerPage() {
       matchScore: cachedAnalysis.matchScore,
       matchExplanation: cachedAnalysis.matchExplanation,
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); 
 
 
@@ -256,9 +252,14 @@ export default function JobExplorerPage() {
       params.append('skip', skip.toString());
       params.append('limit', limit.toString());
       
-      const endpoint = `/jobs/?${params.toString()}`;
-      
-      const response = await apiClient.get<BackendJobListingResponseItem[]>(endpoint);
+      const endpoint = (filterTechnology || filterLocation) ? `/jobs/?${params.toString()}` : '/jobs/list_jobs/';
+      if (!(filterTechnology || filterLocation)) { // If no filters, still use list_jobs with pagination
+          params.delete('technology'); // Ensure these are not accidentally sent to list_jobs
+          params.delete('location');
+      }
+      const finalEndpoint = (filterTechnology || filterLocation) ? `/jobs/?${params.toString()}` : `/jobs/list_jobs/?${params.toString()}`;
+
+      const response = await apiClient.get<BackendJobListingResponseItem[]>(finalEndpoint);
       const mappedJobs = response.data.map(job => mapBackendJobToFrontend(job));
       setAllJobsList(mappedJobs);
       setAllJobsCurrentPage(page);
@@ -281,41 +282,41 @@ export default function JobExplorerPage() {
   const handleClearFilters = () => {
     setFilterTechnology('');
     setFilterLocation('');
-    setAllJobsCurrentPage(1); // Reset to first page
-    fetchAllJobs(1); // Reload all jobs from page 1
+    setAllJobsCurrentPage(1);
+    fetchAllJobs(1);
   };
 
 
  const populateCacheAndSavedJobIds = useCallback(async () => {
     if (!currentUser || !currentUser.id) {
-      console.log("JobExplorer: populateCacheAndSavedJobIds - No current user or user ID.");
-      setIsCacheReadyForAnalysis(true);
+      console.log("JobExplorer: populateCache - No current user or user ID. Cache not populated from backend.");
+      setIsCacheReadyForAnalysis(true); // Still set to true, means "attempt to populate cache is done (or not needed)"
       return;
     }
     console.log("JobExplorer: Starting populateCacheAndSavedJobIds for user:", currentUser.id);
     setIsCacheReadyForAnalysis(false);
     
+    const newAiCacheUpdates: JobAnalysisCache = {};
     let generalActivitiesError = null;
-    const newAiCacheUpdatesFromProfile: JobAnalysisCache = {};
 
     console.log("JobExplorer: Checking currentUser.match_scores:", currentUser?.match_scores);
     if (currentUser.match_scores && Array.isArray(currentUser.match_scores)) {
         currentUser.match_scores.forEach(scoreLog => {
             if (scoreLog.job_id != null && scoreLog.score != null && scoreLog.explanation != null) {
-                newAiCacheUpdatesFromProfile[scoreLog.job_id] = {
+                newAiCacheUpdates[scoreLog.job_id] = {
                     matchScore: scoreLog.score,
                     matchExplanation: scoreLog.explanation,
                 };
             }
         });
-        console.log(`JobExplorer: Populated ${Object.keys(newAiCacheUpdatesFromProfile).length} AI analysis entries from currentUser.match_scores.`);
+        console.log(`JobExplorer: Populated ${Object.keys(newAiCacheUpdates).length} AI analysis entries from currentUser.match_scores.`);
     } else {
         console.log("JobExplorer: currentUser.match_scores is NOT available or not an array. Historical AI scores cannot be populated from user object.");
         toast({
             title: "Historical AI Scores Not Loaded",
             description: "Your profile data from the backend does not include historical match scores. New analyses will be performed as needed.",
             variant: "default",
-            duration: 7000, // Slightly longer duration for this info toast
+            duration: 7000,
         });
     }
     
@@ -356,15 +357,15 @@ export default function JobExplorerPage() {
       generalActivitiesError = error;
     }
 
-    if (Object.keys(newAiCacheUpdatesFromProfile).length > 0) {
+    if (Object.keys(newAiCacheUpdates).length > 0) {
         setJobAnalysisCache(prevCache => {
-          const changed = Object.keys(newAiCacheUpdatesFromProfile).some(
-            key => newAiCacheUpdatesFromProfile[Number(key)]?.matchScore !== prevCache[Number(key)]?.matchScore ||
-                   newAiCacheUpdatesFromProfile[Number(key)]?.matchExplanation !== prevCache[Number(key)]?.matchExplanation
+          const changed = Object.keys(newAiCacheUpdates).some(
+            key => newAiCacheUpdates[Number(key)]?.matchScore !== prevCache[Number(key)]?.matchScore ||
+                   newAiCacheUpdates[Number(key)]?.matchExplanation !== prevCache[Number(key)]?.matchExplanation
           );
           if (changed) {
             console.log("JobExplorer: AI Analysis cache updated from currentUser.match_scores.");
-            return { ...prevCache, ...newAiCacheUpdatesFromProfile };
+            return { ...prevCache, ...newAiCacheUpdates };
           }
           return prevCache;
         });
@@ -382,9 +383,9 @@ export default function JobExplorerPage() {
           if(listChanged) console.log("JobExplorer: Job list updated with new AI scores from currentUser.match_scores.");
           return listChanged ? newList : list;
         };
-        setRelevantJobsList(prev => updateJobItemsInList(prev, newAiCacheUpdatesFromProfile));
-        setAllJobsList(prev => updateJobItemsInList(prev, newAiCacheUpdatesFromProfile));
-        setFetchedApiJobs(prev => updateJobItemsInList(prev, newAiCacheUpdatesFromProfile));
+        setRelevantJobsList(prev => updateJobItemsInList(prev, newAiCacheUpdates));
+        setAllJobsList(prev => updateJobItemsInList(prev, newAiCacheUpdates));
+        setFetchedApiJobs(prev => updateJobItemsInList(prev, newAiCacheUpdates));
       }
     
     if (generalActivitiesError) {
@@ -406,12 +407,11 @@ export default function JobExplorerPage() {
 
   useEffect(() => {
     if (currentUser && !isLoggingOut && isCacheReadyForAnalysis) { 
-      if (activeTab === "relevant") fetchRelevantJobs(relevantJobsCurrentPage); // Fetch current page
+      if (activeTab === "relevant") fetchRelevantJobs(relevantJobsCurrentPage);
       else if (activeTab === "all" && !filterTechnology && !filterLocation) fetchAllJobs(allJobsCurrentPage);
       else if (activeTab === "all" && (filterTechnology || filterLocation)) handleApplyFilters(allJobsCurrentPage);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, currentUser, isLoggingOut, fetchRelevantJobs, fetchAllJobs, isCacheReadyForAnalysis]);
+  }, [activeTab, currentUser, isLoggingOut, fetchRelevantJobs, fetchAllJobs, handleApplyFilters, isCacheReadyForAnalysis, relevantJobsCurrentPage, allJobsCurrentPage, filterTechnology, filterLocation]);
 
 
   const handleGenerateJobs = async () => {
@@ -794,6 +794,44 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
     }
   };
 
+  const handleMarkAsApplied = async (job: JobListing) => {
+    if (!currentUser || !currentUser.id || typeof job.id !== 'number' || isNaN(job.id) || job.id < 0) {
+      toast({ title: "Error", description: "Cannot mark job as applied. User or job ID invalid.", variant: "destructive" });
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('user_id', currentUser.id.toString());
+    formData.append('job_id', job.id.toString());
+
+    try {
+      await apiClient.post(`/resumes/apply`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data', // Backend expects form data
+        },
+      });
+      toast({ title: "Application Logged", description: `Application for ${job.job_title} has been logged.` });
+      addLocalActivity({
+        action_type: "JOB_APPLIED",
+        job_id: job.id,
+        user_id: currentUser.id,
+        activity_metadata: { jobTitle: job.job_title, company: job.company }
+      });
+      // Optionally, trigger a refresh of the tracker page or related state
+      // For now, also ensure the job is considered "saved" if applied to
+      if (!savedJobIds.has(job.id)) {
+        handleSaveJob(job); // This will ensure it appears in tracker if not already saved
+      }
+    } catch (error) {
+      console.error("Error marking job as applied:", error);
+      const message = error instanceof AxiosError && error.response?.data?.detail 
+                       ? error.response.data.detail 
+                       : "Could not log application.";
+      toast({ title: "Logging Failed", description: message, variant: "destructive" });
+    }
+  };
+
+
   const isProfileIncompleteForAIFeatures = currentUser && (!currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0);
 
   if (isLoggingOut) return <FullPageLoading message="Logging out..." />;
@@ -1025,6 +1063,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
         isOpen={isDetailsModalOpen}
         onClose={() => setIsDetailsModalOpen(false)}
         onGenerateMaterials={openMaterialsModal}
+        onMarkAsApplied={handleMarkAsApplied} 
         isLoadingExplanation={isLoadingExplanation}
       />
       <ApplicationMaterialsModal
@@ -1041,3 +1080,5 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
     </div>
   );
 }
+
+    

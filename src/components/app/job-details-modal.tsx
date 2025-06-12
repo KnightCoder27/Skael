@@ -1,25 +1,26 @@
 
 "use client";
 
-import type { JobListing, Technology } from '@/types'; // Updated type
+import type { JobListing, Technology } from '@/types'; 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { MapPin, Briefcase, DollarSign, FileText, ExternalLink, Percent, Sparkles, CalendarDays, Clock3 } from 'lucide-react'; // Added Clock3
+import { MapPin, Briefcase, DollarSign, FileText, ExternalLink, Percent, Sparkles, CalendarDays, Clock3, CheckCircle } from 'lucide-react'; // Added CheckCircle
 import { LoadingSpinner } from './loading-spinner';
 import Image from 'next/image';
 
 interface JobDetailsModalProps {
-  job: JobListing | null; // Updated type
+  job: JobListing | null; 
   isOpen: boolean;
   onClose: () => void;
-  onGenerateMaterials: (job: JobListing) => void; // Updated type
+  onGenerateMaterials: (job: JobListing) => void; 
+  onMarkAsApplied: (job: JobListing) => void; // New prop
   isLoadingExplanation?: boolean;
 }
 
-export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isLoadingExplanation }: JobDetailsModalProps) {
+export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, onMarkAsApplied, isLoadingExplanation }: JobDetailsModalProps) {
   if (!job) return null;
 
   const getMatchScoreVariant = () => {
@@ -34,7 +35,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isL
     try {
       return new Date(dateString).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
     } catch (e) {
-      return dateString; // Fallback to original string if date is invalid
+      return dateString; 
     }
   };
 
@@ -44,9 +45,9 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isL
         <DialogHeader className="p-6 pb-4 border-b">
           <div className="flex items-start justify-between">
             <div>
-              <DialogTitle className="text-2xl font-bold font-headline text-primary">{job.job_title}</DialogTitle> {/* Updated field */}
+              <DialogTitle className="text-2xl font-bold font-headline text-primary">{job.job_title}</DialogTitle>
               <DialogDescription className="text-base text-muted-foreground mt-1 flex items-center">
-                <Briefcase className="w-4 h-4 mr-2" /> {job.company} {/* Kept as job.company */}
+                <Briefcase className="w-4 h-4 mr-2" /> {job.company}
               </DialogDescription>
             </div>
             {job.companyLogo && (
@@ -62,13 +63,13 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isL
           </div>
           <div className="flex flex-wrap gap-x-4 gap-y-1 items-center text-sm text-muted-foreground mt-2">
             <span className="flex items-center"><MapPin className="w-4 h-4 mr-1.5" /> {job.location}</span>
-            {job.salary_string && <span className="flex items-center text-accent"><DollarSign className="w-4 h-4 mr-1.5" /> {job.salary_string}</span>} {/* Updated field */}
-            {job.date_posted && <span className="flex items-center"><CalendarDays className="w-4 h-4 mr-1.5" /> Posted: {formatDate(job.date_posted)}</span>} {/* Updated field and added formatting */}
+            {job.salary_string && <span className="flex items-center text-accent"><DollarSign className="w-4 h-4 mr-1.5" /> {job.salary_string}</span>}
+            {job.date_posted && <span className="flex items-center"><CalendarDays className="w-4 h-4 mr-1.5" /> Posted: {formatDate(job.date_posted)}</span>}
             {job.employment_status && <span className="flex items-center"><Clock3 className="w-4 h-4 mr-1.5" /> {job.employment_status}</span>}
           </div>
           {job.technologies && job.technologies.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
-              {job.technologies.map(tech => <Badge key={tech.id} variant="secondary" className="text-xs">{tech.technology_name}</Badge>)} {/* Displaying technology_name */}
+              {job.technologies.map(tech => <Badge key={tech.id} variant="secondary" className="text-xs">{tech.technology_name}</Badge>)}
             </div>
           )}
         </DialogHeader>
@@ -78,7 +79,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isL
             <div>
               <h3 className="text-lg font-semibold mb-1.5 font-headline">Full Job Description</h3>
               <p className="text-sm text-foreground/90 whitespace-pre-line leading-relaxed">
-                {job.description} {/* Updated field (assuming fullDescription was merged into description) */}
+                {job.description}
               </p>
             </div>
 
@@ -108,20 +109,32 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isL
           </div>
         </ScrollArea>
 
-        <DialogFooter className="p-6 pt-4 border-t flex flex-col sm:flex-row gap-2">
-          {job.url && (
-            <Button variant="outline" asChild className="w-full sm:w-auto">
-              <a href={job.url} target="_blank" rel="noopener noreferrer">
-                View Original Post <ExternalLink className="w-4 h-4 ml-2" />
-              </a>
+        <DialogFooter className="p-6 pt-4 border-t grid grid-cols-1 sm:flex sm:flex-row sm:justify-between gap-2">
+          <div className="flex gap-2 flex-col sm:flex-row">
+            {job.url && (
+                <Button variant="outline" asChild className="w-full sm:w-auto">
+                <a href={job.url} target="_blank" rel="noopener noreferrer">
+                    View Original Post <ExternalLink className="w-4 h-4 ml-2" />
+                </a>
+                </Button>
+            )}
+            <Button onClick={() => onGenerateMaterials(job)} className="w-full sm:w-auto">
+                <FileText className="w-4 h-4 mr-2" /> Generate Materials
             </Button>
-          )}
-          <Button onClick={() => onGenerateMaterials(job)} className="w-full sm:w-auto bg-primary hover:bg-primary/90">
-            <FileText className="w-4 h-4 mr-2" /> Generate Application Materials
-          </Button>
-          <Button variant="ghost" onClick={onClose} className="w-full sm:w-auto">Close</Button>
+          </div>
+          <div className="flex gap-2 flex-col sm:flex-row">
+            <Button 
+                onClick={() => onMarkAsApplied(job)} 
+                variant="default" 
+                className="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white">
+                <CheckCircle className="w-4 h-4 mr-2" /> Mark as Applied
+            </Button>
+            <Button variant="ghost" onClick={onClose} className="w-full sm:w-auto">Close</Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
+
+    

@@ -49,7 +49,7 @@ export interface User {
   expected_salary?: number | null;
   resume?: string | null; // URL
   joined_date?: string; // ISO datetime string
-  match_scores?: BackendMatchScoreLogItem[]; // <-- ADDED: To hold historical match scores
+  match_scores?: BackendMatchScoreLogItem[];
 }
 
 // API Request/Response types from the guide
@@ -247,6 +247,12 @@ export interface AnalyzeJobPayload {
   explanation: string;
 }
 
+// For POST /resumes/apply (Form Data)
+export interface ApplyJobFormData {
+  user_id: number;
+  job_id: number;
+}
+
 
 // For Resumes
 export interface ResumeIn {
@@ -268,8 +274,9 @@ export type ActivityType =
   | "COVER_LETTER_GENERATED_FOR_JOB"
   | "GENERAL_RESUME_GENERATED"
   | "GENERAL_COVER_LETTER_GENERATED"
-  | "AI_JOB_ANALYZED" // Simplified: logs that an analysis was run, score/explanation not duplicated here.
-  | "APPLICATION_STATUS_UPDATED";
+  | "AI_JOB_ANALYZED" // Simplified: logs the event an analysis was run
+  | "APPLICATION_STATUS_UPDATED"
+  | "JOB_APPLIED"; // For marking a job as applied
 
 // Corresponds to backend's UserActivityLog, with client-side id and timestamp
 export interface LocalUserActivity {
@@ -290,3 +297,11 @@ export interface UserActivityOut {
   activity_metadata: { [key: string]: any } | null;
   created_at: string; // ISO 8601 datetime string
 }
+
+// Feedback submission payload
+export interface FeedbackIn {
+  feedback: string;
+  metadata?: { [key: string]: any };
+}
+
+    
