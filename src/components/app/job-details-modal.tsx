@@ -1,33 +1,32 @@
 
 "use client";
 
-import type { JobListing, Technology } from '@/types'; 
+import type { JobListing, Technology, HiringTeamMember } from '@/types';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { MapPin, Briefcase, DollarSign, FileText, ExternalLink, Percent, Sparkles, CalendarDays, Clock3, CheckCircle } from 'lucide-react';
+import { MapPin, Briefcase, DollarSign, FileText, ExternalLink, Percent, Sparkles, CalendarDays, Clock3, CheckCircle, Users, Info, Linkedin } from 'lucide-react';
 import { LoadingSpinner } from './loading-spinner';
 import Image from 'next/image';
 
 interface JobDetailsModalProps {
-  job: JobListing | null; 
+  job: JobListing | null;
   isOpen: boolean;
   onClose: () => void;
-  onGenerateMaterials: (job: JobListing) => void; 
-  // onMarkAsApplied: (job: JobListing) => void; // Commented out
+  onGenerateMaterials: (job: JobListing) => void;
   isLoadingExplanation?: boolean;
 }
 
-export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, /*onMarkAsApplied,*/ isLoadingExplanation }: JobDetailsModalProps) {
+export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isLoadingExplanation }: JobDetailsModalProps) {
   if (!job) return null;
 
   const getMatchScoreVariant = () => {
     if (job.matchScore === undefined) return "outline";
-    if (job.matchScore > 75) return "default"; 
-    if (job.matchScore > 50) return "secondary"; 
-    return "destructive"; 
+    if (job.matchScore > 75) return "default";
+    if (job.matchScore > 50) return "secondary";
+    return "destructive";
   };
 
   const formatDate = (dateString?: string) => {
@@ -35,7 +34,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, /*o
     try {
       return new Date(dateString).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
     } catch (e) {
-      return dateString; 
+      return dateString;
     }
   };
 
@@ -51,11 +50,11 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, /*o
               </DialogDescription>
             </div>
             {job.companyLogo && (
-              <Image 
-                src={job.companyLogo} 
-                alt={`${job.company} logo`} 
-                width={56} 
-                height={56} 
+              <Image
+                src={job.companyLogo}
+                alt={`${job.company} logo`}
+                width={56}
+                height={56}
                 className="rounded-lg border object-contain"
                 data-ai-hint="company logo"
               />
@@ -73,7 +72,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, /*o
             </div>
           )}
         </DialogHeader>
-        
+
         <ScrollArea className="flex-grow overflow-y-auto px-6 py-4">
           <div className="space-y-4">
             <div>
@@ -82,6 +81,51 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, /*o
                 {job.description}
               </p>
             </div>
+
+            {job.key_info && job.key_info.length > 0 && (
+              <>
+                <Separator />
+                <div>
+                  <h3 className="text-lg font-semibold mb-1.5 font-headline flex items-center">
+                    <Info className="w-5 h-5 mr-2 text-primary" /> Key Information
+                  </h3>
+                  <ul className="list-disc list-inside space-y-1 pl-2">
+                    {job.key_info.map((info, index) => (
+                      <li key={index} className="text-sm text-foreground/90 leading-relaxed">{info}</li>
+                    ))}
+                  </ul>
+                </div>
+              </>
+            )}
+
+            {job.hiring_team && job.hiring_team.length > 0 && (
+              <>
+                <Separator />
+                <div>
+                  <h3 className="text-lg font-semibold mb-1.5 font-headline flex items-center">
+                    <Users className="w-5 h-5 mr-2 text-primary" /> Hiring Team
+                  </h3>
+                  <div className="space-y-2">
+                    {job.hiring_team.map((member, index) => (
+                      <div key={index} className="text-sm text-foreground/90 p-2 border rounded-md bg-muted/30">
+                        <p className="font-medium">{member.name}</p>
+                        {member.title && <p className="text-xs text-muted-foreground">{member.title}</p>}
+                        {member.linkedin_profile_url && (
+                          <a
+                            href={member.linkedin_profile_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-primary hover:underline flex items-center mt-0.5"
+                          >
+                            <Linkedin className="w-3 h-3 mr-1" /> LinkedIn Profile
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
 
             {isLoadingExplanation ? (
               <div className="py-6 text-center">
@@ -123,14 +167,6 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, /*o
             </Button>
           </div>
           <div className="flex gap-2 flex-col sm:flex-row">
-            {/*
-            <Button 
-                onClick={() => onMarkAsApplied(job)} 
-                variant="default" 
-                className="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white">
-                <CheckCircle className="w-4 h-4 mr-2" /> Mark as Applied
-            </Button>
-            */}
             <Button variant="ghost" onClick={onClose} className="w-full sm:w-auto">Close</Button>
           </div>
         </DialogFooter>
@@ -138,7 +174,3 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, /*o
     </Dialog>
   );
 }
-
-    
-
-    
