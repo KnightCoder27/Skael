@@ -53,13 +53,14 @@ export type SavedJob = BackendJobListingResponseItem;
  */
 export interface User {
   id: number; // Backend ID (number)
-  username: string; // Corresponds to backend's user_name
-  email_id: string; // Corresponds to backend's email_id
+  username: string;
+  email_id: string;
   phone_number?: string | null;
-  desired_job_role?: string | null; // Was job_role
+  desired_job_role?: string | null;
   skills?: string[];
   experience?: number | null;
   preferred_locations?: string[];
+  countries: string[]; // Now mandatory
   remote_preference?: RemotePreferenceAPI | string | null;
   professional_summary?: string | null;
   expected_salary?: number | null;
@@ -72,9 +73,9 @@ export interface User {
 // API Request/Response types from the guide
 
 export interface UserIn { // For POST /users/ (registration)
-  username: string; // Corrected: was user_name, then email_id
-  email: string;    // Corrected: was email, then email
-  number: string | null; // Assuming this maps to phone_number or similar on backend
+  username: string;
+  email: string;
+  number: string | null;
   password: string;
 }
 
@@ -84,7 +85,7 @@ export interface UserLogin { // For POST /users/login
 }
 
 export interface UserLoginResponse {
-  messages: string; // Changed from msg to messages
+  messages: string;
   user_id: number; // Backend User ID
 }
 
@@ -101,6 +102,7 @@ export interface UserUpdateAPI { // For PUT /users/{id}
   skills?: string; // Comma-separated string of skill names
   experience?: number;
   preferred_locations?: string; // Comma-separated string of location names
+  countries?: string; // Comma-separated string of country codes (e.g., "US,CA")
   remote_preference?: RemotePreferenceAPI;
   professional_summary?: string;
   expected_salary?: number;
@@ -248,7 +250,7 @@ export interface ActivityIn {
 }
 
 export interface ActivityLogResponse { // Response from POST /activity/log
-  msg: string;
+  messages: string; // Changed from msg
   activity_id: string;
 }
 
@@ -286,7 +288,7 @@ export interface ResumeIn {
 }
 
 export interface ResumeGenerateResponse {
-  msg: string;
+  messages: string; // Changed from msg
   resume_id: string;
 }
 

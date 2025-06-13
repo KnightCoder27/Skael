@@ -29,23 +29,18 @@ import { Progress } from '@/components/ui/progress';
 
 
 const remotePreferenceOptions: RemotePreferenceAPI[] = ["Remote", "Hybrid", "Onsite"];
-console.log("[PROFILE_DEBUG] Defined remotePreferenceOptions:", remotePreferenceOptions);
 
 const profileSchema = z.object({
   username: z.string().min(2, 'Name should be at least 2 characters.').max(50, 'Name cannot exceed 50 characters.'),
   email_id: z.string().email('Invalid email address.'),
   phone_number: z.string().max(20, 'Phone number cannot exceed 20 characters.').optional().nullable(),
-  
   professional_summary: z.string().min(50, 'Profile summary should be at least 50 characters.').optional().nullable(),
-  desired_job_role: z.string().min(10, 'Ideal Job Role should be at least 10 characters.').optional().nullable(), // Changed from job_role
-  
+  desired_job_role: z.string().min(10, 'Ideal Job Role should be at least 10 characters.').optional().nullable(),
   skills: z.string().max(500, 'Skills list cannot exceed 500 characters (comma-separated).').optional().nullable(),
-  
   experience: z.coerce.number().int().nonnegative('Experience must be a positive number.').optional().nullable(),
-  
   preferred_locations: z.string().max(255, 'Preferred Locations cannot exceed 255 characters (comma-separated).').optional().nullable(),
-  
-  remote_preference: z.enum(remotePreferenceOptions, { errorMap: () => ({ message: "Please select a valid remote preference."}) }).optional().nullable(), 
+  countries: z.string().min(1, 'Countries are required (e.g., US, CA).').max(255, 'Countries list cannot exceed 255 characters (comma-separated).'),
+  remote_preference: z.enum(remotePreferenceOptions, { errorMap: () => ({ message: "Please select a valid remote preference."}) }).optional().nullable(),
   expected_salary: z.coerce.number().positive("Expected salary must be a positive number.").optional().nullable(),
   resume: z.string().url('Resume must be a valid URL (this will be the Firebase Storage URL).').max(1024, 'Resume URL too long.').optional().nullable(),
 });
@@ -71,16 +66,17 @@ export default function ProfilePage() {
       email_id: '',
       phone_number: null,
       professional_summary: null,
-      desired_job_role: null, // Changed from job_role
+      desired_job_role: null,
       skills: null,
       experience: null,
       preferred_locations: null,
-      remote_preference: undefined, 
+      countries: '', // Default to empty string
+      remote_preference: undefined,
       expected_salary: null,
       resume: null,
     }
   });
-  const { register, handleSubmit, formState: { errors, isSubmitting: isFormSubmitting }, reset, control, setValue, watch, getValues } = form;
+  const { register, handleSubmit, formState: { errors, isSubmitting: isFormSubmitting }, reset, control, setValue, watch } = form;
 
   const watchedResumeUrl = watch("resume");
 
@@ -90,8 +86,8 @@ export default function ProfilePage() {
 
 
   useEffect(() => {
-    if (isLoggingOut) return; 
-    if (!isLoadingAuth && !currentUser && !firebaseUser) { 
+    if (isLoggingOut) return;
+    if (!isLoadingAuth && !currentUser && !firebaseUser) {
         toast({ title: "Not Authenticated", description: "Please log in to view your profile.", variant: "destructive" });
         router.push('/auth');
     }
@@ -106,37 +102,33 @@ export default function ProfilePage() {
         return;
     }
 
-    let formValuesToReset: Partial<ProfileFormValues> = { /* initial empty values */ };
+    let formValuesToReset: Partial<ProfileFormValues> = {};
     let newResumeUrlToSet: string | null = null;
 
     if (currentUser && currentUser.id) {
-        console.log(`[PROFILE_DEBUG] Effect run for currentUser ID: ${currentUser.id}. Raw remote_preference from DB for this run: "${currentUser.remote_preference}"`);
         const currentRPFromDBRaw: string | null | undefined = currentUser.remote_preference;
         let formRPValue: RemotePreferenceAPI | undefined = undefined;
 
         if (typeof currentRPFromDBRaw === 'string' && currentRPFromDBRaw.trim() !== '') {
             const normalizedRP = currentRPFromDBRaw.toLowerCase().trim();
-            console.log(`[PROFILE_DEBUG] Normalized (trimmed, lowercased) remote_preference: "${normalizedRP}"`);
             switch (normalizedRP) {
                 case "remote": formRPValue = "Remote"; break;
                 case "hybrid": formRPValue = "Hybrid"; break;
                 case "onsite": formRPValue = "Onsite"; break;
-                default: console.warn(`[PROFILE_DEBUG] Unexpected remote_preference value from DB: ${currentRPFromDBRaw}`); break;
+                default: break;
             }
-        } else if (currentRPFromDBRaw !== null && currentRPFromDBRaw !== undefined) {
-             console.warn(`[PROFILE_DEBUG] remote_preference from DB is not a non-empty string or is null/undefined. Value: "${currentRPFromDBRaw}". Will use placeholder.`);
         }
-        console.log(`[PROFILE_DEBUG] Final formRPValue to be set in form reset: "${formRPValue}"`);
 
         formValuesToReset = {
             username: currentUser.username || firebaseUser?.displayName || '',
             email_id: currentUser.email_id || firebaseUser?.email || '',
             phone_number: currentUser.phone_number || null,
             professional_summary: currentUser.professional_summary || null,
-            desired_job_role: currentUser.desired_job_role || null, // Changed from job_role
+            desired_job_role: currentUser.desired_job_role || null,
             skills: currentUser.skills?.join(', ') || null,
             experience: currentUser.experience ?? null,
             preferred_locations: currentUser.preferred_locations?.join(', ') || null,
+            countries: currentUser.countries?.join(', ') || '', // Populate countries
             remote_preference: formRPValue,
             expected_salary: currentUser.expected_salary ?? null,
             resume: currentUser.resume || null,
@@ -145,28 +137,27 @@ export default function ProfilePage() {
         setHasPopulatedFromCurrentUser(true);
 
     } else if (firebaseUser && !currentUser && !hasPopulatedFromCurrentUser) {
-        console.log("[PROFILE_DEBUG] Resetting form based on firebaseUser only (profile not yet fully loaded or new user).");
         formValuesToReset = {
             username: firebaseUser.displayName || '',
             email_id: firebaseUser.email || '',
-            phone_number: null, professional_summary: null, desired_job_role: null, // Changed from job_role
-            skills: null, experience: null, preferred_locations: null, remote_preference: undefined,
+            phone_number: null, professional_summary: null, desired_job_role: null,
+            skills: null, experience: null, preferred_locations: null, countries: '',
+            remote_preference: undefined,
             expected_salary: null, resume: null,
         };
         newResumeUrlToSet = null;
     } else if (!firebaseUser && !currentUser) {
-       console.log("[PROFILE_DEBUG] No user data. Resetting form to initial defaults. hasPopulatedFromCurrentUser set to false.");
        setHasPopulatedFromCurrentUser(false);
-       formValuesToReset = { // Reset to absolutely blank
-            username: '', email_id: '', phone_number: null, professional_summary: null, desired_job_role: null, // Changed from job_role
-            skills: null, experience: null, preferred_locations: null, remote_preference: undefined,
+       formValuesToReset = {
+            username: '', email_id: '', phone_number: null, professional_summary: null, desired_job_role: null,
+            skills: null, experience: null, preferred_locations: null, countries: '',
+            remote_preference: undefined,
             expected_salary: null, resume: null,
        };
        newResumeUrlToSet = null;
     }
 
     if (Object.keys(formValuesToReset).length > 0 || newResumeUrlToSet !== currentResumeUrl) {
-        console.log("[PROFILE_DEBUG] Calling reset with values:", formValuesToReset);
         reset(formValuesToReset);
         setCurrentResumeUrl(newResumeUrlToSet);
     }
@@ -177,15 +168,15 @@ export default function ProfilePage() {
   const handleResumeFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      if (file.size > 5 * 1024 * 1024) { 
+      if (file.size > 5 * 1024 * 1024) {
         toast({ title: "File Too Large", description: "Resume file should be less than 5MB.", variant: "destructive" });
-        event.target.value = ''; 
+        event.target.value = '';
         return;
       }
       const allowedTypes = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
       if (!allowedTypes.includes(file.type)) {
         toast({ title: "Invalid File Type", description: "Please upload a PDF or Word document.", variant: "destructive" });
-        event.target.value = ''; 
+        event.target.value = '';
         return;
       }
       setSelectedResumeFile(file);
@@ -197,17 +188,17 @@ export default function ProfilePage() {
   const handleRemoveResume = async () => {
     if (!currentResumeUrl || !firebaseUser) return;
 
-    setIsUploadingResume(true); 
+    setIsUploadingResume(true);
     try {
-      const fileRef = storageRef(storage, currentResumeUrl); 
+      const fileRef = storageRef(storage, currentResumeUrl);
       await deleteObject(fileRef);
-      
+
       if (backendUserId) {
         await apiClient.put(`/users/${backendUserId}`, { resume: null });
-        setValue('resume', null); 
+        setValue('resume', null);
         setCurrentResumeUrl(null);
         setSelectedResumeFile(null);
-        await refetchBackendUser(); 
+        await refetchBackendUser();
         toast({ title: "Resume Removed", description: "Your resume has been removed." });
       }
     } catch (error) {
@@ -224,8 +215,8 @@ export default function ProfilePage() {
       toast({ title: "Error", description: "User session not found. Cannot update profile.", variant: "destructive" });
       return;
     }
-    
-    let newResumeUrl: string | null | undefined = data.resume; 
+
+    let newResumeUrl: string | null | undefined = data.resume;
 
     if (selectedResumeFile) {
       setIsUploadingResume(true);
@@ -248,9 +239,9 @@ export default function ProfilePage() {
             async () => {
               const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
               newResumeUrl = downloadURL;
-              setValue('resume', newResumeUrl); 
-              setCurrentResumeUrl(newResumeUrl); 
-              setSelectedResumeFile(null); 
+              setValue('resume', newResumeUrl);
+              setCurrentResumeUrl(newResumeUrl);
+              setSelectedResumeFile(null);
               resolve();
             }
           );
@@ -259,7 +250,7 @@ export default function ProfilePage() {
         toast({ title: "Resume Upload Failed", description: "Could not upload your resume. Please try again.", variant: "destructive" });
         setIsUploadingResume(false);
         setUploadResumeProgress(null);
-        return; 
+        return;
       } finally {
         setIsUploadingResume(false);
         setUploadResumeProgress(null);
@@ -269,23 +260,24 @@ export default function ProfilePage() {
     const updatePayload: UserUpdateAPI = {
       username: data.username,
       number: data.phone_number || undefined,
-      desired_job_role: data.desired_job_role || undefined, // Changed from data.job_role
+      desired_job_role: data.desired_job_role || undefined,
       skills: data.skills || undefined,
       experience: data.experience ?? undefined,
       preferred_locations: data.preferred_locations || undefined,
-      remote_preference: data.remote_preference || undefined, 
+      countries: data.countries, // Send countries as a comma-separated string
+      remote_preference: data.remote_preference || undefined,
       professional_summary: data.professional_summary || undefined,
       expected_salary: data.expected_salary ?? undefined,
-      resume: newResumeUrl, 
+      resume: newResumeUrl,
     };
-    
+
     const filteredUpdatePayload = Object.fromEntries(
         Object.entries(updatePayload).filter(([_, v]) => v !== undefined)
-    ) as Partial<UserUpdateAPI>; 
+    ) as Partial<UserUpdateAPI>;
 
     try {
       await apiClient.put(`/users/${backendUserId}`, filteredUpdatePayload);
-      await refetchBackendUser(); 
+      await refetchBackendUser();
       toast({
         title: 'Profile Updated',
         description: 'Your profile information has been saved successfully.',
@@ -294,7 +286,7 @@ export default function ProfilePage() {
       console.error("Error updating profile:", error);
       let errorMessage = "Could not update profile. Please try again.";
        if (error instanceof AxiosError && error.response) {
-        errorMessage = error.response.data?.detail || error.response.data?.msg || errorMessage;
+        errorMessage = error.response.data?.detail || error.response.data?.messages || errorMessage;
       }
       toast({ title: "Update Failed", description: errorMessage, variant: "destructive" });
     }
@@ -313,7 +305,7 @@ export default function ProfilePage() {
       toast({ title: "Error", description: "User session not found. Cannot delete account.", variant: "destructive" });
       return;
     }
-    setIsLoggingOut(true); 
+    setIsLoggingOut(true);
     try {
       if (currentUser?.resume) {
         try {
@@ -326,7 +318,7 @@ export default function ProfilePage() {
       }
       await apiClient.delete(`/users/${backendUserId}`);
       await deleteFirebaseUser(firebaseUser);
-      
+
       toast({
         title: "Account Deleted",
         description: "Your account has been permanently deleted.",
@@ -336,12 +328,12 @@ export default function ProfilePage() {
       console.error("Error deleting account:", error);
       let errorMessage = "Could not delete account. Please try again.";
        if (error instanceof AxiosError && error.response) {
-        errorMessage = error.response.data?.detail || error.response.data?.msg || "Failed to delete account from backend.";
+        errorMessage = error.response.data?.detail || error.response.data?.messages || "Failed to delete account from backend.";
       } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
         errorMessage = "Failed to delete Firebase account. You might need to re-authenticate.";
       }
       toast({ title: "Deletion Failed", description: errorMessage, variant: "destructive" });
-      setIsLoggingOut(false); 
+      setIsLoggingOut(false);
     }
   };
 
@@ -362,7 +354,7 @@ export default function ProfilePage() {
   if (!currentUser && !isLoadingAuth && !isLoggingOut && !firebaseUser) {
      return <FullPageLoading message="Verifying session..." />;
   }
-  
+
   const overallSubmitting = isFormSubmitting || isUploadingResume;
 
   return (
@@ -400,7 +392,7 @@ export default function ProfilePage() {
                   {...register('email_id')}
                   placeholder="you@example.com"
                   className={errors.email_id ? 'border-destructive' : ''}
-                  readOnly 
+                  readOnly
                 />
                 {errors.email_id && <p className="text-sm text-destructive">{errors.email_id.message}</p>}
               </div>
@@ -425,6 +417,15 @@ export default function ProfilePage() {
                 {errors.preferred_locations && <p className="text-sm text-destructive">{errors.preferred_locations.message}</p>}
               </div>
             </div>
+             <div className="space-y-2">
+                <Label htmlFor="countries">Target Countries (comma-separated)</Label>
+                 <div className="relative flex items-center">
+                    <Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input id="countries" {...register('countries')} placeholder="e.g., US, CA, GB" className={`pl-10 ${errors.countries ? 'border-destructive' : ''}`} />
+                </div>
+                <p className="text-xs text-muted-foreground">Required. Enter ISO alpha-2 codes. Helps in fetching relevant jobs.</p>
+                {errors.countries && <p className="text-sm text-destructive">{errors.countries.message}</p>}
+              </div>
           </CardContent>
 
           <Separator className="my-6" />
@@ -458,13 +459,13 @@ export default function ProfilePage() {
                     <p className="text-xs text-muted-foreground">Optional.</p>
                     {errors.experience && <p className="text-sm text-destructive">{errors.experience.message}</p>}
                 </div>
-                
+
                 <div className="space-y-2">
                     <Label htmlFor="resume-upload">Your Resume</Label>
-                    <Input 
-                        id="resume-upload" 
-                        type="file" 
-                        onChange={handleResumeFileChange} 
+                    <Input
+                        id="resume-upload"
+                        type="file"
+                        onChange={handleResumeFileChange}
                         accept=".pdf,.doc,.docx"
                         className="mb-1 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
                         disabled={isUploadingResume || overallSubmitting}
@@ -492,7 +493,7 @@ export default function ProfilePage() {
                         </div>
                     )}
                     {errors.resume && <p className="text-sm text-destructive">{errors.resume.message}</p>}
-                    <input type="hidden" {...register('resume')} /> 
+                    <input type="hidden" {...register('resume')} />
                 </div>
             </div>
 
@@ -520,15 +521,15 @@ export default function ProfilePage() {
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="desired_job_role" className="text-base">Ideal Job Role</Label> {/* Changed htmlFor */}
+              <Label htmlFor="desired_job_role" className="text-base">Ideal Job Role</Label>
               <Textarea
-                id="desired_job_role" // Changed id
-                {...register('desired_job_role')} // Changed register name
+                id="desired_job_role"
+                {...register('desired_job_role')}
                 placeholder="e.g., Senior Frontend Developer specializing in e-commerce, interested in mid-size tech companies..."
                 rows={5}
-                className={errors.desired_job_role ? 'border-destructive' : ''} // Changed error check
+                className={errors.desired_job_role ? 'border-destructive' : ''}
               />
-              {errors.desired_job_role && <p className="text-sm text-destructive">{errors.desired_job_role.message}</p>} {/* Changed error check */}
+              {errors.desired_job_role && <p className="text-sm text-destructive">{errors.desired_job_role.message}</p>}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -538,11 +539,10 @@ export default function ProfilePage() {
                         name="remote_preference"
                         control={control}
                         render={({ field }) => {
-                            console.log("[PROFILE_DEBUG] Controller field.value for remote_preference:", field.value); 
                             return (
-                                <Select 
-                                    onValueChange={field.onChange} 
-                                    value={field.value ?? undefined} 
+                                <Select
+                                    onValueChange={field.onChange}
+                                    value={field.value ?? undefined}
                                     disabled={overallSubmitting}
                                 >
                                     <SelectTrigger className={`relative w-full justify-start pl-10 pr-3 ${errors.remote_preference ? 'border-destructive' : ''}`}>
@@ -605,7 +605,7 @@ export default function ProfilePage() {
           These tools will use your saved profile information. Ensure your profile is up-to-date for best results.
         </CardFooter>
       </Card>
-      
+
       {currentUser && (
         <>
             <Separator className="my-10" />

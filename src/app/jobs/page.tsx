@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Compass, Info, FileWarning, ServerCrash, Search, ListChecks, Bot, DatabaseZap, Filter, XCircle, Settings2, Briefcase, MapPin, Users, Wifi, ListFilter, CalendarDays, Tag, BookText, MapPinned, Star, CheckSquare } from 'lucide-react';
+import { Compass, Info, FileWarning, ServerCrash, Search, ListChecks, Bot, DatabaseZap, Filter, XCircle, Settings2, Briefcase, MapPin, Users, Wifi, ListFilter, CalendarDays, Tag, BookText, MapPinned, Star, CheckSquare, Globe } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -44,7 +44,7 @@ interface JobAnalysisCache {
 type ActiveJobTab = "generate" | "relevant" | "all";
 const JOBS_PER_PAGE = 9;
 const DEFAULT_JOB_FETCH_LIMIT = 10;
-const MAX_JOB_FETCH_LIMIT = 10; 
+const MAX_JOB_FETCH_LIMIT = 10;
 const DEFAULT_JOB_MAX_AGE_DAYS = 30;
 
 
@@ -81,7 +81,8 @@ export default function JobExplorerPage() {
   const [fetchJobTitlesInput, setFetchJobTitlesInput] = useState('');
   const [fetchSkillsInput, setFetchSkillsInput] = useState('');
   const [fetchLocationsInput, setFetchLocationsInput] = useState('');
-  const [fetchExperienceInput, setFetchExperienceInput] = useState<string>(''); 
+  const [fetchCountriesInput, setFetchCountriesInput] = useState(''); // New state for countries
+  const [fetchExperienceInput, setFetchExperienceInput] = useState<string>('');
   const [fetchRemotePreferenceInput, setFetchRemotePreferenceInput] = useState<'any' | 'true' | 'false'>('any');
   const [fetchLimitInput, setFetchLimitInput] = useState<string>(DEFAULT_JOB_FETCH_LIMIT.toString());
   const [fetchMaxAgeDaysInput, setFetchMaxAgeDaysInput] = useState<string>(DEFAULT_JOB_MAX_AGE_DAYS.toString());
@@ -125,18 +126,19 @@ export default function JobExplorerPage() {
   // Pre-populate fetch filters from currentUser
   useEffect(() => {
     if (currentUser) {
-      setFetchJobTitlesInput(currentUser.desired_job_role || ''); // Use desired_job_role
+      setFetchJobTitlesInput(currentUser.desired_job_role || '');
       setFetchSkillsInput(currentUser.skills?.join(', ') || '');
       setFetchLocationsInput(currentUser.preferred_locations?.join(', ') || '');
+      setFetchCountriesInput(currentUser.countries?.join(', ') || ''); // Populate countries
       setFetchExperienceInput(currentUser.experience?.toString() || '');
-      
+
       let remotePref: 'any' | 'true' | 'false' = 'any';
       const userRemotePref = currentUser.remote_preference?.toString().toLowerCase();
       if (userRemotePref === 'remote') remotePref = 'true';
       else if (userRemotePref === 'onsite') remotePref = 'false';
-      else if (userRemotePref === 'hybrid') remotePref = 'any'; 
+      else if (userRemotePref === 'hybrid') remotePref = 'any';
       setFetchRemotePreferenceInput(remotePref);
-      
+
     }
   }, [currentUser]);
 
@@ -161,7 +163,7 @@ export default function JobExplorerPage() {
 
     const technologiesFormatted: Technology[] = Array.isArray(backendJob.technologies)
     ? backendJob.technologies.map((name, index) => ({
-        id: `${numericDbId}-tech-${index}`, 
+        id: `${numericDbId}-tech-${index}`,
         technology_name: name,
         technology_slug: name.toLowerCase().replace(/\s+/g, '-'),
       }))
@@ -169,7 +171,7 @@ export default function JobExplorerPage() {
 
     const companyName = backendJob.company || backendJob.company_object?.name || "N/A";
     const companyLogo = backendJob.company_object?.logo || `https://placehold.co/100x100.png?text=${encodeURIComponent(companyName?.[0] || 'J')}`;
-    
+
     const cachedAnalysis = (numericDbId >= 0 && jobAnalysisCacheRef.current[numericDbId]) ? jobAnalysisCacheRef.current[numericDbId] : {};
 
     return {
@@ -205,10 +207,12 @@ export default function JobExplorerPage() {
       fetched_data: backendJob.fetched_data || null,
       technologies: technologiesFormatted,
       companyLogo: companyLogo,
+      key_info: backendJob.key_info || null,
+      hiring_team: backendJob.hiring_team || null,
       matchScore: cachedAnalysis.matchScore,
       matchExplanation: cachedAnalysis.matchExplanation,
     };
-  }, []); 
+  }, []);
 
 
   const fetchRelevantJobs = useCallback(async (page = 1) => {
@@ -221,11 +225,11 @@ export default function JobExplorerPage() {
     setErrorRelevantJobs(null);
     try {
       const payload: UserProfileForRelevantJobs = {
-        job_titles: currentUser.desired_job_role ? [currentUser.desired_job_role] : [], // Use desired_job_role
+        job_titles: currentUser.desired_job_role ? [currentUser.desired_job_role] : [],
         skills: currentUser.skills || [],
         experience: currentUser.experience ?? 0,
         locations: currentUser.preferred_locations || [],
-        countries: [],
+        countries: currentUser.countries || [], // Use current user's countries
         remote: currentUser.remote_preference === "Remote" ? true : (currentUser.remote_preference === "Onsite" ? false : null),
       };
       const cleanedPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== undefined && v !== null && (Array.isArray(v) ? v.length > 0 : true)));
@@ -293,7 +297,7 @@ export default function JobExplorerPage() {
       if (filterLocation) params.append('location', filterLocation);
       params.append('skip', skip.toString());
       params.append('limit', limit.toString());
-      
+
       const finalEndpoint = `/jobs/?${params.toString()}`;
 
       const response = await apiClient.get<BackendJobListingResponseItem[]>(finalEndpoint);
@@ -318,19 +322,19 @@ export default function JobExplorerPage() {
   const handleClearFilters = useCallback(() => {
     setFilterTechnology('');
     setFilterLocation('');
-    setAllJobsCurrentPage(1); 
+    setAllJobsCurrentPage(1);
   }, []);
 
 
  const populateCacheAndSavedJobIds = useCallback(async () => {
     if (!currentUser || !currentUser.id) {
       console.log("JobExplorer: populateCache - No current user or user ID. Cache not populated from backend.");
-      setIsCacheReadyForAnalysis(true); 
+      setIsCacheReadyForAnalysis(true);
       return;
     }
     console.log("JobExplorer: Starting populateCacheAndSavedJobIds for user:", currentUser.id);
     setIsCacheReadyForAnalysis(false);
-    
+
     const newAiCacheUpdates: JobAnalysisCache = {};
     let generalActivitiesError = null;
 
@@ -348,7 +352,7 @@ export default function JobExplorerPage() {
     } else {
         console.log("JobExplorer: currentUser.match_scores is NOT available or not an array. Historical AI scores cannot be populated from user object.");
     }
-    
+
     try {
       const response = await apiClient.get<UserActivityOut[]>(`/activity/user/${currentUser.id}`);
       const activities = response.data;
@@ -373,10 +377,10 @@ export default function JobExplorerPage() {
           currentSavedIds.add(jobId);
         }
       }
-      
+
       setSavedJobIds(prevSavedIds => {
         if (prevSavedIds.size === currentSavedIds.size && [...prevSavedIds].every(id => currentSavedIds.has(id))) {
-          return prevSavedIds; 
+          return prevSavedIds;
         }
         console.log("JobExplorer: Saved Job IDs updated from activities:", currentSavedIds);
         return currentSavedIds;
@@ -416,11 +420,11 @@ export default function JobExplorerPage() {
         setAllJobsList(prev => updateJobItemsInList(prev, newAiCacheUpdates));
         setFetchedApiJobs(prev => updateJobItemsInList(prev, newAiCacheUpdates));
       }
-    
+
     if (generalActivitiesError) {
       toast({ title: "Partial Cache Sync", description: "Could not sync all activity data. Saved job status might be affected.", variant: "destructive" });
     }
-    
+
     console.log("JobExplorer: populateCacheAndSavedJobIds finished. Setting isCacheReadyForAnalysis to true.");
     setIsCacheReadyForAnalysis(true);
   }, [currentUser, setJobAnalysisCache, setSavedJobIds, toast]);
@@ -428,14 +432,14 @@ export default function JobExplorerPage() {
 
   useEffect(() => {
     if (currentUser && !isLoggingOut) {
-      populateCacheAndSavedJobIds(); 
+      populateCacheAndSavedJobIds();
     } else if (!currentUser && !isLoadingAuth && !isLoggingOut) {
         setIsCacheReadyForAnalysis(true);
     }
-  }, [currentUser, isLoggingOut, isLoadingAuth, populateCacheAndSavedJobIds]); 
+  }, [currentUser, isLoggingOut, isLoadingAuth, populateCacheAndSavedJobIds]);
 
   useEffect(() => {
-    if (currentUser && !isLoggingOut && isCacheReadyForAnalysis) { 
+    if (currentUser && !isLoggingOut && isCacheReadyForAnalysis) {
       if (activeTab === "relevant") {
         fetchRelevantJobs(relevantJobsCurrentPage);
       } else if (activeTab === "all") {
@@ -447,17 +451,17 @@ export default function JobExplorerPage() {
       }
     }
   }, [
-    activeTab, 
-    currentUser, 
-    isLoggingOut, 
-    isCacheReadyForAnalysis, 
-    relevantJobsCurrentPage, 
-    allJobsCurrentPage, 
-    filterTechnology, 
+    activeTab,
+    currentUser,
+    isLoggingOut,
+    isCacheReadyForAnalysis,
+    relevantJobsCurrentPage,
+    allJobsCurrentPage,
+    filterTechnology,
     filterLocation,
-    fetchRelevantJobs, 
-    fetchAllJobs,       
-    handleApplyFilters 
+    fetchRelevantJobs,
+    fetchAllJobs,
+    handleApplyFilters
   ]);
 
 
@@ -473,7 +477,7 @@ export default function JobExplorerPage() {
 
     const limitNum = parseInt(fetchLimitInput, 10);
     const currentFetchLimit = isNaN(limitNum) || limitNum <= 0 ? DEFAULT_JOB_FETCH_LIMIT : Math.min(limitNum, MAX_JOB_FETCH_LIMIT);
-    
+
     const maxAgeNum = parseInt(fetchMaxAgeDaysInput, 10);
     const currentMaxAgeDays = isNaN(maxAgeNum) || maxAgeNum <=0 ? DEFAULT_JOB_MAX_AGE_DAYS : maxAgeNum;
 
@@ -487,14 +491,13 @@ export default function JobExplorerPage() {
       skills: fetchSkillsInput.split(',').map(s => s.trim()).filter(s => s),
       experience: fetchExperienceInput ? parseInt(fetchExperienceInput, 10) : null,
       locations: fetchLocationsInput.split(',').map(s => s.trim()).filter(s => s),
-      countries: [], 
+      countries: fetchCountriesInput.split(',').map(s => s.trim().toUpperCase()).filter(s => s && s.length === 2), // Ensure 2-char codes
       remote: remoteValue,
       limit: currentFetchLimit,
       posted_at_max_age_days: currentMaxAgeDays,
     };
 
     const cleanedPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== undefined && v !== null && (Array.isArray(v) ? v.length > 0 : true)));
-    // Ensure array fields exist if not provided
     if (!cleanedPayload.hasOwnProperty('job_titles')) cleanedPayload.job_titles = [];
     if (!cleanedPayload.hasOwnProperty('skills')) cleanedPayload.skills = [];
     if (!cleanedPayload.hasOwnProperty('locations')) cleanedPayload.locations = [];
@@ -510,14 +513,14 @@ export default function JobExplorerPage() {
         setFetchedApiJobs(response.data.jobs.map(job => mapBackendJobToFrontend(job)));
         toast({ title: "Job Fetch Successful", description: `${response.data.jobs_fetched} job(s) were processed. See results below.` });
       } else {
-        setFetchedApiJobs([]); 
+        setFetchedApiJobs([]);
         toast({ title: "Job Fetch Complete", description: "No new jobs were found from the external API matching your criteria." });
       }
     } catch (error) {
       const message = error instanceof AxiosError && error.response?.data?.detail ? error.response.data.detail : "Failed to initiate job fetching from external API.";
       setErrorGenerateJobs(message);
       setFetchedApiJobs([]);
-      setLastFetchCount(0); 
+      setLastFetchCount(0);
       toast({ title: "Job Fetch Failed", description: message, variant: "destructive" });
     } finally {
       setIsLoadingGenerateJobs(false);
@@ -528,14 +531,14 @@ export default function JobExplorerPage() {
     activityData: {
       action_type: ActivityType;
       job_id?: number;
-      user_id?: number; 
+      user_id?: number;
       activity_metadata?: { [key: string]: any };
     }
   ) => {
     const newActivity: LocalUserActivity = {
-      id: Date.now().toString() + Math.random().toString(36).substring(2), 
-      timestamp: new Date().toISOString(), 
-      user_id: activityData.user_id ?? currentUser?.id, 
+      id: Date.now().toString() + Math.random().toString(36).substring(2),
+      timestamp: new Date().toISOString(),
+      user_id: activityData.user_id ?? currentUser?.id,
       job_id: activityData.job_id,
       action_type: activityData.action_type,
       activity_metadata: activityData.activity_metadata,
@@ -549,31 +552,31 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
     console.log(`JobExplorer: performAiAnalysis called for job ${jobToAnalyze.id}.`);
     if (!currentUser || !currentUser.id || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0) {
         toast({ title: "Profile Incomplete", description: "AI analysis requires your professional summary and skills in your profile.", variant: "destructive" });
-        setIsLoadingExplanation(false); 
+        setIsLoadingExplanation(false);
         setJobPendingAnalysis(null);
         return;
     }
 
-    setIsLoadingExplanation(true); 
+    setIsLoadingExplanation(true);
 
     try {
         const input: JobMatchExplanationInput = {
             jobDescription: jobToAnalyze.description || '',
             userProfile: currentUser.professional_summary || '',
-            userPreferences: currentUser.desired_job_role || '', // Use desired_job_role
-            userHistory: '', 
+            userPreferences: currentUser.desired_job_role || '',
+            userHistory: '',
         };
         const explanationResult = await jobMatchExplanation(input);
 
-        const updateJobInList = (prevJobs: JobListing[]) => 
+        const updateJobInList = (prevJobs: JobListing[]) =>
             prevJobs.map(j => j.id === jobToAnalyze.id ? { ...j, ...explanationResult } : j);
-        
+
         setRelevantJobsList(updateJobInList);
         setAllJobsList(updateJobInList);
         setFetchedApiJobs(updateJobInList);
         setSelectedJobForDetails(prevJob => prevJob && prevJob.id === jobToAnalyze.id ? { ...prevJob, ...explanationResult } : prevJob);
-        
-        if (jobToAnalyze.id >= 0) { 
+
+        if (jobToAnalyze.id >= 0) {
           setJobAnalysisCache(prevCache => ({ ...prevCache, [jobToAnalyze.id as number]: explanationResult }));
         }
 
@@ -598,12 +601,12 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                 toast({ title: "Logging Failed", description: "Could not log AI analysis event to server.", variant: "destructive" });
             }
         }
-        
-        addLocalActivity({ 
-            action_type: "AI_JOB_ANALYZED", 
+
+        addLocalActivity({
+            action_type: "AI_JOB_ANALYZED",
             job_id: jobToAnalyze.id,
             user_id: currentUser.id,
-            activity_metadata: { 
+            activity_metadata: {
                 jobTitle: jobToAnalyze.job_title,
                 company: jobToAnalyze.company,
                 success: true,
@@ -611,7 +614,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
             }
         });
 
-        if (currentUser.id && jobToAnalyze.id >= 0) { 
+        if (currentUser.id && jobToAnalyze.id >= 0) {
             const analyzePayload: AnalyzeJobPayload = {
                 user_id: currentUser.id,
                 job_id: jobToAnalyze.id,
@@ -631,7 +634,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
         toast({ title: "AI Analysis Failed", description: "Could not get AI match explanation.", variant: "destructive" });
     } finally {
         setIsLoadingExplanation(false);
-        setJobPendingAnalysis(null); 
+        setJobPendingAnalysis(null);
         console.log(`JobExplorer: performAiAnalysis finished for job ${jobToAnalyze.id}. isLoadingExplanation: false`);
     }
   }, [currentUser, toast, setJobAnalysisCache, addLocalActivity]);
@@ -639,10 +642,10 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
 
   const fetchJobDetailsWithAI = useCallback(async (job: JobListing) => {
     console.log(`JobExplorer: fetchJobDetailsWithAI called for job ${job.id}. isCacheReadyForAnalysis: ${isCacheReadyForAnalysis}`);
-    setSelectedJobForDetails(job); 
+    setSelectedJobForDetails(job);
     setIsDetailsModalOpen(true);
-    setIsLoadingExplanation(true); 
-    setJobPendingAnalysis(null); 
+    setIsLoadingExplanation(true);
+    setJobPendingAnalysis(null);
 
     if (typeof job.id !== 'number' || isNaN(job.id) || job.id < 0) {
         console.warn(`fetchJobDetailsWithAI: Cannot fetch AI details for job with invalid frontend ID:`, job);
@@ -655,16 +658,16 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
     if (cachedData && cachedData.matchScore !== undefined && cachedData.matchExplanation !== undefined) {
       console.log(`JobExplorer: Using cached AI analysis for job ${job.id} from jobAnalysisCacheRef.`);
       setSelectedJobForDetails(prevJob => prevJob ? { ...prevJob, ...cachedData } : null);
-      setIsLoadingExplanation(false); 
-      return; 
+      setIsLoadingExplanation(false);
+      return;
     }
-    
+
     if (isCacheReadyForAnalysis) {
         console.log(`JobExplorer: Cache is ready, proceeding to performAiAnalysis for job ${job.id} as it's not in cache.`);
-        await performAiAnalysis(job); 
+        await performAiAnalysis(job);
     } else {
         console.log(`JobExplorer: Cache not ready. Setting job ${job.id} as pending analysis.`);
-        setJobPendingAnalysis(job); 
+        setJobPendingAnalysis(job);
     }
   }, [isCacheReadyForAnalysis, performAiAnalysis, toast]);
 
@@ -681,7 +684,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
         setJobPendingAnalysis(null);
       } else {
         console.log(`JobExplorer: Pending job ${jobPendingAnalysis.id} not in cache even after cache is ready. Performing AI analysis.`);
-        performAiAnalysis(jobPendingAnalysis); 
+        performAiAnalysis(jobPendingAnalysis);
       }
     }
   }, [isCacheReadyForAnalysis, jobPendingAnalysis, selectedJobForDetails, performAiAnalysis]);
@@ -701,7 +704,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
 
     const isCurrentlySaved = savedJobIds.has(job.id);
     const actionTypeForBackend = isCurrentlySaved ? "JOB_UNSAVED" : "JOB_SAVED";
-    
+
     const metadataForActivity = {
         jobTitle: job.job_title,
         company: job.company,
@@ -712,16 +715,16 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
         user_id: currentUser.id,
         job_id: job.id,
         action_type: actionTypeForBackend,
-        activity_metadata: metadataForActivity 
+        activity_metadata: metadataForActivity
     };
 
     try {
         await apiClient.post(`/jobs/${job.id}/save`, payload);
-        toast({ 
-            title: actionTypeForBackend === "JOB_SAVED" ? "Job Saved!" : "Job Unsaved", 
-            description: `${job.job_title} status updated. (Synced with backend)` 
+        toast({
+            title: actionTypeForBackend === "JOB_SAVED" ? "Job Saved!" : "Job Unsaved",
+            description: `${job.job_title} status updated. (Synced with backend)`
         });
-        
+
         setSavedJobIds(prev => {
              const next = new Set(prev);
              if (actionTypeForBackend === "JOB_SAVED") {
@@ -732,9 +735,9 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
              console.log("JobExplorer: Saved Job IDs (local state) updated:", next);
              return next;
         });
-        
+
         addLocalActivity({
-            action_type: actionTypeForBackend as "JOB_SAVED" | "JOB_UNSAVED", 
+            action_type: actionTypeForBackend as "JOB_SAVED" | "JOB_UNSAVED",
             job_id: job.id,
             user_id: currentUser.id,
             activity_metadata: metadataForActivity
@@ -742,8 +745,8 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
 
     } catch (error) {
         console.error(`Error ${actionTypeForBackend.toLowerCase()} job to backend:`, error);
-        const errorMessage = error instanceof AxiosError && error.response?.data?.detail 
-                           ? error.response.data.detail 
+        const errorMessage = error instanceof AxiosError && error.response?.data?.detail
+                           ? error.response.data.detail
                            : `Could not sync job ${actionTypeForBackend.toLowerCase()} with backend.`;
         toast({ title: "Backend Sync Failed", description: errorMessage, variant: "destructive" });
     }
@@ -799,7 +802,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
           action_type: "RESUME_GENERATED_FOR_JOB",
           job_id: jobToGenerateFor.id,
           user_id: currentUser.id,
-          activity_metadata: { 
+          activity_metadata: {
             jobTitle: jobToGenerateFor.job_title,
             company: jobToGenerateFor.company,
             success: true
@@ -813,7 +816,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
           action_type: "RESUME_GENERATED_FOR_JOB",
           job_id: jobToGenerateFor.id,
           user_id: currentUser?.id,
-          activity_metadata: { 
+          activity_metadata: {
             jobTitle: jobToGenerateFor.job_title,
             company: jobToGenerateFor.company,
             success: false,
@@ -844,7 +847,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
           action_type: "COVER_LETTER_GENERATED_FOR_JOB",
           job_id: jobToGenerateFor.id,
           user_id: currentUser.id,
-          activity_metadata: { 
+          activity_metadata: {
             jobTitle: jobToGenerateFor.job_title,
             company: jobToGenerateFor.company,
             success: true
@@ -858,7 +861,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
           action_type: "COVER_LETTER_GENERATED_FOR_JOB",
           job_id: jobToGenerateFor.id,
           user_id: currentUser?.id,
-          activity_metadata: { 
+          activity_metadata: {
             jobTitle: jobToGenerateFor.job_title,
             company: jobToGenerateFor.company,
             success: false,
@@ -932,11 +935,16 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                             <Input id="fetch-locations" placeholder="e.g., New York, Remote, London" value={fetchLocationsInput} onChange={(e) => setFetchLocationsInput(e.target.value)} className="mt-1" />
                         </div>
                         <div>
+                            <Label htmlFor="fetch-countries" className="flex items-center text-sm font-medium"><Globe className="mr-2 h-4 w-4 text-muted-foreground" />Countries (comma-separated)</Label>
+                            <Input id="fetch-countries" placeholder="e.g., US, CA, GB (ISO alpha-2 codes)" value={fetchCountriesInput} onChange={(e) => setFetchCountriesInput(e.target.value)} className="mt-1" />
+                             <p className="text-xs text-muted-foreground mt-1">Optional. Enter ISO alpha-2 codes.</p>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
                             <Label htmlFor="fetch-experience" className="flex items-center text-sm font-medium"><CheckSquare className="mr-2 h-4 w-4 text-muted-foreground" />Years of Experience</Label>
                             <Input id="fetch-experience" type="number" placeholder="e.g., 5" value={fetchExperienceInput} onChange={(e) => setFetchExperienceInput(e.target.value)} className="mt-1" />
                         </div>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                             <Label htmlFor="fetch-remote" className="flex items-center text-sm font-medium"><Wifi className="mr-2 h-4 w-4 text-muted-foreground" />Remote Preference</Label>
                             <Select value={fetchRemotePreferenceInput} onValueChange={(value) => setFetchRemotePreferenceInput(value as 'any' | 'true' | 'false')}>
@@ -950,6 +958,8 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                                 </SelectContent>
                             </Select>
                         </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                              <Label htmlFor="fetch-limit" className="flex items-center text-sm font-medium"><ListFilter className="mr-2 h-4 w-4 text-muted-foreground" />Max Jobs to Fetch</Label>
                             <Input id="fetch-limit" type="number" min="1" max={MAX_JOB_FETCH_LIMIT.toString()} placeholder={`1-${MAX_JOB_FETCH_LIMIT}`} value={fetchLimitInput} onChange={(e) => setFetchLimitInput(e.target.value)} className="mt-1" />
@@ -974,7 +984,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                 <AlertDescription>{errorGenerateJobs}</AlertDescription>
               </Alert>
             )}
-          
+
           {isLoadingGenerateJobs && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <LoadingSpinner size={40} />
@@ -1069,19 +1079,19 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="filter-tech" className="text-sm font-medium">Technology</Label>
-                <Input 
+                <Input
                   id="filter-tech"
-                  placeholder="e.g., Python, React" 
+                  placeholder="e.g., Python, React"
                   value={filterTechnology}
-                  onChange={(e) => setFilterTechnology(e.target.value)} 
+                  onChange={(e) => setFilterTechnology(e.target.value)}
                   className="mt-1"
                 />
               </div>
               <div>
                 <Label htmlFor="filter-loc" className="text-sm font-medium">Location</Label>
-                <Input 
+                <Input
                   id="filter-loc"
-                  placeholder="e.g., New York, Remote" 
+                  placeholder="e.g., New York, Remote"
                   value={filterLocation}
                   onChange={(e) => setFilterLocation(e.target.value)}
                   className="mt-1"
@@ -1089,7 +1099,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
               </div>
             </div>
             <div className="mt-4 flex gap-2">
-              <Button onClick={() => setAllJobsCurrentPage(1)} disabled={isLoadingAllJobs}> 
+              <Button onClick={() => setAllJobsCurrentPage(1)} disabled={isLoadingAllJobs}>
                 {isLoadingAllJobs && (filterTechnology || filterLocation) ? <LoadingSpinner className="mr-2" /> : <Search className="mr-2 h-4 w-4" />}
                 Apply Filters
               </Button>
