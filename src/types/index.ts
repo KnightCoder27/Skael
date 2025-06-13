@@ -1,4 +1,5 @@
 
+
 /**
  * Enum for specifying remote work preferences.
  */
@@ -23,6 +24,17 @@ export interface Technology {
   technology_slug: string;
 }
 
+/**
+ * Represents a member of the hiring team.
+ */
+export interface HiringTeamMember {
+  name: string;
+  title?: string | null;
+  linkedin_profile_url?: string | null;
+  // Add other relevant fields if available from backend, e.g., email, photo_url
+}
+
+
 // Expected structure for items from backend related to match scores
 export interface BackendMatchScoreLogItem {
   job_id: number;
@@ -39,7 +51,7 @@ export interface User {
   username: string;
   email_id: string;
   phone_number?: string | null;
-  desired_job_role?: string | null; // Changed from job_role to match backend UserOut
+  desired_job_role?: string | null;
   skills?: string[];
   experience?: number | null;
   preferred_locations?: string[];
@@ -49,6 +61,7 @@ export interface User {
   resume?: string | null; // URL
   joined_date?: string; // ISO datetime string
   match_scores?: BackendMatchScoreLogItem[];
+  saved_jobs?: SavedJob[]; // Added for GET /jobs/user/{user_id}/saved
 }
 
 // API Request/Response types from the guide
@@ -149,6 +162,8 @@ export interface JobListing {
   job_expired?: boolean | null;
   industry_id?: string | null;
   fetched_data?: string | null; // Date string, assuming this is what backend 'fetched_data' field means
+  key_info?: string[] | null; // Added field
+  hiring_team?: HiringTeamMember[] | null; // Added field
 
   // Frontend specific fields or enhancements
   technologies?: Technology[]; // Mapped from backend's string[] in the component
@@ -190,11 +205,19 @@ export interface BackendJobListingResponseItem {
   industry_id?: string | null;
   fetched_data?: string | null;
   technologies?: string[] | null; // Backend sends array of strings
+  key_info?: string[] | null; // Added field
+  hiring_team?: HiringTeamMember[] | null; // Added field
   company_object?: { // Optional company object
     logo?: string | null;
     name?: string; // Useful if top-level company name is missing
   } | null;
 }
+
+/**
+ * Represents a saved job item, typically mirroring BackendJobListingResponseItem.
+ * This is for jobs returned by endpoints like GET /jobs/user/{user_id}/saved
+ */
+export type SavedJob = BackendJobListingResponseItem;
 
 
 /**
