@@ -30,7 +30,6 @@ export interface HiringTeamMember {
   name: string;
   title?: string | null;
   linkedin_profile_url?: string | null;
-  // Add other relevant fields if available from backend, e.g., email, photo_url
 }
 
 
@@ -54,10 +53,10 @@ export type SavedJob = BackendJobListingResponseItem;
  */
 export interface User {
   id: number; // Backend ID (number)
-  username: string;
-  email_id: string;
+  username: string; // Corresponds to backend's user_name
+  email_id: string; // Corresponds to backend's email_id
   phone_number?: string | null;
-  desired_job_role?: string | null;
+  desired_job_role?: string | null; // Was job_role
   skills?: string[];
   experience?: number | null;
   preferred_locations?: string[];
@@ -73,8 +72,8 @@ export interface User {
 // API Request/Response types from the guide
 
 export interface UserIn { // For POST /users/ (registration)
-  user_name: string;
-  email_id: string;
+  username: string; // Corrected: was user_name, then email_id
+  email: string;    // Corrected: was email, then email
   number: string | null; // Assuming this maps to phone_number or similar on backend
   password: string;
 }
@@ -85,13 +84,13 @@ export interface UserLogin { // For POST /users/login
 }
 
 export interface UserLoginResponse {
-  msg: string;
+  messages: string; // Changed from msg to messages
   user_id: number; // Backend User ID
 }
 
 export interface UserRegistrationResponse {
-  messages: string; // Changed from msg to messages to align with guide
-  user_id: number; // Changed from id to user_id
+  messages: string;
+  user_id: number;
 }
 
 

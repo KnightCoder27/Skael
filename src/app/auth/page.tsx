@@ -82,10 +82,14 @@ export default function AuthPage() {
       const backendLoginPayload: UserLoginType = { email: data.email, password: data.password };
       console.log("AuthPage: Attempting backend login for:", data.email);
       const backendResponse = await apiClient.post<UserLoginResponse>('/users/login', backendLoginPayload);
+      // Ensure messages exists before accessing user_id
+      if (!backendResponse.data.messages || backendResponse.data.messages.toLowerCase() !== 'success') {
+        throw new Error(backendResponse.data.messages || "Backend login failed to confirm success.");
+      }
       const backendUserId = backendResponse.data.user_id;
       console.log("AuthPage: Backend login successful. User ID:", backendUserId);
 
-      if (!backendUserId && backendUserId !== 0) { // Check for null or undefined specifically if 0 is a valid ID
+      if (backendUserId === undefined || backendUserId === null) { 
         throw new Error("Backend login did not return a valid user ID.");
       }
       
@@ -145,18 +149,22 @@ export default function AuthPage() {
     toast({ title: "Processing Registration...", description: "Creating account..." });
     try {
       const backendRegisterPayload: UserIn = {
-        user_name: data.name, // Changed from username
-        email_id: data.email, // Changed from email
+        username: data.name, // Corrected
+        email: data.email,    // Corrected
         number: data.phoneNumber && data.phoneNumber.trim() !== "" ? data.phoneNumber : null,
         password: data.password,
       };
-      console.log("AuthPage: Attempting backend registration for:", data.email);
+      console.log("AuthPage: Attempting backend registration for:", data.email, "with payload:", backendRegisterPayload);
       const backendRegisterResponse = await apiClient.post<UserRegistrationResponse>('/users/', backendRegisterPayload);
-      const newBackendUserId = backendRegisterResponse.data.user_id; // Changed from .id
+      
+      if (!backendRegisterResponse.data.messages || backendRegisterResponse.data.messages.toLowerCase() !== 'success') {
+        throw new Error(backendRegisterResponse.data.messages || "Backend registration failed to confirm success.");
+      }
+      const newBackendUserId = backendRegisterResponse.data.user_id;
       console.log("AuthPage: Backend registration successful. User ID:", newBackendUserId);
 
 
-      if (!newBackendUserId && newBackendUserId !== 0) { // Check for null or undefined specifically if 0 is a valid ID
+      if (newBackendUserId === undefined || newBackendUserId === null) {
           throw new Error("Backend registration did not return a valid user ID.");
       }
 
