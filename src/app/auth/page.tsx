@@ -101,7 +101,7 @@ export default function AuthPage() {
 
       let errorMessage = "An unexpected error occurred during login.";
       if (error instanceof AxiosError && error.response) {
-        errorMessage = error.response.data?.detail || error.response.data?.msg || "Login failed with backend. Please check your credentials.";
+        errorMessage = error.response.data?.detail || error.response.data?.messages || "Login failed with backend. Please check your credentials.";
          if (error.response.status === 401) {
           loginForm.setError("password", { type: "manual", message: "Invalid email or password (backend)." });
         }
@@ -145,14 +145,14 @@ export default function AuthPage() {
     toast({ title: "Processing Registration...", description: "Creating account..." });
     try {
       const backendRegisterPayload: UserIn = {
-        username: data.name,
-        email: data.email,
+        user_name: data.name, // Changed from username
+        email_id: data.email, // Changed from email
         number: data.phoneNumber && data.phoneNumber.trim() !== "" ? data.phoneNumber : null,
         password: data.password,
       };
       console.log("AuthPage: Attempting backend registration for:", data.email);
       const backendRegisterResponse = await apiClient.post<UserRegistrationResponse>('/users/', backendRegisterPayload);
-      const newBackendUserId = backendRegisterResponse.data.id;
+      const newBackendUserId = backendRegisterResponse.data.user_id; // Changed from .id
       console.log("AuthPage: Backend registration successful. User ID:", newBackendUserId);
 
 
@@ -175,8 +175,8 @@ export default function AuthPage() {
 
       let errorMessage = "An unexpected error occurred during registration.";
        if (error instanceof AxiosError && error.response) {
-        errorMessage = error.response.data?.detail || error.response.data?.msg ||  "Registration failed with backend. This email might already be in use.";
-         if (error.response.status === 400 && (error.response.data?.detail?.toLowerCase().includes("email already registered") || error.response.data?.msg?.toLowerCase().includes("email already registered"))) {
+        errorMessage = error.response.data?.detail || error.response.data?.messages ||  "Registration failed with backend. This email might already be in use.";
+         if (error.response.status === 400 && (error.response.data?.detail?.toLowerCase().includes("email already registered") || error.response.data?.messages?.toLowerCase().includes("email already registered"))) {
             registerForm.setError("email", { type: "manual", message: "This email is already registered with our system." });
         } else if (error.response.status === 405) {
             errorMessage = "Registration endpoint not found or method not allowed by backend. Please contact support.";

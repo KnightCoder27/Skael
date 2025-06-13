@@ -1,5 +1,4 @@
 
-
 /**
  * Enum for specifying remote work preferences.
  */
@@ -68,15 +67,15 @@ export interface User {
   resume?: string | null; // URL
   joined_date?: string; // ISO datetime string
   match_scores?: BackendMatchScoreLogItem[];
-  saved_jobs?: SavedJob[]; // Added for GET /jobs/user/{user_id}/saved
+  saved_jobs?: SavedJob[];
 }
 
 // API Request/Response types from the guide
 
 export interface UserIn { // For POST /users/ (registration)
-  username: string;
-  email: string;
-  number: string | null;
+  user_name: string;
+  email_id: string;
+  number: string | null; // Assuming this maps to phone_number or similar on backend
   password: string;
 }
 
@@ -91,8 +90,8 @@ export interface UserLoginResponse {
 }
 
 export interface UserRegistrationResponse {
-  msg: string;
-  id: number; // Backend User ID
+  messages: string; // Changed from msg to messages to align with guide
+  user_id: number; // Changed from id to user_id
 }
 
 
