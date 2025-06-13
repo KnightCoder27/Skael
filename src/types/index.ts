@@ -43,6 +43,13 @@ export interface BackendMatchScoreLogItem {
 }
 
 /**
+ * Represents a saved job item, typically mirroring BackendJobListingResponseItem.
+ * This is for jobs returned by endpoints like GET /jobs/user/{user_id}/saved
+ */
+export type SavedJob = BackendJobListingResponseItem;
+
+
+/**
  * Represents a user of the application, aligned with backend's UserOut.
  * The 'id' is the backend's database ID.
  */
@@ -162,8 +169,8 @@ export interface JobListing {
   job_expired?: boolean | null;
   industry_id?: string | null;
   fetched_data?: string | null; // Date string, assuming this is what backend 'fetched_data' field means
-  key_info?: string[] | null; // Added field
-  hiring_team?: HiringTeamMember[] | null; // Added field
+  key_info?: string[] | null;
+  hiring_team?: HiringTeamMember[] | null;
 
   // Frontend specific fields or enhancements
   technologies?: Technology[]; // Mapped from backend's string[] in the component
@@ -205,19 +212,13 @@ export interface BackendJobListingResponseItem {
   industry_id?: string | null;
   fetched_data?: string | null;
   technologies?: string[] | null; // Backend sends array of strings
-  key_info?: string[] | null; // Added field
-  hiring_team?: HiringTeamMember[] | null; // Added field
+  key_info?: string[] | null;
+  hiring_team?: HiringTeamMember[] | null;
   company_object?: { // Optional company object
     logo?: string | null;
     name?: string; // Useful if top-level company name is missing
   } | null;
 }
-
-/**
- * Represents a saved job item, typically mirroring BackendJobListingResponseItem.
- * This is for jobs returned by endpoints like GET /jobs/user/{user_id}/saved
- */
-export type SavedJob = BackendJobListingResponseItem;
 
 
 /**
