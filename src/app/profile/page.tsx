@@ -275,6 +275,8 @@ export default function ProfilePage() {
         Object.entries(updatePayload).filter(([_, v]) => v !== undefined)
     ) as Partial<UserUpdateAPI>;
 
+    console.log("ProfilePage: Attempting to update profile with payload:", filteredUpdatePayload); // Added log
+
     try {
       await apiClient.put(`/users/${backendUserId}`, filteredUpdatePayload);
       await refetchBackendUser();
