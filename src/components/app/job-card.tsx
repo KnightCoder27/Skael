@@ -1,7 +1,7 @@
 
 "use client";
 
-import Image from 'next/image';
+import NextImage from 'next/image'; // Renamed to avoid conflict
 import type { JobListing } from '@/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,16 @@ interface JobCardProps {
   onGenerateMaterials: (job: JobListing) => void;
   isSaved?: boolean;
 }
+
+const trustedLogoHostnames = [
+  'placehold.co',
+  'media.theirstack.com',
+  'storage.googleapis.com',
+  'firebasestorage.googleapis.com',
+  'zenprospect-production.s3.amazonaws.com',
+  'd2q79iu7y748jz.cloudfront.net',
+  'logo.clearbit.com',
+];
 
 export function JobCard({ job, onViewDetails, onSaveJob, onGenerateMaterials, isSaved }: JobCardProps) {
   const getMatchScoreVariant = () => {
@@ -41,6 +51,44 @@ export function JobCard({ job, onViewDetails, onSaveJob, onGenerateMaterials, is
     action();
   };
 
+  const renderLogo = () => {
+    let logoUrl = job.companyLogo;
+    let useNextImage = false;
+
+    if (logoUrl) {
+      try {
+        const url = new URL(logoUrl);
+        if (trustedLogoHostnames.includes(url.hostname)) {
+          useNextImage = true;
+        }
+      } catch (e) {
+        // Invalid URL, fallback to placeholder
+        logoUrl = `https://placehold.co/48x48.png?text=${encodeURIComponent(job.company?.[0] || 'L')}`;
+        useNextImage = true; // placehold.co is trusted
+      }
+    } else {
+      // No logo provided, use placeholder
+      logoUrl = `https://placehold.co/48x48.png?text=${encodeURIComponent(job.company?.[0] || 'L')}`;
+      useNextImage = true; // placehold.co is trusted
+    }
+
+    const imageProps = {
+      src: logoUrl,
+      alt: `${job.company} logo`,
+      width: 48,
+      height: 48,
+      className: "rounded-md border object-contain",
+      "data-ai-hint": "company logo",
+    };
+
+    if (useNextImage) {
+      return <NextImage {...imageProps} />;
+    } else {
+      // eslint-disable-next-line @next/next/no-img-element
+      return <img {...imageProps} loading="lazy" />;
+    }
+  };
+
   return (
     <Card
       className="flex flex-col h-full shadow-md hover:shadow-xl transition-all duration-300 ease-in-out transform hover:-translate-y-1 bg-card cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -58,16 +106,7 @@ export function JobCard({ job, onViewDetails, onSaveJob, onGenerateMaterials, is
               <Briefcase className="w-4 h-4 mr-1.5" /> {job.company}
             </CardDescription>
           </div>
-          {job.companyLogo && (
-            <Image
-              src={job.companyLogo}
-              alt={`${job.company} logo`}
-              width={48}
-              height={48}
-              className="rounded-md border object-contain"
-              data-ai-hint="company logo"
-            />
-          )}
+          {renderLogo()}
         </div>
         <div className="text-xs text-muted-foreground flex items-center mt-1">
           <MapPin className="w-3 h-3 mr-1.5" /> {job.location}

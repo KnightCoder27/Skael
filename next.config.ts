@@ -52,6 +52,12 @@ const nextConfig: NextConfig = {
         hostname: 'd2q79iu7y748jz.cloudfront.net', // Added new CloudFront hostname
         port: '',
         pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'logo.clearbit.com', // Added Clearbit hostname
+        port: '',
+        pathname: '/**',
       }
     ],
   },

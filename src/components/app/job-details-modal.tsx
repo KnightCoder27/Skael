@@ -9,7 +9,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { MapPin, Briefcase, DollarSign, FileText, ExternalLink, Percent, Sparkles, CalendarDays, Clock3, Users, Info, Linkedin } from 'lucide-react';
 import { LoadingSpinner } from './loading-spinner';
-import Image from 'next/image';
+import NextImage from 'next/image'; // Renamed to avoid conflict
 
 interface JobDetailsModalProps {
   job: JobListing | null;
@@ -18,6 +18,16 @@ interface JobDetailsModalProps {
   onGenerateMaterials: (job: JobListing) => void;
   isLoadingExplanation?: boolean;
 }
+
+const trustedLogoHostnames = [ // Same list as in JobCard
+  'placehold.co',
+  'media.theirstack.com',
+  'storage.googleapis.com',
+  'firebasestorage.googleapis.com',
+  'zenprospect-production.s3.amazonaws.com',
+  'd2q79iu7y748jz.cloudfront.net',
+  'logo.clearbit.com',
+];
 
 export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isLoadingExplanation }: JobDetailsModalProps) {
   if (!job) return null;
@@ -45,6 +55,42 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isL
     return typeof status === 'string' ? status : null;
   };
 
+  const renderLogo = () => {
+    let logoUrl = job.companyLogo;
+    let useNextImage = false;
+
+    if (logoUrl) {
+      try {
+        const url = new URL(logoUrl);
+        if (trustedLogoHostnames.includes(url.hostname)) {
+          useNextImage = true;
+        }
+      } catch (e) {
+        logoUrl = `https://placehold.co/56x56.png?text=${encodeURIComponent(job.company?.[0] || 'L')}`;
+        useNextImage = true;
+      }
+    } else {
+      logoUrl = `https://placehold.co/56x56.png?text=${encodeURIComponent(job.company?.[0] || 'L')}`;
+      useNextImage = true;
+    }
+
+    const imageProps = {
+      src: logoUrl,
+      alt: `${job.company} logo`,
+      width: 56,
+      height: 56,
+      className: "rounded-lg border object-contain",
+      "data-ai-hint": "company logo",
+    };
+
+    if (useNextImage) {
+      return <NextImage {...imageProps} />;
+    } else {
+      // eslint-disable-next-line @next/next/no-img-element
+      return <img {...imageProps} loading="lazy" />;
+    }
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col p-0">
@@ -56,16 +102,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isL
                 <Briefcase className="w-4 h-4 mr-2" /> {job.company}
               </DialogDescription>
             </div>
-            {job.companyLogo && (
-              <Image
-                src={job.companyLogo}
-                alt={`${job.company} logo`}
-                width={56}
-                height={56}
-                className="rounded-lg border object-contain"
-                data-ai-hint="company logo"
-              />
-            )}
+            {renderLogo()}
           </div>
           <div className="flex flex-wrap gap-x-4 gap-y-1 items-center text-sm text-muted-foreground mt-2">
             <span className="flex items-center"><MapPin className="w-4 h-4 mr-1.5" /> {job.location}</span>
@@ -200,4 +237,3 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isL
     </Dialog>
   );
 }
-
