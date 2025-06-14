@@ -45,7 +45,7 @@ export default function LandingPage() {
             </div>
             <div>
               <Image
-                src="https://images.unsplash.com/photo-1508385082359-f38ae991e8f2?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxM3x8Y29ycG9yYXRlfGVufDB8fHx8MTc0OTg4MDY3NXww&ixlib=rb-4.1.0&q=80&w=1080"
+                src="https://images.unsplash.com/photo-1496449903678-68ddcb189a24?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxMHx8cHVycG9zZXxlbnwwfHx8fDE3NDk4ODEzODh8MA&ixlib=rb-4.1.0&q=80&w=1080"
                 alt="Modern corporate building representing career opportunities with Skael"
                 width={600}
                 height={700}
