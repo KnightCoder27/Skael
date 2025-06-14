@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { JobListing, LocalUserActivity, ActivityType, UserProfileForJobFetching, UserProfileForRelevantJobs, Technology, SaveJobPayload, AnalyzeJobPayload, UserActivityOut, BackendJobListingResponseItem, BackendMatchScoreLogItem, ActivityIn } from '@/types';
+import type { JobListing, LocalUserActivity, ActivityType, UserProfileForJobFetching, UserProfileForRelevantJobs, Technology, SaveJobPayload, AnalyzeJobPayload, UserActivityOut, BackendJobListingResponseItem, BackendMatchScoreLogItem, ActivityIn, AnalyzeResultOut } from '@/types';
 import useLocalStorage from '@/hooks/use-local-storage';
 import { useAuth } from '@/contexts/AuthContext';
 import apiClient from '@/lib/apiClient';
@@ -18,7 +18,7 @@ import { Compass, Info, FileWarning, ServerCrash, Search, ListChecks, Bot, Datab
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import type { AxiosError } from 'axios';
+import { AxiosError } from 'axios';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SimpleJobListItem } from '@/components/app/simple-job-list-item';
 import { PaginationControls } from '@/components/app/PaginationControls';
@@ -246,8 +246,8 @@ export default function JobExplorerPage() {
       const skip = (page - 1) * JOBS_PER_PAGE;
       const limit = JOBS_PER_PAGE;
 
-      const response = await apiClient.post<BackendJobListingResponseItem[]>('/jobs/relevant_jobs', cleanedPayload, { params: { skip, limit } });
-      const mappedJobs = response.data.map(job => mapBackendJobToFrontend(job));
+      const response = await apiClient.post<{jobs: BackendJobListingResponseItem[]}>('/jobs/relevant_jobs', cleanedPayload, { params: { skip, limit } });
+      const mappedJobs = response.data.jobs.map(job => mapBackendJobToFrontend(job));
       setRelevantJobsList(mappedJobs);
       setHasNextRelevantPage(mappedJobs.length === JOBS_PER_PAGE);
 
@@ -271,8 +271,8 @@ export default function JobExplorerPage() {
     try {
       const skip = (page - 1) * JOBS_PER_PAGE;
       const limit = JOBS_PER_PAGE;
-      const response = await apiClient.get<BackendJobListingResponseItem[]>('/jobs/list_jobs/', { params: { skip, limit } });
-      const mappedJobs = response.data.map(job => mapBackendJobToFrontend(job));
+      const response = await apiClient.get<{jobs: BackendJobListingResponseItem[]}>('/jobs/list_jobs/', { params: { skip, limit } });
+      const mappedJobs = response.data.jobs.map(job => mapBackendJobToFrontend(job));
       setAllJobsList(mappedJobs);
       setHasNextAllPage(mappedJobs.length === JOBS_PER_PAGE);
     } catch (error) {
@@ -304,8 +304,8 @@ export default function JobExplorerPage() {
 
       const finalEndpoint = `/jobs/?${params.toString()}`;
 
-      const response = await apiClient.get<BackendJobListingResponseItem[]>(finalEndpoint);
-      const mappedJobs = response.data.map(job => mapBackendJobToFrontend(job));
+      const response = await apiClient.get<{jobs: BackendJobListingResponseItem[]}>(finalEndpoint);
+      const mappedJobs = response.data.jobs.map(job => mapBackendJobToFrontend(job));
       setAllJobsList(mappedJobs);
       setHasNextAllPage(mappedJobs.length === JOBS_PER_PAGE);
 
@@ -511,7 +511,7 @@ export default function JobExplorerPage() {
 
 
     try {
-      const response = await apiClient.post<{ status: string; jobs_fetched: number; jobs: BackendJobListingResponseItem[] }>('/jobs/fetch_jobs', cleanedPayload);
+      const response = await apiClient.post<{ messages: string; jobs_fetched: number; jobs: BackendJobListingResponseItem[] }>('/jobs/fetch_jobs', cleanedPayload);
       setLastFetchCount(response.data.jobs_fetched);
       if (response.data.jobs_fetched > 0 && response.data.jobs) {
         setFetchedApiJobs(response.data.jobs.map(job => mapBackendJobToFrontend(job)));
@@ -646,7 +646,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
 
   const fetchJobDetailsWithAI = useCallback(async (job: JobListing) => {
     console.log(`JobExplorer: fetchJobDetailsWithAI called for job ${job.id}. isCacheReadyForAnalysis: ${isCacheReadyForAnalysis}`);
-    setSelectedJobForDetails(job);
+    setSelectedJobForDetails(job); // Show basic details immediately
     setIsDetailsModalOpen(true);
     setIsLoadingExplanation(true);
     setJobPendingAnalysis(null);
@@ -658,6 +658,40 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
         return;
     }
 
+    // 1. Try fetching existing score from backend
+    if (currentUser && currentUser.id) {
+        try {
+            const response = await apiClient.get<AnalyzeResultOut>(`/jobs/${job.id}/match_score?user_id=${currentUser.id}`);
+            if (response.data && response.data.score !== undefined && response.data.explanation !== undefined) {
+                console.log(`JobExplorer: Fetched existing AI analysis for job ${job.id} from backend.`);
+                const backendAnalysis = {
+                    matchScore: response.data.score,
+                    matchExplanation: response.data.explanation,
+                };
+                setSelectedJobForDetails(prevJob => prevJob ? { ...prevJob, ...backendAnalysis } : null);
+                setJobAnalysisCache(prevCache => ({ ...prevCache, [job.id as number]: backendAnalysis }));
+                setIsLoadingExplanation(false);
+                return; // Found existing, no need to generate
+            }
+            // If response.data is empty or lacks score/explanation, it implies no existing record.
+            // Fall through to generation logic.
+            console.log(`JobExplorer: Backend response for /match_score for job ${job.id} did not contain complete data or was empty.`);
+        } catch (error) {
+            const axiosError = error as AxiosError;
+            if (axiosError.response && axiosError.response.status === 404) {
+                console.log(`JobExplorer: No existing AI analysis found for job ${job.id} on backend (404). Proceeding to check cache/generate.`);
+            } else {
+                console.error(`JobExplorer: Error fetching existing match score for job ${job.id}:`, error);
+                toast({ title: "Error Fetching Score", description: "Could not fetch existing AI analysis. Will try generating.", variant: "destructive" });
+                // Fall through to cache check / generation as a fallback
+            }
+        }
+    } else {
+        console.log("JobExplorer: No current user or user ID, skipping backend match_score check.");
+    }
+
+
+    // 2. Check local cache (if backend fetch didn't return or was skipped)
     const cachedData = jobAnalysisCacheRef.current[job.id];
     if (cachedData && cachedData.matchScore !== undefined && cachedData.matchExplanation !== undefined) {
       console.log(`JobExplorer: Using cached AI analysis for job ${job.id} from jobAnalysisCacheRef.`);
@@ -666,32 +700,78 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
       return;
     }
 
+    // 3. Perform AI Analysis or set pending (if not found in backend or cache)
     if (isCacheReadyForAnalysis) {
-        console.log(`JobExplorer: Cache is ready, proceeding to performAiAnalysis for job ${job.id} as it's not in cache.`);
+        console.log(`JobExplorer: Cache is ready, proceeding to performAiAnalysis for job ${job.id} as it's not in backend/cache.`);
         await performAiAnalysis(job);
     } else {
         console.log(`JobExplorer: Cache not ready. Setting job ${job.id} as pending analysis.`);
         setJobPendingAnalysis(job);
     }
-  }, [isCacheReadyForAnalysis, performAiAnalysis, toast]);
+  }, [currentUser, isCacheReadyForAnalysis, performAiAnalysis, toast, setJobAnalysisCache]);
 
 
   useEffect(() => {
     console.log(`JobExplorer: useEffect for pending analysis. isCacheReady: ${isCacheReadyForAnalysis}, pendingJob: ${jobPendingAnalysis?.id}, selectedJobModal: ${selectedJobForDetails?.id}`);
     if (isCacheReadyForAnalysis && jobPendingAnalysis && selectedJobForDetails?.id === jobPendingAnalysis.id) {
       console.log(`JobExplorer: Cache is ready. Processing pending analysis for job ${jobPendingAnalysis.id}.`);
-      const cachedData = jobAnalysisCacheRef.current[jobPendingAnalysis.id];
-      if (cachedData && cachedData.matchScore !== undefined && cachedData.matchExplanation !== undefined) {
-        console.log(`JobExplorer: Found pending job ${jobPendingAnalysis.id} in cache after cache became ready. Using cached data.`);
-        setSelectedJobForDetails(prevJob => prevJob ? { ...prevJob, ...cachedData } : null);
-        setIsLoadingExplanation(false);
-        setJobPendingAnalysis(null);
+      
+      // Re-check backend first, in case it became available while pending
+      if (currentUser && currentUser.id && jobPendingAnalysis.id >=0) {
+         apiClient.get<AnalyzeResultOut>(`/jobs/${jobPendingAnalysis.id}/match_score?user_id=${currentUser.id}`)
+          .then(response => {
+            if (response.data && response.data.score !== undefined && response.data.explanation !== undefined) {
+              console.log(`JobExplorer (pending): Fetched existing AI analysis for job ${jobPendingAnalysis.id} from backend.`);
+              const backendAnalysis = { matchScore: response.data.score, matchExplanation: response.data.explanation };
+              setSelectedJobForDetails(prevJob => prevJob ? { ...prevJob, ...backendAnalysis } : null);
+              setJobAnalysisCache(prevCache => ({ ...prevCache, [jobPendingAnalysis.id as number]: backendAnalysis }));
+              setIsLoadingExplanation(false);
+              setJobPendingAnalysis(null);
+            } else {
+              // Backend didn't have it, now check cache
+              const cachedData = jobAnalysisCacheRef.current[jobPendingAnalysis.id];
+              if (cachedData && cachedData.matchScore !== undefined && cachedData.matchExplanation !== undefined) {
+                console.log(`JobExplorer (pending): Found pending job ${jobPendingAnalysis.id} in cache after cache became ready. Using cached data.`);
+                setSelectedJobForDetails(prevJob => prevJob ? { ...prevJob, ...cachedData } : null);
+                setIsLoadingExplanation(false);
+                setJobPendingAnalysis(null);
+              } else {
+                console.log(`JobExplorer (pending): Pending job ${jobPendingAnalysis.id} not in backend or cache even after cache is ready. Performing AI analysis.`);
+                performAiAnalysis(jobPendingAnalysis);
+              }
+            }
+          })
+          .catch(error => {
+            const axiosError = error as AxiosError;
+             if (axiosError.response && axiosError.response.status === 404) {
+                console.log(`JobExplorer (pending): No existing AI analysis found for job ${jobPendingAnalysis.id} on backend (404). Proceeding to check cache/generate.`);
+                 const cachedData = jobAnalysisCacheRef.current[jobPendingAnalysis.id];
+                if (cachedData && cachedData.matchScore !== undefined && cachedData.matchExplanation !== undefined) {
+                    setSelectedJobForDetails(prevJob => prevJob ? { ...prevJob, ...cachedData } : null);
+                    setIsLoadingExplanation(false);
+                    setJobPendingAnalysis(null);
+                } else {
+                    performAiAnalysis(jobPendingAnalysis);
+                }
+            } else {
+                console.error(`JobExplorer (pending): Error fetching existing match score for job ${jobPendingAnalysis.id}:`, error);
+                toast({ title: "Error", description: "Could not fetch existing AI analysis for pending job. Proceeding with generation.", variant: "destructive" });
+                performAiAnalysis(jobPendingAnalysis); // Fallback to generation
+            }
+          });
       } else {
-        console.log(`JobExplorer: Pending job ${jobPendingAnalysis.id} not in cache even after cache is ready. Performing AI analysis.`);
-        performAiAnalysis(jobPendingAnalysis);
+        // No user or invalid job ID for backend check, just go to cache/generation
+        const cachedData = jobAnalysisCacheRef.current[jobPendingAnalysis.id];
+        if (cachedData && cachedData.matchScore !== undefined && cachedData.matchExplanation !== undefined) {
+            setSelectedJobForDetails(prevJob => prevJob ? { ...prevJob, ...cachedData } : null);
+            setIsLoadingExplanation(false);
+            setJobPendingAnalysis(null);
+        } else {
+            performAiAnalysis(jobPendingAnalysis);
+        }
       }
     }
-  }, [isCacheReadyForAnalysis, jobPendingAnalysis, selectedJobForDetails, performAiAnalysis]);
+  }, [currentUser, isCacheReadyForAnalysis, jobPendingAnalysis, selectedJobForDetails, performAiAnalysis, setJobAnalysisCache, toast]);
 
 
   const handleViewDetails = (job: JobListing) => fetchJobDetailsWithAI(job);
