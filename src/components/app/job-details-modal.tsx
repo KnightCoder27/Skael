@@ -42,7 +42,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isL
     if (Array.isArray(status)) {
       return status.join(', ');
     }
-    return status || null;
+    return typeof status === 'string' ? status : null;
   };
 
   return (
@@ -89,22 +89,42 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isL
               </p>
             </div>
 
-            {job.key_info && typeof job.key_info === 'string' && (
-              <>
-                <Separator />
-                <div>
-                  <h3 className="text-lg font-semibold mb-1.5 font-headline flex items-center">
-                    <Info className="w-5 h-5 mr-2 text-primary" /> Key Information
-                  </h3>
-                  <p className="text-sm text-foreground/90 whitespace-pre-line leading-relaxed">
-                    {job.key_info}
-                  </p>
-                </div>
-              </>
-            )}
+            {(() => {
+              if (job.key_info && typeof job.key_info === 'string') {
+                let parsedKeyInfoData: Record<string, any> | null = null;
+                try {
+                  const parsed = JSON.parse(job.key_info);
+                  if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+                    parsedKeyInfoData = parsed;
+                  }
+                } catch (e) {
+                  // console.warn("JobDetailsModal: key_info is not a valid JSON object string.", job.key_info, e);
+                }
 
+                if (parsedKeyInfoData && Object.keys(parsedKeyInfoData).length > 0) {
+                  return (
+                    <>
+                      <Separator />
+                      <div>
+                        <h3 className="text-lg font-semibold mb-1.5 font-headline flex items-center">
+                          <Info className="w-5 h-5 mr-2 text-primary" /> Key Information
+                        </h3>
+                        <ul className="list-none space-y-1 pl-1 text-sm text-foreground/90">
+                          {Object.entries(parsedKeyInfoData).map(([key, value]) => (
+                            <li key={key} className="leading-relaxed">
+                              <span className="font-semibold capitalize">{key.replace(/_/g, ' ').trim()}:</span> {String(value)}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </>
+                  );
+                }
+              }
+              return null; 
+            })()}
 
-            {job.hiring_team && Array.isArray(job.hiring_team) && job.hiring_team.length > 0 && (
+            {Array.isArray(job.hiring_team) && job.hiring_team.length > 0 && (
               <>
                 <Separator />
                 <div>
