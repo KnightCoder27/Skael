@@ -67,22 +67,76 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
       const response = await apiClient.get<any>(`/users/${idToFetch}`, { headers: { Authorization: `Bearer ${token}` } });
-      console.log("AuthContext: Raw response.data from backend GET /users/id:", response.data);
+      const responseData = response.data;
+      console.log("AuthContext: Raw response.data from backend GET /users/id:", responseData);
 
-      let backendUserObject: User = { ...response.data } as User;
+      // Determine the actual source of user profile data
+      // Prioritize 'user_data', then 'user', then responseData itself
+      let actualUserProfileData = responseData;
+      if (responseData && typeof responseData === 'object' && responseData.user_data && typeof responseData.user_data === 'object') {
+        console.log("AuthContext: Using responseData.user_data as profile source.");
+        actualUserProfileData = responseData.user_data;
+      } else if (responseData && typeof responseData === 'object' && responseData.user && typeof responseData.user === 'object') {
+        console.log("AuthContext: Using responseData.user as profile source.");
+        actualUserProfileData = responseData.user;
+      } else {
+        console.log("AuthContext: Using responseData directly as profile source.");
+      }
+      
+      // Construct the backendUserObject ensuring id is present and correct
+      // The `idToFetch` is the reliable ID for this user.
+      // Backend should ideally also return the id within its user profile object.
+      let backendUserObject: User = {
+        id: actualUserProfileData.id || idToFetch, // Prioritize ID from payload, fallback to idToFetch
+        username: actualUserProfileData.username || '',
+        email_id: actualUserProfileData.email_id || '',
+        // Spread other known fields, ensure they exist on actualUserProfileData
+        phone_number: actualUserProfileData.phone_number,
+        desired_job_role: actualUserProfileData.desired_job_role,
+        skills: actualUserProfileData.skills,
+        experience: actualUserProfileData.experience,
+        preferred_locations: actualUserProfileData.preferred_locations,
+        remote_preference: actualUserProfileData.remote_preference,
+        professional_summary: actualUserProfileData.professional_summary,
+        expected_salary: actualUserProfileData.expected_salary,
+        resume: actualUserProfileData.resume,
+        joined_date: actualUserProfileData.joined_date,
+        match_scores: actualUserProfileData.match_scores,
+        saved_jobs: actualUserProfileData.saved_jobs,
+        countries: [], // Initialize countries, will be overwritten by logic below
+      };
+      
+      // Clean up any top-level keys from responseData if actualUserProfileData was nested
+      if (actualUserProfileData !== responseData) {
+          for (const key in responseData) {
+              if (!backendUserObject.hasOwnProperty(key) && key !== 'user_data' && key !== 'user' && key !== 'messages') {
+                  (backendUserObject as any)[key] = responseData[key];
+              }
+          }
+      }
+
 
       // Transform 'country' (string from backend) to 'countries' (string[] for frontend User type)
-      if (response.data && typeof response.data.country === 'string' && response.data.country.trim() !== '') {
-        backendUserObject.countries = response.data.country.split(',').map((c: string) => c.trim()).filter((c: string) => c);
-      } else if (response.data && Array.isArray(response.data.countries) && response.data.countries.length > 0) {
-        // This case handles if backend might sometimes send it as an array
-        backendUserObject.countries = response.data.countries.map((c: any) => String(c).trim()).filter((c: string) => c);
+      if (actualUserProfileData && typeof actualUserProfileData.country === 'string' && actualUserProfileData.country.trim() !== '') {
+        console.log("AuthContext: Found 'country' string in profile data:", actualUserProfileData.country);
+        backendUserObject.countries = actualUserProfileData.country.split(',').map((c: string) => c.trim()).filter((c: string) => c);
+      } else if (actualUserProfileData && Array.isArray(actualUserProfileData.countries) && actualUserProfileData.countries.length > 0) {
+        // This case handles if backend might sometimes send it as an array (less likely now but good fallback)
+        console.log("AuthContext: Found 'countries' array in profile data:", actualUserProfileData.countries);
+        backendUserObject.countries = actualUserProfileData.countries.map((c: any) => String(c).trim()).filter((c: string) => c);
       } else {
+        console.log("AuthContext: No 'country' string or 'countries' array found in profile data. Defaulting to empty array.");
         backendUserObject.countries = []; // Default to empty array if no country data
       }
       
-      console.log("AuthContext: Processed backendUserObject.countries (should be array):", backendUserObject.countries);
-      setBackendUserContext(backendUserObject); // This will trigger AuthContext update
+      // Ensure the raw 'country' field (string) is not part of the final frontend User object
+      // if it was spread from actualUserProfileData, as 'User' type expects 'countries' (array).
+      if ('country' in backendUserObject && typeof (backendUserObject as any).country === 'string') {
+        delete (backendUserObject as any).country;
+      }
+
+      console.log("AuthContext: Processed backendUserObject (pre-context set):", backendUserObject);
+      setBackendUserContext(backendUserObject);
     } catch (error) {
       console.error(`AuthContext: fetchBackendUserProfile - Failed for ID ${idToFetch}:`, error);
       toast({ title: "Session Error", description: "Could not load your profile data.", variant: "destructive" });
