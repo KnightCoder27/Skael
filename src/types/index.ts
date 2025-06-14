@@ -102,7 +102,7 @@ export interface UserUpdateAPI { // For PUT /users/{id}
   skills?: string; // Comma-separated string of skill names
   experience?: number;
   preferred_locations?: string; // Comma-separated string of location names
-  country?: string; // Comma-separated string of country codes (e.g., "US,CA") - RENAMED FROM countries
+  country?: string; // Comma-separated string of country codes (e.g., "US,CA")
   remote_preference?: RemotePreferenceAPI;
   professional_summary?: string;
   expected_salary?: number;
@@ -147,7 +147,7 @@ export interface JobListing {
   api_id?: string | null;
   url?: string | null;
   date_posted?: string | null; // Date string
-  employment_status?: string | null;
+  employment_status?: string[] | null; // Changed from string | null
   matching_phrase?: string[] | null;
   matching_words?: string[] | null;
   company_domain?: string | null;
@@ -169,7 +169,7 @@ export interface JobListing {
   job_expired?: boolean | null;
   industry_id?: string | null;
   fetched_data?: string | null; // Date string, assuming this is what backend 'fetched_data' field means
-  key_info?: string[] | null;
+  key_info?: string | null; // Changed from string[] | null
   hiring_team?: HiringTeamMember[] | null;
 
   // Frontend specific fields or enhancements
@@ -186,7 +186,7 @@ export interface BackendJobListingResponseItem {
   job_title: string;
   url?: string | null;
   date_posted?: string | null;
-  employment_status?: string | null;
+  employment_status?: string[] | null; // Changed from string | null
   matching_phrase?: string[] | null;
   matching_words?: string[] | null;
   company?: string | null;
@@ -198,8 +198,8 @@ export interface BackendJobListingResponseItem {
   remote?: boolean | null;
   hybrid?: boolean | null;
   salary_string?: string | null;
-  min_salary?: number | null;
-  max_salary?: number | null;
+  min_salary?: number | null; // Backend sends float
+  max_salary?: number | null; // Backend sends float
   currency?: string | null;
   country?: string | null;
   seniority?: string | null;
@@ -212,7 +212,7 @@ export interface BackendJobListingResponseItem {
   industry_id?: string | null;
   fetched_data?: string | null;
   technologies?: string[] | null; // Backend sends array of strings
-  key_info?: string[] | null;
+  key_info?: string | null; // Changed from string[] | null. Backend sends 'str'
   hiring_team?: HiringTeamMember[] | null;
   company_object?: { // Optional company object
     logo?: string | null;
@@ -329,3 +329,10 @@ export interface FeedbackIn {
   metadata?: { [key: string]: any };
 }
 
+// Type for GET /jobs/{id}/match_score
+export interface AnalyzeResultOut {
+  user_id: number;
+  job_id: number;
+  score: number;
+  explanation: string;
+}

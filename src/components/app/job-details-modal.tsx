@@ -37,6 +37,13 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isL
       return dateString;
     }
   };
+  
+  const displayEmploymentStatus = (status: string[] | string | null | undefined): string | null => {
+    if (Array.isArray(status)) {
+      return status.join(', ');
+    }
+    return status || null;
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -64,7 +71,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isL
             <span className="flex items-center"><MapPin className="w-4 h-4 mr-1.5" /> {job.location}</span>
             {job.salary_string && <span className="flex items-center text-accent"><DollarSign className="w-4 h-4 mr-1.5" /> {job.salary_string}</span>}
             {job.date_posted && <span className="flex items-center"><CalendarDays className="w-4 h-4 mr-1.5" /> Posted: {formatDate(job.date_posted)}</span>}
-            {job.employment_status && <span className="flex items-center"><Clock3 className="w-4 h-4 mr-1.5" /> {job.employment_status}</span>}
+            {job.employment_status && <span className="flex items-center"><Clock3 className="w-4 h-4 mr-1.5" /> {displayEmploymentStatus(job.employment_status)}</span>}
           </div>
           {job.technologies && job.technologies.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -82,21 +89,20 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isL
               </p>
             </div>
 
-            {job.key_info && Array.isArray(job.key_info) && job.key_info.length > 0 && (
+            {job.key_info && typeof job.key_info === 'string' && (
               <>
                 <Separator />
                 <div>
                   <h3 className="text-lg font-semibold mb-1.5 font-headline flex items-center">
                     <Info className="w-5 h-5 mr-2 text-primary" /> Key Information
                   </h3>
-                  <ul className="list-disc list-inside space-y-1 pl-2">
-                    {job.key_info.map((info, index) => (
-                      <li key={index} className="text-sm text-foreground/90 leading-relaxed">{info}</li>
-                    ))}
-                  </ul>
+                  <p className="text-sm text-foreground/90 whitespace-pre-line leading-relaxed">
+                    {job.key_info}
+                  </p>
                 </div>
               </>
             )}
+
 
             {job.hiring_team && Array.isArray(job.hiring_team) && job.hiring_team.length > 0 && (
               <>
@@ -174,3 +180,4 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isL
     </Dialog>
   );
 }
+
