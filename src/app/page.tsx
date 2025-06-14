@@ -45,8 +45,8 @@ export default function LandingPage() {
             </div>
             <div>
               <Image
-                src="https://placehold.co/600x700.png"
-                alt="Modern building representing career opportunities with Skael"
+                src="https://images.unsplash.com/photo-1508385082359-f38ae991e8f2?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxM3x8Y29ycG9yYXRlfGVufDB8fHx8MTc0OTg4MDY3NXww&ixlib=rb-4.1.0&q=80&w=1080"
+                alt="Modern corporate building representing career opportunities with Skael"
                 width={600}
                 height={700}
                 className="rounded-xl shadow-2xl object-cover mx-auto"
