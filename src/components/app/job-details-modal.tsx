@@ -82,7 +82,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isL
               </p>
             </div>
 
-            {job.key_info && job.key_info.length > 0 && (
+            {job.key_info && Array.isArray(job.key_info) && job.key_info.length > 0 && (
               <>
                 <Separator />
                 <div>
@@ -98,7 +98,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isL
               </>
             )}
 
-            {job.hiring_team && job.hiring_team.length > 0 && (
+            {job.hiring_team && Array.isArray(job.hiring_team) && job.hiring_team.length > 0 && (
               <>
                 <Separator />
                 <div>
