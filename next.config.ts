@@ -41,6 +41,12 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'zenprospect-production.s3.amazonaws.com', // Added S3 hostname
+        port: '',
+        pathname: '/**',
+      }
     ],
   },
 };
