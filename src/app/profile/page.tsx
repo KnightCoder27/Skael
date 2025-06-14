@@ -39,7 +39,7 @@ const profileSchema = z.object({
   skills: z.string().max(500, 'Skills list cannot exceed 500 characters (comma-separated).').optional().nullable(),
   experience: z.coerce.number().int().nonnegative('Experience must be a positive number.').optional().nullable(),
   preferred_locations: z.string().max(255, 'Preferred Locations cannot exceed 255 characters (comma-separated).').optional().nullable(),
-  countries: z.string().min(1, 'Countries are required (e.g., US, CA).').max(255, 'Countries list cannot exceed 255 characters (comma-separated).'),
+  countries: z.string().min(1, 'Countries are required. Enter names or ISO alpha-2 codes (e.g., United States, CA).').max(255, 'Countries list cannot exceed 255 characters (comma-separated).'),
   remote_preference: z.enum(remotePreferenceOptions, { errorMap: () => ({ message: "Please select a valid remote preference."}) }).optional().nullable(),
   expected_salary: z.coerce.number().positive("Expected salary must be a positive number.").optional().nullable(),
   resume: z.string().url('Resume must be a valid URL (this will be the Firebase Storage URL).').max(1024, 'Resume URL too long.').optional().nullable(),
@@ -70,7 +70,7 @@ export default function ProfilePage() {
       skills: null,
       experience: null,
       preferred_locations: null,
-      countries: '', // Default to empty string
+      countries: '',
       remote_preference: undefined,
       expected_salary: null,
       resume: null,
@@ -128,7 +128,7 @@ export default function ProfilePage() {
             skills: currentUser.skills?.join(', ') || null,
             experience: currentUser.experience ?? null,
             preferred_locations: currentUser.preferred_locations?.join(', ') || null,
-            countries: currentUser.countries?.join(', ') || '', // Populate countries
+            countries: currentUser.countries?.join(', ') || '',
             remote_preference: formRPValue,
             expected_salary: currentUser.expected_salary ?? null,
             resume: currentUser.resume || null,
@@ -264,7 +264,7 @@ export default function ProfilePage() {
       skills: data.skills || undefined,
       experience: data.experience ?? undefined,
       preferred_locations: data.preferred_locations || undefined,
-      countries: data.countries, // Send countries as a comma-separated string
+      countries: data.countries,
       remote_preference: data.remote_preference || undefined,
       professional_summary: data.professional_summary || undefined,
       expected_salary: data.expected_salary ?? undefined,
@@ -421,9 +421,9 @@ export default function ProfilePage() {
                 <Label htmlFor="countries">Target Countries (comma-separated)</Label>
                  <div className="relative flex items-center">
                     <Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input id="countries" {...register('countries')} placeholder="e.g., US, CA, GB" className={`pl-10 ${errors.countries ? 'border-destructive' : ''}`} />
+                    <Input id="countries" {...register('countries')} placeholder="e.g., US, CA, GB, India" className={`pl-10 ${errors.countries ? 'border-destructive' : ''}`} />
                 </div>
-                <p className="text-xs text-muted-foreground">Required. Enter ISO alpha-2 codes. Helps in fetching relevant jobs.</p>
+                <p className="text-xs text-muted-foreground">Required. Enter country names or ISO alpha-2 codes (e.g., United States, CA). Helps in fetching relevant jobs.</p>
                 {errors.countries && <p className="text-sm text-destructive">{errors.countries.message}</p>}
               </div>
           </CardContent>

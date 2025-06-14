@@ -81,7 +81,7 @@ export default function JobExplorerPage() {
   const [fetchJobTitlesInput, setFetchJobTitlesInput] = useState('');
   const [fetchSkillsInput, setFetchSkillsInput] = useState('');
   const [fetchLocationsInput, setFetchLocationsInput] = useState('');
-  const [fetchCountriesInput, setFetchCountriesInput] = useState(''); // New state for countries
+  const [fetchCountriesInput, setFetchCountriesInput] = useState('');
   const [fetchExperienceInput, setFetchExperienceInput] = useState<string>('');
   const [fetchRemotePreferenceInput, setFetchRemotePreferenceInput] = useState<'any' | 'true' | 'false'>('any');
   const [fetchLimitInput, setFetchLimitInput] = useState<string>(DEFAULT_JOB_FETCH_LIMIT.toString());
@@ -129,7 +129,7 @@ export default function JobExplorerPage() {
       setFetchJobTitlesInput(currentUser.desired_job_role || '');
       setFetchSkillsInput(currentUser.skills?.join(', ') || '');
       setFetchLocationsInput(currentUser.preferred_locations?.join(', ') || '');
-      setFetchCountriesInput(currentUser.countries?.join(', ') || ''); // Populate countries
+      setFetchCountriesInput(currentUser.countries?.join(', ') || '');
       setFetchExperienceInput(currentUser.experience?.toString() || '');
 
       let remotePref: 'any' | 'true' | 'false' = 'any';
@@ -229,7 +229,7 @@ export default function JobExplorerPage() {
         skills: currentUser.skills || [],
         experience: currentUser.experience ?? 0,
         locations: currentUser.preferred_locations || [],
-        countries: currentUser.countries || [], // Use current user's countries
+        countries: currentUser.countries || [], 
         remote: currentUser.remote_preference === "Remote" ? true : (currentUser.remote_preference === "Onsite" ? false : null),
       };
       const cleanedPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== undefined && v !== null && (Array.isArray(v) ? v.length > 0 : true)));
@@ -491,7 +491,7 @@ export default function JobExplorerPage() {
       skills: fetchSkillsInput.split(',').map(s => s.trim()).filter(s => s),
       experience: fetchExperienceInput ? parseInt(fetchExperienceInput, 10) : null,
       locations: fetchLocationsInput.split(',').map(s => s.trim()).filter(s => s),
-      countries: fetchCountriesInput.split(',').map(s => s.trim().toUpperCase()).filter(s => s && s.length === 2), // Ensure 2-char codes
+      countries: fetchCountriesInput.split(',').map(s => s.trim()).filter(s => s),
       remote: remoteValue,
       limit: currentFetchLimit,
       posted_at_max_age_days: currentMaxAgeDays,
@@ -936,8 +936,8 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                         </div>
                         <div>
                             <Label htmlFor="fetch-countries" className="flex items-center text-sm font-medium"><Globe className="mr-2 h-4 w-4 text-muted-foreground" />Countries (comma-separated)</Label>
-                            <Input id="fetch-countries" placeholder="e.g., US, CA, GB (ISO alpha-2 codes)" value={fetchCountriesInput} onChange={(e) => setFetchCountriesInput(e.target.value)} className="mt-1" />
-                             <p className="text-xs text-muted-foreground mt-1">Optional. Enter ISO alpha-2 codes.</p>
+                            <Input id="fetch-countries" placeholder="e.g., US, CA, GB, India" value={fetchCountriesInput} onChange={(e) => setFetchCountriesInput(e.target.value)} className="mt-1" />
+                             <p className="text-xs text-muted-foreground mt-1">Optional. Enter country names or ISO alpha-2 codes (e.g., United States, CA).</p>
                         </div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
