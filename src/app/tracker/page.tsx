@@ -72,7 +72,7 @@ export default function TrackerPage() {
     }
 
     const technologiesFormatted: Technology[] = Array.isArray(backendJob.technologies)
-    ? backendJob.technologies.map((name, index) => ({
+    ? backendJob.technologies.filter(name => typeof name === 'string').map((name, index) => ({
         id: `${numericDbId}-tech-${index}`,
         technology_name: name,
         technology_slug: name.toLowerCase().replace(/\s+/g, '-'),
@@ -115,6 +115,7 @@ export default function TrackerPage() {
       fetched_data: backendJob.fetched_data || null,
       technologies: technologiesFormatted,
       companyLogo: companyLogo,
+      key_info: backendJob.key_info || null,
       // matchScore and matchExplanation are not typically part of GET /jobs/{id}
     };
   }, []);
@@ -249,7 +250,7 @@ export default function TrackerPage() {
         user_id: currentUser.id,
         job_id: jobId,
         action_type: "JOB_UNSAVED",
-        activity_metadata: { // This should be an object, not a string
+        activity_metadata: {
             jobTitle: appToRemove.jobTitle,
             company: appToRemove.company,
             status: "Unsaved"
@@ -259,16 +260,22 @@ export default function TrackerPage() {
     try {
         await apiClient.post(`/jobs/${jobId}/save`, payload);
         toast({ title: "Application Removed", description: "The application has been marked as unsaved." });
-        fetchAndProcessActivities();
+        
+        // Optimistic UI Update
+        setTrackedApplications(prevApps => prevApps.filter(app => app.jobId !== jobId));
+        
         setLocalStatusOverrides(prev => {
             const newOverrides = {...prev};
             delete newOverrides[jobId];
             return newOverrides;
         });
+        // Re-fetch to ensure consistency with backend (can be deferred or conditional)
+        fetchAndProcessActivities();
     } catch (error) {
         console.error("Error unsaving job via API:", error);
         const message = error instanceof Error ? error.message : "Could not remove application from backend.";
         toast({ title: "Removal Failed", description: message, variant: "destructive" });
+        // If optimistic update was done, might need to revert or rely on next full fetch
     }
   };
 
@@ -468,3 +475,4 @@ export default function TrackerPage() {
     </div>
   );
 }
+
