@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { MapPin, Briefcase, DollarSign, FileText, ExternalLink, Percent, Sparkles, CalendarDays, Clock3, CheckCircle, Users, Info, Linkedin } from 'lucide-react';
+import { MapPin, Briefcase, DollarSign, FileText, ExternalLink, Percent, Sparkles, CalendarDays, Clock3, Users, Info, Linkedin } from 'lucide-react';
 import { LoadingSpinner } from './loading-spinner';
 import Image from 'next/image';
 

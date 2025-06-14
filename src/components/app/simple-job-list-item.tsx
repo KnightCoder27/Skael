@@ -1,7 +1,7 @@
 
 "use client";
 
-import type { JobListing } from '@/types';
+import type { JobListing, Technology } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -113,3 +113,4 @@ export function SimpleJobListItem({ job, onViewDetails }: SimpleJobListItemProps
     </Card>
   );
 }
+

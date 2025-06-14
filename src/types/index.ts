@@ -12,15 +12,29 @@ export interface Location {
 }
 
 /**
- * Represents a technology or skill.
- * Frontend components like JobCard and JobDetailsModal expect an array of these.
- * The backend's JobListingResponse provides technologies as string[].
- * We will map string[] to Technology[] in the frontend page component.
+ * Represents a technology or skill object as provided by the backend.
  */
-export interface Technology {
-  id: number | string; // Allow string for dynamic generation if needed
+export interface BackendTechnologyObject {
+  id: number | string;
   technology_name: string;
   technology_slug: string;
+  category?: string | null;
+  logo?: string | null;
+  one_liner?: string | null;
+  description?: string | null;
+  category_slug?: string | null;
+  logo_thumbnail?: string | null;
+  url?: string | null;
+}
+
+/**
+ * Represents a technology or skill for frontend use.
+ */
+export interface Technology {
+  id: number | string;
+  technology_name: string;
+  technology_slug: string;
+  logo?: string | null;
 }
 
 /**
@@ -30,6 +44,26 @@ export interface HiringTeamMember {
   name: string;
   title?: string | null;
   linkedin_profile_url?: string | null;
+}
+
+/**
+ * Represents the company object as provided by the backend.
+ */
+export interface BackendCompanyObject {
+  id: number;
+  company_name: string;
+  company_domain?: string | null;
+  country_code?: string | null;
+  long_description?: string | null;
+  linkedin_id?: string | null;
+  industry_id?: string | null;
+  api_company_id?: string | null;
+  industry?: string | null;
+  country?: string | null;
+  url?: string | null;
+  linkedin_url?: string | null;
+  logo?: string | null;
+  fetched_date?: string | null; // Assuming string for ISO date
 }
 
 
@@ -139,7 +173,7 @@ export interface JobListing {
   // Core fields always expected
   id: number; // Database ID
   job_title: string;
-  company: string | null; // Raw company name
+  company: string; // Derived from company_obj or fallback
   location: string | null;
   description: string | null;
 
@@ -147,11 +181,10 @@ export interface JobListing {
   api_id?: string | null;
   url?: string | null;
   date_posted?: string | null; // Date string
-  employment_status?: string[] | null; // Changed from string | null
+  employment_status?: string[] | null;
   matching_phrase?: string[] | null;
   matching_words?: string[] | null;
-  company_domain?: string | null;
-  company_obj_id?: number | null; // Foreign key to Company model
+  company_domain?: string | null; // Derived from company_obj or fallback
   final_url?: string | null;
   source_url?: string | null;
   remote?: boolean | null;
@@ -165,59 +198,56 @@ export interface JobListing {
   discovered_at: string; // ISO 8601 datetime string
   reposted?: boolean | null;
   date_reposted?: string | null; // Date string
-  country_code?: string | null;
+  country_code?: string | null; // Derived from company_obj or fallback
   job_expired?: boolean | null;
-  industry_id?: string | null;
+  industry_id?: string | null; // Can be string or number based on backend
   fetched_data?: string | null; // Date string, assuming this is what backend 'fetched_data' field means
-  key_info?: string | null; // Changed from string[] | null
+  key_info?: string | null;
   hiring_team?: HiringTeamMember[] | null;
 
   // Frontend specific fields or enhancements
-  technologies?: Technology[]; // Mapped from backend's string[] in the component
-  companyLogo?: string; // Placeholder, not directly from /list_jobs/
+  technologies?: Technology[]; // Mapped from backend's BackendTechnologyObject[]
+  companyLogo?: string; // Derived from company_obj.logo or placeholder
   matchScore?: number; // For AI features, populated client-side
   matchExplanation?: string; // For AI features, populated client-side
 }
 
 // Type for the raw backend job listing item, before mapping
 export interface BackendJobListingResponseItem {
-  id?: number | string | null | undefined; // Backend might send string or number for ID
+  id?: number | string | null | undefined;
   api_id?: string | null | undefined;
   job_title: string;
   url?: string | null;
   date_posted?: string | null;
-  employment_status?: string[] | null; // Changed from string | null
-  matching_phrase?: string[] | null;
-  matching_words?: string[] | null;
-  company?: string | null;
-  company_domain?: string | null;
-  company_obj_id?: number | null;
+  company?: string | null; // Keep for potential fallback if company_obj is missing in older data
+  company_obj?: BackendCompanyObject | null;
+  company_domain?: string | null; // Keep for potential fallback
+  employment_status?: string[] | null;
   final_url?: string | null;
   source_url?: string | null;
   location?: string | null;
   remote?: boolean | null;
   hybrid?: boolean | null;
   salary_string?: string | null;
-  min_salary?: number | null; // Backend sends float
-  max_salary?: number | null; // Backend sends float
+  min_salary?: number | null;
+  max_salary?: number | null;
   currency?: string | null;
-  country?: string | null;
+  country?: string | null; // Top-level country if company_obj not present
   seniority?: string | null;
-  discovered_at?: string | null; // Should be string (ISO date)
   description?: string | null;
   reposted?: boolean | null;
   date_reposted?: string | null;
-  country_code?: string | null;
+  country_code?: string | null; // Top-level country_code if company_obj not present
   job_expired?: boolean | null;
-  industry_id?: string | null;
+  industry_id?: string | null; // Can be string or number
   fetched_data?: string | null;
-  technologies?: string[] | null; // Backend sends array of strings
-  key_info?: string | null; // Changed from string[] | null. Backend sends 'str'
+  discovered_at?: string | null;
+  matching_phrase?: string[] | null;
+  matching_words?: string[] | null;
+  experience?: string | null;
+  key_info?: string | null;
+  technologies?: BackendTechnologyObject[] | null;
   hiring_team?: HiringTeamMember[] | null;
-  company_object?: { // Optional company object
-    logo?: string | null;
-    name?: string; // Useful if top-level company name is missing
-  } | null;
 }
 
 
@@ -272,12 +302,6 @@ export interface AnalyzeJobPayload {
   explanation: string;
 }
 
-// // For POST /resumes/apply (Form Data) - Commented out as requested
-// export interface ApplyJobFormData {
-//   user_id: number;
-//   job_id: number;
-// }
-
 
 // For Resumes
 export interface ResumeIn {
@@ -301,7 +325,6 @@ export type ActivityType =
   | "GENERAL_COVER_LETTER_GENERATED"
   | "AI_JOB_ANALYZED" // Simple log that an analysis was run
   | "APPLICATION_STATUS_UPDATED";
-  // | "JOB_APPLIED"; // Commented out as requested
 
 // Corresponds to backend's UserActivityLog, with client-side id and timestamp
 export interface LocalUserActivity {
@@ -336,3 +359,4 @@ export interface AnalyzeResultOut {
   score: number;
   explanation: string;
 }
+

@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { JobListing, LocalUserActivity, ActivityType, UserProfileForJobFetching, UserProfileForRelevantJobs, Technology, SaveJobPayload, AnalyzeJobPayload, UserActivityOut, BackendJobListingResponseItem, BackendMatchScoreLogItem, ActivityIn, AnalyzeResultOut } from '@/types';
+import type { JobListing, LocalUserActivity, ActivityType, UserProfileForJobFetching, UserProfileForRelevantJobs, Technology, SaveJobPayload, AnalyzeJobPayload, UserActivityOut, BackendJobListingResponseItem, BackendMatchScoreLogItem, ActivityIn, AnalyzeResultOut, BackendTechnologyObject } from '@/types';
 import useLocalStorage from '@/hooks/use-local-storage';
 import { useAuth } from '@/contexts/AuthContext';
 import apiClient from '@/lib/apiClient';
@@ -161,18 +161,21 @@ export default function JobExplorerPage() {
         numericDbId = -Date.now() - Math.random();
     }
 
-    const technologiesFormatted: Technology[] = Array.isArray(backendJob.technologies)
-    ? backendJob.technologies
-        .filter(name => typeof name === 'string') 
-        .map((name, index) => ({
-          id: `${numericDbId}-tech-${index}`,
-          technology_name: name, 
-          technology_slug: name.toLowerCase().replace(/\s+/g, '-'),
-        }))
-    : [];
+    const companyName = backendJob.company_obj?.company_name || backendJob.company || "N/A";
+    const companyLogo = backendJob.company_obj?.logo || `https://placehold.co/100x100.png?text=${encodeURIComponent(companyName?.[0] || 'J')}`;
+    const companyDomain = backendJob.company_obj?.company_domain || backendJob.company_domain || null;
+    const countryCode = backendJob.company_obj?.country_code || backendJob.country_code || null;
 
-    const companyName = backendJob.company || backendJob.company_object?.name || "N/A";
-    const companyLogo = backendJob.company_object?.logo || `https://placehold.co/100x100.png?text=${encodeURIComponent(companyName?.[0] || 'J')}`;
+    const technologiesFormatted: Technology[] = Array.isArray(backendJob.technologies)
+      ? backendJob.technologies
+          .filter((techObj): techObj is BackendTechnologyObject => typeof techObj === 'object' && techObj !== null && techObj.id !== undefined && techObj.technology_name !== undefined && techObj.technology_slug !== undefined)
+          .map(techObj => ({
+            id: techObj.id,
+            technology_name: techObj.technology_name,
+            technology_slug: techObj.technology_slug,
+            logo: techObj.logo, 
+          }))
+      : [];
 
     const cachedAnalysis = (numericDbId >= 0 && jobAnalysisCache[numericDbId]) ? jobAnalysisCache[numericDbId] : {};
 
@@ -181,6 +184,8 @@ export default function JobExplorerPage() {
       api_id: backendJob.api_id || null,
       job_title: backendJob.job_title || "N/A",
       company: companyName,
+      companyLogo: companyLogo,
+      company_domain: companyDomain,
       location: backendJob.location || "N/A",
       description: backendJob.description || "No description available.",
       url: backendJob.url || null,
@@ -188,8 +193,6 @@ export default function JobExplorerPage() {
       employment_status: backendJob.employment_status || null,
       matching_phrase: backendJob.matching_phrase || null,
       matching_words: backendJob.matching_words || null,
-      company_domain: backendJob.company_domain || null,
-      company_obj_id: backendJob.company_obj_id || null,
       final_url: backendJob.final_url || null,
       source_url: backendJob.source_url || null,
       remote: backendJob.remote || null,
@@ -198,17 +201,16 @@ export default function JobExplorerPage() {
       min_salary: backendJob.min_salary || null,
       max_salary: backendJob.max_salary || null,
       currency: backendJob.currency || null,
-      country: backendJob.country || null,
+      country: backendJob.company_obj?.country || backendJob.country || null,
       seniority: backendJob.seniority || null,
       discovered_at: backendJob.discovered_at || new Date().toISOString(),
       reposted: backendJob.reposted || null,
       date_reposted: backendJob.date_reposted || null,
-      country_code: backendJob.country_code || null,
+      country_code: countryCode,
       job_expired: backendJob.job_expired || null,
-      industry_id: backendJob.industry_id || null,
+      industry_id: backendJob.company_obj?.industry_id || backendJob.industry_id || null,
       fetched_data: backendJob.fetched_data || null,
       technologies: technologiesFormatted,
-      companyLogo: companyLogo,
       key_info: backendJob.key_info || null,
       hiring_team: backendJob.hiring_team || null,
       matchScore: cachedAnalysis.matchScore,

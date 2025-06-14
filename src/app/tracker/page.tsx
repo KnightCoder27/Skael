@@ -3,7 +3,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import useLocalStorage from '@/hooks/use-local-storage';
-import type { TrackedApplication, ApplicationStatus, UserActivityOut, ActivityIn, JobListing, BackendJobListingResponseItem, Technology } from '@/types';
+import type { TrackedApplication, ApplicationStatus, UserActivityOut, ActivityIn, JobListing, BackendJobListingResponseItem, Technology, BackendTechnologyObject } from '@/types';
 import { ApplicationTrackerTable } from '@/components/app/application-tracker-table';
 import { Button } from '@/components/ui/button';
 import { Briefcase, FilePlus2, LogOut as LogOutIcon, ServerCrash, FileWarning, Eye, MessageSquare } from 'lucide-react'; // Added MessageSquare
@@ -71,22 +71,30 @@ export default function TrackerPage() {
         numericDbId = -Date.now() - Math.random();
     }
 
-    const technologiesFormatted: Technology[] = Array.isArray(backendJob.technologies)
-    ? backendJob.technologies.filter(name => typeof name === 'string').map((name, index) => ({
-        id: `${numericDbId}-tech-${index}`,
-        technology_name: name,
-        technology_slug: name.toLowerCase().replace(/\s+/g, '-'),
-      }))
-    : [];
+    const companyName = backendJob.company_obj?.company_name || backendJob.company || "N/A";
+    const companyLogo = backendJob.company_obj?.logo || `https://placehold.co/100x100.png?text=${encodeURIComponent(companyName?.[0] || 'J')}`;
+    const companyDomain = backendJob.company_obj?.company_domain || backendJob.company_domain || null;
+    const countryCode = backendJob.company_obj?.country_code || backendJob.country_code || null;
 
-    const companyName = backendJob.company || backendJob.company_object?.name || "N/A";
-    const companyLogo = backendJob.company_object?.logo || `https://placehold.co/100x100.png?text=${encodeURIComponent(companyName?.[0] || 'J')}`;
+
+    const technologiesFormatted: Technology[] = Array.isArray(backendJob.technologies)
+      ? backendJob.technologies
+          .filter((techObj): techObj is BackendTechnologyObject => typeof techObj === 'object' && techObj !== null && techObj.id !== undefined && techObj.technology_name !== undefined && techObj.technology_slug !== undefined)
+          .map(techObj => ({
+            id: techObj.id,
+            technology_name: techObj.technology_name,
+            technology_slug: techObj.technology_slug,
+            logo: techObj.logo,
+          }))
+      : [];
 
     return {
       id: numericDbId,
       api_id: backendJob.api_id || null,
       job_title: backendJob.job_title || "N/A",
       company: companyName,
+      companyLogo: companyLogo,
+      company_domain: companyDomain,
       location: backendJob.location || "N/A",
       description: backendJob.description || "No description available.",
       url: backendJob.url || null,
@@ -94,8 +102,6 @@ export default function TrackerPage() {
       employment_status: backendJob.employment_status || null,
       matching_phrase: backendJob.matching_phrase || null,
       matching_words: backendJob.matching_words || null,
-      company_domain: backendJob.company_domain || null,
-      company_obj_id: backendJob.company_obj_id || null,
       final_url: backendJob.final_url || null,
       source_url: backendJob.source_url || null,
       remote: backendJob.remote || null,
@@ -104,19 +110,19 @@ export default function TrackerPage() {
       min_salary: backendJob.min_salary || null,
       max_salary: backendJob.max_salary || null,
       currency: backendJob.currency || null,
-      country: backendJob.country || null,
+      country: backendJob.company_obj?.country || backendJob.country || null,
       seniority: backendJob.seniority || null,
       discovered_at: backendJob.discovered_at || new Date().toISOString(),
       reposted: backendJob.reposted || null,
       date_reposted: backendJob.date_reposted || null,
-      country_code: backendJob.country_code || null,
+      country_code: countryCode,
       job_expired: backendJob.job_expired || null,
-      industry_id: backendJob.industry_id || null,
+      industry_id: backendJob.company_obj?.industry_id || backendJob.industry_id || null,
       fetched_data: backendJob.fetched_data || null,
       technologies: technologiesFormatted,
-      companyLogo: companyLogo,
       key_info: backendJob.key_info || null,
-      // matchScore and matchExplanation are not typically part of GET /jobs/{id}
+      hiring_team: backendJob.hiring_team || null,
+      // matchScore and matchExplanation are not typically part of GET /jobs/{id} for tracker
     };
   }, []);
 
@@ -218,7 +224,7 @@ export default function TrackerPage() {
         user_id: currentUser.id,
         job_id: jobId,
         action_type: "APPLICATION_STATUS_UPDATED",
-        metadata: { // Backend for /activity/log expects 'metadata'
+        metadata: { 
           jobTitle: application.jobTitle,
           company: application.company,
           oldStatus: oldStatus,
@@ -261,7 +267,6 @@ export default function TrackerPage() {
         await apiClient.post(`/jobs/${jobId}/save`, payload);
         toast({ title: "Application Removed", description: "The application has been marked as unsaved." });
         
-        // Optimistic UI Update
         setTrackedApplications(prevApps => prevApps.filter(app => app.jobId !== jobId));
         
         setLocalStatusOverrides(prev => {
@@ -269,15 +274,10 @@ export default function TrackerPage() {
             delete newOverrides[jobId];
             return newOverrides;
         });
-        // Re-fetch to ensure consistency with backend is no longer called immediately here.
-        // The main useEffect will handle re-fetch if currentUser/isLoggingOut/etc. changes.
     } catch (error) {
         console.error("Error unsaving job via API:", error);
         const message = error instanceof Error ? error.message : "Could not remove application from backend.";
         toast({ title: "Removal Failed", description: message, variant: "destructive" });
-        // If API call fails, the optimistic update will still have happened.
-        // A full page refresh or navigating away and back would re-sync from backend.
-        // Or, we could call fetchAndProcessActivities() here in catch if needed.
     }
   };
 
