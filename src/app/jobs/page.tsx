@@ -125,20 +125,24 @@ export default function JobExplorerPage() {
 
   // Pre-populate fetch filters from currentUser
   useEffect(() => {
+    console.log("JobsPage: Filter pre-population useEffect triggered. currentUser:", currentUser);
     if (currentUser) {
       setFetchJobTitlesInput(currentUser.desired_job_role || '');
       setFetchSkillsInput(currentUser.skills?.join(', ') || '');
       setFetchLocationsInput(currentUser.preferred_locations?.join(', ') || '');
-      setFetchCountriesInput(currentUser.countries?.join(', ') || '');
+      
+      const countriesStringForFilter = currentUser.countries?.join(', ') || '';
+      console.log(`JobsPage useEffect (pre-population): currentUser.id=${currentUser.id}, currentUser.countries (array)=${JSON.stringify(currentUser.countries)}, countriesStringForFilter=${countriesStringForFilter}`);
+      setFetchCountriesInput(countriesStringForFilter);
+
       setFetchExperienceInput(currentUser.experience?.toString() || '');
 
       let remotePref: 'any' | 'true' | 'false' = 'any';
       const userRemotePref = currentUser.remote_preference?.toString().toLowerCase();
       if (userRemotePref === 'remote') remotePref = 'true';
       else if (userRemotePref === 'onsite') remotePref = 'false';
-      else if (userRemotePref === 'hybrid') remotePref = 'any';
+      else if (userRemotePref === 'hybrid') remotePref = 'any'; // Or map to specific backend expectations if needed
       setFetchRemotePreferenceInput(remotePref);
-
     }
   }, [currentUser]);
 

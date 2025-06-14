@@ -101,11 +101,13 @@ export default function ProfilePage() {
         setHasPopulatedFromCurrentUser(false);
         return;
     }
+    console.log("ProfilePage: Form population useEffect triggered. currentUser:", currentUser);
 
     let formValuesToReset: Partial<ProfileFormValues> = {};
     let newResumeUrlToSet: string | null = null;
 
     if (currentUser && currentUser.id) {
+        console.log("ProfilePage: Populating form from currentUser.id:", currentUser.id, "currentUser.countries:", currentUser.countries);
         const currentRPFromDBRaw: string | null | undefined = currentUser.remote_preference;
         let formRPValue: RemotePreferenceAPI | undefined = undefined;
 
@@ -118,6 +120,9 @@ export default function ProfilePage() {
                 default: break;
             }
         }
+        const countriesString = currentUser.countries?.join(', ') || '';
+        console.log(`ProfilePage useEffect: currentUser.id=${currentUser.id}, currentUser.countries (array)=${JSON.stringify(currentUser.countries)}, countriesStringForForm=${countriesString}`);
+
 
         formValuesToReset = {
             username: currentUser.username || firebaseUser?.displayName || '',
@@ -128,7 +133,7 @@ export default function ProfilePage() {
             skills: currentUser.skills?.join(', ') || null,
             experience: currentUser.experience ?? null,
             preferred_locations: currentUser.preferred_locations?.join(', ') || null,
-            countries: currentUser.countries?.join(', ') || '',
+            countries: countriesString,
             remote_preference: formRPValue,
             expected_salary: currentUser.expected_salary ?? null,
             resume: currentUser.resume || null,
@@ -137,6 +142,7 @@ export default function ProfilePage() {
         setHasPopulatedFromCurrentUser(true);
 
     } else if (firebaseUser && !currentUser && !hasPopulatedFromCurrentUser) {
+        console.log("ProfilePage: Populating form from firebaseUser only.");
         formValuesToReset = {
             username: firebaseUser.displayName || '',
             email_id: firebaseUser.email || '',
@@ -147,6 +153,7 @@ export default function ProfilePage() {
         };
         newResumeUrlToSet = null;
     } else if (!firebaseUser && !currentUser) {
+       console.log("ProfilePage: No user, resetting form to defaults.");
        setHasPopulatedFromCurrentUser(false);
        formValuesToReset = {
             username: '', email_id: '', phone_number: null, professional_summary: null, desired_job_role: null,
@@ -158,6 +165,7 @@ export default function ProfilePage() {
     }
 
     if (Object.keys(formValuesToReset).length > 0 || newResumeUrlToSet !== currentResumeUrl) {
+        console.log("ProfilePage useEffect: Calling reset with formValuesToReset:", formValuesToReset);
         reset(formValuesToReset);
         setCurrentResumeUrl(newResumeUrlToSet);
     }
@@ -264,7 +272,7 @@ export default function ProfilePage() {
       skills: data.skills || undefined,
       experience: data.experience ?? undefined,
       preferred_locations: data.preferred_locations || undefined,
-      country: data.countries, // RENAMED KEY
+      country: data.countries, // Backend expects 'country' as comma-separated string
       remote_preference: data.remote_preference || undefined,
       professional_summary: data.professional_summary || undefined,
       expected_salary: data.expected_salary ?? undefined,

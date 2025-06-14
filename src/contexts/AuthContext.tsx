@@ -45,7 +45,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const setBackendUserContext = useCallback((user: User | null) => {
-    console.log("AuthContext: setBackendUserContext. User:", user ? user.id : null, "Updating localStorage.");
+    console.log("AuthContext: setBackendUserContext called with user (notice countries array):", user);
     setCurrentUser(user);
     if (user) {
       setBackendUserIdState(user.id);
@@ -63,31 +63,30 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (!token) {
         console.error("AuthContext: fetchBackendUserProfile - Failed to retrieve Firebase ID token.");
         toast({ title: "Authentication Error", description: "Session token unavailable.", variant: "destructive" });
-        setBackendUserContext(null); // Ensure backend user is cleared
+        setBackendUserContext(null);
         return;
       }
-      const response = await apiClient.get<any>(`/users/${idToFetch}`, { headers: { Authorization: `Bearer ${token}` } }); // Use any for initial fetch
-      
+      const response = await apiClient.get<any>(`/users/${idToFetch}`, { headers: { Authorization: `Bearer ${token}` } });
+      console.log("AuthContext: Raw response.data from backend GET /users/id:", response.data);
+
       let backendUserObject: User = { ...response.data } as User;
 
-      // Transform 'country' (string) from backend to 'countries' (string[]) for frontend User type
-      if (response.data && typeof response.data.country === 'string') {
+      // Transform 'country' (string from backend) to 'countries' (string[] for frontend User type)
+      if (response.data && typeof response.data.country === 'string' && response.data.country.trim() !== '') {
         backendUserObject.countries = response.data.country.split(',').map((c: string) => c.trim()).filter((c: string) => c);
-        // delete (backendUserObject as any).country; // Optional: remove the original 'country' field
-      } else if (response.data && Array.isArray(response.data.countries)) {
-        // If backend already sends 'countries' as array, use it directly
-        backendUserObject.countries = response.data.countries;
+      } else if (response.data && Array.isArray(response.data.countries) && response.data.countries.length > 0) {
+        // This case handles if backend might sometimes send it as an array
+        backendUserObject.countries = response.data.countries.map((c: any) => String(c).trim()).filter((c: string) => c);
       } else {
-        // If neither 'country' (string) nor 'countries' (array) is present, default to empty array
-        backendUserObject.countries = [];
+        backendUserObject.countries = []; // Default to empty array if no country data
       }
       
-      setBackendUserContext(backendUserObject);
-      console.log("AuthContext: Backend profile fetched and processed:", backendUserObject.id, "Countries:", backendUserObject.countries);
+      console.log("AuthContext: Processed backendUserObject.countries (should be array):", backendUserObject.countries);
+      setBackendUserContext(backendUserObject); // This will trigger AuthContext update
     } catch (error) {
       console.error(`AuthContext: fetchBackendUserProfile - Failed for ID ${idToFetch}:`, error);
       toast({ title: "Session Error", description: "Could not load your profile data.", variant: "destructive" });
-      setBackendUserContext(null); // Ensure backend user is cleared on error
+      setBackendUserContext(null);
     }
   }, [toast, setBackendUserContext]);
 
