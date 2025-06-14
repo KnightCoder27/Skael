@@ -102,7 +102,7 @@ export interface UserUpdateAPI { // For PUT /users/{id}
   skills?: string; // Comma-separated string of skill names
   experience?: number;
   preferred_locations?: string; // Comma-separated string of location names
-  countries?: string; // Comma-separated string of country codes (e.g., "US,CA")
+  country?: string; // Comma-separated string of country codes (e.g., "US,CA") - RENAMED FROM countries
   remote_preference?: RemotePreferenceAPI;
   professional_summary?: string;
   expected_salary?: number;
@@ -250,7 +250,7 @@ export interface ActivityIn {
 }
 
 export interface ActivityLogResponse { // Response from POST /activity/log
-  messages: string; // Changed from msg
+  messages: string;
   activity_id: string;
 }
 
@@ -288,7 +288,7 @@ export interface ResumeIn {
 }
 
 export interface ResumeGenerateResponse {
-  messages: string; // Changed from msg
+  messages: string;
   resume_id: string;
 }
 

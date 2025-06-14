@@ -264,7 +264,7 @@ export default function ProfilePage() {
       skills: data.skills || undefined,
       experience: data.experience ?? undefined,
       preferred_locations: data.preferred_locations || undefined,
-      countries: data.countries,
+      country: data.countries, // RENAMED KEY
       remote_preference: data.remote_preference || undefined,
       professional_summary: data.professional_summary || undefined,
       expected_salary: data.expected_salary ?? undefined,
@@ -275,7 +275,7 @@ export default function ProfilePage() {
         Object.entries(updatePayload).filter(([_, v]) => v !== undefined)
     ) as Partial<UserUpdateAPI>;
 
-    console.log("ProfilePage: Attempting to update profile with payload:", filteredUpdatePayload); // Added log
+    console.log("ProfilePage: Attempting to update profile with payload:", filteredUpdatePayload);
 
     try {
       await apiClient.put(`/users/${backendUserId}`, filteredUpdatePayload);
