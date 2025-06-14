@@ -269,13 +269,15 @@ export default function TrackerPage() {
             delete newOverrides[jobId];
             return newOverrides;
         });
-        // Re-fetch to ensure consistency with backend (can be deferred or conditional)
-        fetchAndProcessActivities();
+        // Re-fetch to ensure consistency with backend is no longer called immediately here.
+        // The main useEffect will handle re-fetch if currentUser/isLoggingOut/etc. changes.
     } catch (error) {
         console.error("Error unsaving job via API:", error);
         const message = error instanceof Error ? error.message : "Could not remove application from backend.";
         toast({ title: "Removal Failed", description: message, variant: "destructive" });
-        // If optimistic update was done, might need to revert or rely on next full fetch
+        // If API call fails, the optimistic update will still have happened.
+        // A full page refresh or navigating away and back would re-sync from backend.
+        // Or, we could call fetchAndProcessActivities() here in catch if needed.
     }
   };
 
