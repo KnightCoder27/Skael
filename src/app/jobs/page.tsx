@@ -137,7 +137,7 @@ export default function JobExplorerPage() {
       const userRemotePref = currentUser.remote_preference?.toString().toLowerCase();
       if (userRemotePref === 'remote') remotePref = 'true';
       else if (userRemotePref === 'onsite') remotePref = 'false';
-      else if (userRemotePref === 'hybrid') remotePref = 'any'; // Or map to specific backend expectations if needed
+      else if (userRemotePref === 'hybrid') remotePref = 'any'; 
       setFetchRemotePreferenceInput(remotePref);
     }
   }, [currentUser]);
@@ -163,10 +163,10 @@ export default function JobExplorerPage() {
 
     const technologiesFormatted: Technology[] = Array.isArray(backendJob.technologies)
     ? backendJob.technologies
-        .filter(name => typeof name === 'string') // Ensure elements are strings before mapping
+        .filter(name => typeof name === 'string') 
         .map((name, index) => ({
           id: `${numericDbId}-tech-${index}`,
-          technology_name: name, // name is now confirmed string
+          technology_name: name, 
           technology_slug: name.toLowerCase().replace(/\s+/g, '-'),
         }))
     : [];
@@ -244,13 +244,15 @@ export default function JobExplorerPage() {
       const skip = (page - 1) * JOBS_PER_PAGE;
       const limit = JOBS_PER_PAGE;
 
-      const response = await apiClient.post<{jobs: BackendJobListingResponseItem[]}>('/jobs/relevant_jobs', cleanedPayload, { params: { skip, limit } });
+      const response = await apiClient.post<BackendJobListingResponseItem[] | { jobs: BackendJobListingResponseItem[] }>('/jobs/relevant_jobs', cleanedPayload, { params: { skip, limit } });
       
-      if (!response.data || !Array.isArray(response.data.jobs)) {
-        console.error("Invalid response structure for relevant jobs:", response.data);
+      const jobsToMap = Array.isArray(response.data) ? response.data : response.data?.jobs;
+
+      if (!jobsToMap || !Array.isArray(jobsToMap)) {
+        console.error("Invalid response structure for relevant jobs (after check):", response.data);
         throw new Error("Received invalid data structure from backend for relevant jobs.");
       }
-      const mappedJobs = response.data.jobs.map(job => mapBackendJobToFrontend(job));
+      const mappedJobs = jobsToMap.map(job => mapBackendJobToFrontend(job));
       setRelevantJobsList(mappedJobs);
       setHasNextRelevantPage(mappedJobs.length === JOBS_PER_PAGE);
 
@@ -281,13 +283,15 @@ export default function JobExplorerPage() {
     try {
       const skip = (page - 1) * JOBS_PER_PAGE;
       const limit = JOBS_PER_PAGE;
-      const response = await apiClient.get<{jobs: BackendJobListingResponseItem[]}>('/jobs/list_jobs/', { params: { skip, limit } });
+      const response = await apiClient.get<BackendJobListingResponseItem[] | { jobs: BackendJobListingResponseItem[] }>('/jobs/list_jobs/', { params: { skip, limit } });
 
-      if (!response.data || !Array.isArray(response.data.jobs)) {
-        console.error("Invalid response structure for all jobs:", response.data);
+      const jobsToMap = Array.isArray(response.data) ? response.data : response.data?.jobs;
+
+      if (!jobsToMap || !Array.isArray(jobsToMap)) {
+        console.error("Invalid response structure for all jobs (after check):", response.data);
         throw new Error("Received invalid data structure from backend for all jobs.");
       }
-      const mappedJobs = response.data.jobs.map(job => mapBackendJobToFrontend(job));
+      const mappedJobs = jobsToMap.map(job => mapBackendJobToFrontend(job));
       setAllJobsList(mappedJobs);
       setHasNextAllPage(mappedJobs.length === JOBS_PER_PAGE);
     } catch (error) {
@@ -326,13 +330,15 @@ export default function JobExplorerPage() {
 
       const finalEndpoint = `/jobs/?${params.toString()}`;
 
-      const response = await apiClient.get<{jobs: BackendJobListingResponseItem[]}>(finalEndpoint);
+      const response = await apiClient.get<BackendJobListingResponseItem[] | { jobs: BackendJobListingResponseItem[] }>(finalEndpoint);
       
-      if (!response.data || !Array.isArray(response.data.jobs)) {
-        console.error("Invalid response structure for filtered jobs:", response.data);
+      const jobsToMap = Array.isArray(response.data) ? response.data : response.data?.jobs;
+
+      if (!jobsToMap || !Array.isArray(jobsToMap)) {
+        console.error("Invalid response structure for filtered jobs (after check):", response.data);
         throw new Error("Received invalid data structure from backend for filtered jobs.");
       }
-      const mappedJobs = response.data.jobs.map(job => mapBackendJobToFrontend(job));
+      const mappedJobs = jobsToMap.map(job => mapBackendJobToFrontend(job));
       setAllJobsList(mappedJobs);
       setHasNextAllPage(mappedJobs.length === JOBS_PER_PAGE);
 
@@ -361,7 +367,6 @@ export default function JobExplorerPage() {
     setFilterTechnology('');
     setFilterLocation('');
     setAllJobsCurrentPage(1);
-    // This will trigger the useEffect to fetchAllJobs without filters
   }, []);
 
 
@@ -681,7 +686,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
 
   const fetchJobDetailsWithAI = useCallback(async (job: JobListing) => {
     console.log(`JobExplorer: fetchJobDetailsWithAI called for job ${job.id}. isCacheReadyForAnalysis: ${isCacheReadyForAnalysis}`);
-    setSelectedJobForDetails(job); // Show basic details immediately
+    setSelectedJobForDetails(job); 
     setIsDetailsModalOpen(true);
     setIsLoadingExplanation(true);
     setJobPendingAnalysis(null);
@@ -693,7 +698,6 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
         return;
     }
 
-    // 1. Try fetching existing score from backend
     if (currentUser && currentUser.id) {
         try {
             console.log(`JobExplorer: Attempting to fetch existing match score for job ${job.id} from /jobs/${job.id}/match_score?user_id=${currentUser.id}`);
@@ -708,7 +712,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                 setSelectedJobForDetails(prevJob => prevJob ? { ...prevJob, ...backendAnalysis } : null);
                 setJobAnalysisCache(prevCache => ({ ...prevCache, [job.id as number]: backendAnalysis }));
                 setIsLoadingExplanation(false);
-                return; // Found existing, no need to generate
+                return; 
             }
             console.log(`JobExplorer: Backend response for /match_score for job ${job.id} did not contain complete data or was empty.`);
         } catch (error) {
@@ -725,7 +729,6 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
     }
 
 
-    // 2. Check local cache (if backend fetch didn't return or was skipped)
     const cachedData = jobAnalysisCache[job.id];
     if (cachedData && cachedData.matchScore !== undefined && cachedData.matchExplanation !== undefined) {
       console.log(`JobExplorer: Using cached AI analysis for job ${job.id} from jobAnalysisCache.`);
@@ -734,7 +737,6 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
       return;
     }
 
-    // 3. Perform AI Analysis or set pending (if not found in backend or cache)
     if (isCacheReadyForAnalysis) {
         console.log(`JobExplorer: Cache is ready, proceeding to performAiAnalysis for job ${job.id} as it's not in backend/cache.`);
         await performAiAnalysis(job);
