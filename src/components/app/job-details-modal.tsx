@@ -112,7 +112,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isL
                         <ul className="list-none space-y-1 pl-1 text-sm text-foreground/90">
                           {Object.entries(parsedKeyInfoData).map(([key, value]) => (
                             <li key={key} className="leading-relaxed">
-                              <span className="font-semibold capitalize">{key.replace(/_/g, ' ').trim()}:</span> {String(value)}
+                              <span className="font-semibold capitalize">{key.replace(/_/g, ' ').trim()}:</span> {value === null || value === undefined ? "N/A" : String(value)}
                             </li>
                           ))}
                         </ul>
