@@ -44,9 +44,8 @@ interface JobAnalysisCache {
 type ActiveJobTab = "generate" | "relevant" | "all";
 const JOBS_PER_PAGE = 9;
 const DEFAULT_JOB_FETCH_LIMIT = 10;
-const MAX_JOB_FETCH_LIMIT = 10;
+const MAX_JOB_FETCH_LIMIT = 10; // For "Generate Jobs" tab API
 const DEFAULT_JOB_MAX_AGE_DAYS = 30;
-const RELEVANT_JOBS_API_FETCH_LIMIT = 100;
 
 
 const isValidDbId = (idInput: any): idInput is number | string => {
@@ -65,16 +64,13 @@ export default function JobExplorerPage() {
 
   const [activeTab, setActiveTab] = useState<ActiveJobTab>("relevant");
 
-  const [allRelevantJobsFromApi, setAllRelevantJobsFromApi] = useState<JobListing[]>([]);
   const [relevantJobsList, setRelevantJobsList] = useState<JobListing[]>([]);
-  const relevantJobsListRef = useRef<JobListing[]>([]); // Ref to compare for useEffect dependency optimization
-
   const [allJobsList, setAllJobsList] = useState<JobListing[]>([]);
   const [fetchedApiJobs, setFetchedApiJobs] = useState<JobListing[]>([]);
   const [lastFetchCount, setLastFetchCount] = useState<number | null>(null);
 
   const [isLoadingGenerateJobs, setIsLoadingGenerateJobs] = useState(false);
-  const [isLoadingInitialRelevantJobs, setIsLoadingInitialRelevantJobs] = useState(false);
+  const [isLoadingRelevantJobs, setIsLoadingRelevantJobs] = useState(false);
   const [isLoadingAllJobs, setIsLoadingAllJobs] = useState(false);
 
   const [errorGenerateJobs, setErrorGenerateJobs] = useState<string | null>(null);
@@ -94,7 +90,7 @@ export default function JobExplorerPage() {
 
   const [filterTechnology, setFilterTechnology] = useState('');
   const [filterLocation, setFilterLocation] = useState('');
-  const [filterExperience, setFilterExperience] = useState('');
+  const [filterExperience, setFilterExperience] = useState(''); // For "All Jobs" tab
 
   const [relevantJobsCurrentPage, setRelevantJobsCurrentPage] = useState(1);
   const [allJobsCurrentPage, setAllJobsCurrentPage] = useState(1);
@@ -230,23 +226,26 @@ export default function JobExplorerPage() {
   }, [jobAnalysisCache]);
 
 
-  const fetchInitialRelevantJobsBatch = useCallback(async () => {
+ const fetchRelevantJobs = useCallback(async (page = 1) => {
     if (!currentUser) {
       setErrorRelevantJobs("Please log in to view relevant jobs.");
-      setAllRelevantJobsFromApi([]);
+      setRelevantJobsList([]);
       return;
     }
-    setIsLoadingInitialRelevantJobs(true);
+    setIsLoadingRelevantJobs(true);
     setErrorRelevantJobs(null);
 
     try {
+      const skip = (page - 1) * JOBS_PER_PAGE;
+      const limit = JOBS_PER_PAGE;
+
       const payload: RelevantJobsRequestPayload = {
         job_title: currentUser.desired_job_role || undefined,
         technology: currentUser.skills?.join(', ') || undefined,
         location: currentUser.preferred_locations?.join(', ') || undefined,
         experience: currentUser.experience?.toString() || undefined,
-        skip: 0,
-        limit: RELEVANT_JOBS_API_FETCH_LIMIT,
+        skip: skip,
+        limit: limit,
       };
       
       const cleanedPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== undefined)) as RelevantJobsRequestPayload;
@@ -255,17 +254,16 @@ export default function JobExplorerPage() {
       
       const jobsToMap = Array.isArray(response.data) ? response.data : response.data?.jobs;
 
-
       if (!jobsToMap || !Array.isArray(jobsToMap)) {
         console.error("Invalid response structure for relevant jobs (after check):", response.data);
         throw new Error("Received invalid data structure from backend for relevant jobs.");
       }
       const mappedJobs = jobsToMap.map(job => mapBackendJobToFrontend(job));
-      setAllRelevantJobsFromApi(mappedJobs);
-      setRelevantJobsCurrentPage(1); // Reset to page 1 for new batch
+      setRelevantJobsList(mappedJobs);
+      setHasNextRelevantPage(mappedJobs.length === JOBS_PER_PAGE);
 
     } catch (error) {
-      console.error("Error in fetchInitialRelevantJobsBatch:", error);
+      console.error("Error in fetchRelevantJobs:", error);
       let specificErrorMessage: string | null = null;
       if (error instanceof AxiosError && error.response?.data?.detail) {
         specificErrorMessage = error.response.data.detail;
@@ -276,7 +274,7 @@ export default function JobExplorerPage() {
       setErrorRelevantJobs(finalMessage);
       toast({ title: "Failed to Load Relevant Jobs", description: finalMessage, variant: "destructive" });
     } finally {
-      setIsLoadingInitialRelevantJobs(false);
+      setIsLoadingRelevantJobs(false);
     }
   }, [currentUser, toast, mapBackendJobToFrontend]);
 
@@ -377,7 +375,7 @@ export default function JobExplorerPage() {
     setFilterTechnology('');
     setFilterLocation('');
     setFilterExperience('');
-    setAllJobsCurrentPage(1);
+    setAllJobsCurrentPage(1); // This will trigger a fetch due to useEffect dependency on allJobsCurrentPage
   }, []);
 
 
@@ -471,9 +469,13 @@ export default function JobExplorerPage() {
           if(listChanged) console.log("JobExplorer: Job list updated with new AI scores from currentUser.match_scores.");
           return listChanged ? newList : list;
         };
-        setRelevantJobsList(prev => updateJobItemsInList(prev, newAiCacheUpdates));
+        // Only update lists if they exist or have data.
+        // The primary update for relevantJobsList will be via its direct fetch.
         setAllJobsList(prev => updateJobItemsInList(prev, newAiCacheUpdates));
         setFetchedApiJobs(prev => updateJobItemsInList(prev, newAiCacheUpdates));
+        if (relevantJobsList.length > 0) { // Apply to relevantJobsList if it already has content
+            setRelevantJobsList(prev => updateJobItemsInList(prev, newAiCacheUpdates));
+        }
       }
 
     if (generalActivitiesError) {
@@ -482,7 +484,7 @@ export default function JobExplorerPage() {
 
     console.log("JobExplorer: populateCacheAndSavedJobIds finished. Setting isCacheReadyForAnalysis to true.");
     setIsCacheReadyForAnalysis(true);
-  }, [currentUser, setJobAnalysisCache, setSavedJobIds, toast]);
+  }, [currentUser, setJobAnalysisCache, setSavedJobIds, toast, relevantJobsList.length]);
 
 
   useEffect(() => {
@@ -497,11 +499,7 @@ export default function JobExplorerPage() {
   useEffect(() => {
     if (currentUser && !isLoggingOut && isCacheReadyForAnalysis) {
       if (activeTab === "relevant") {
-        // Only fetch if allRelevantJobsFromApi is empty or if key currentUser fields change
-        // This is a simplified check; ideally, compare specific currentUser fields relevant to job fetching
-        if (allRelevantJobsFromApi.length === 0) { // Consider more sophisticated logic for re-fetching
-            fetchInitialRelevantJobsBatch();
-        }
+         fetchRelevantJobs(relevantJobsCurrentPage);
       } else if (activeTab === "all") {
         if (!filterTechnology && !filterLocation && !filterExperience) {
           fetchAllJobs(allJobsCurrentPage);
@@ -515,35 +513,13 @@ export default function JobExplorerPage() {
     currentUser, 
     isLoggingOut,
     isCacheReadyForAnalysis,
-    allJobsCurrentPage, // for "all" tab
+    relevantJobsCurrentPage, // for "relevant" tab pagination
+    allJobsCurrentPage, // for "all" tab pagination
     filterTechnology, filterLocation, filterExperience, // for "all" tab filters
-    fetchInitialRelevantJobsBatch,
+    fetchRelevantJobs,
     fetchAllJobs,
-    handleApplyFilters,
-    allRelevantJobsFromApi.length // Re-trigger relevant fetch if list becomes empty for some reason
+    handleApplyFilters
   ]);
-
-  // Effect to update paginated relevant jobs list when allRelevantJobsFromApi or currentPage changes
-  useEffect(() => {
-    if (allRelevantJobsFromApi.length > 0) {
-      const startIndex = (relevantJobsCurrentPage - 1) * JOBS_PER_PAGE;
-      const endIndex = startIndex + JOBS_PER_PAGE;
-      const currentBatchJobs = allRelevantJobsFromApi.slice(startIndex, endIndex);
-      
-      // Update ref before setting state to compare against the *previous* state in the next run
-      if (JSON.stringify(currentBatchJobs) !== JSON.stringify(relevantJobsListRef.current)) {
-          setRelevantJobsList(currentBatchJobs);
-          relevantJobsListRef.current = currentBatchJobs; 
-      }
-      setHasNextRelevantPage(endIndex < allRelevantJobsFromApi.length);
-    } else {
-      if (relevantJobsListRef.current.length > 0) { // Check ref before clearing
-        setRelevantJobsList([]);
-        relevantJobsListRef.current = [];
-      }
-      setHasNextRelevantPage(false);
-    }
-  }, [allRelevantJobsFromApi, relevantJobsCurrentPage]);
 
 
   const handleGenerateJobs = async () => {
@@ -651,9 +627,8 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
 
         const updateJobInList = (prevJobs: JobListing[]) =>
             prevJobs.map(j => j.id === jobToAnalyze.id ? { ...j, ...explanationResult } : j);
-
-        setAllRelevantJobsFromApi(updateJobInList); // Update the source list for relevant jobs
-        // setRelevantJobsList will be updated by its own useEffect listening to allRelevantJobsFromApi
+        
+        setRelevantJobsList(updateJobInList);
         setAllJobsList(updateJobInList);
         setFetchedApiJobs(updateJobInList);
         setSelectedJobForDetails(prevJob => prevJob && prevJob.id === jobToAnalyze.id ? { ...prevJob, ...explanationResult } : prevJob);
@@ -1179,7 +1154,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
 
         <TabsContent value="relevant" className="space-y-6">
           {(() => {
-            if ((!currentUser || !isCacheReadyForAnalysis) && !isLoadingInitialRelevantJobs) {
+            if ((!currentUser || !isCacheReadyForAnalysis) && !isLoadingRelevantJobs) {
               return (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <LoadingSpinner size={40} />
@@ -1188,7 +1163,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
               );
             }
 
-            if (isLoadingInitialRelevantJobs) {
+            if (isLoadingRelevantJobs && relevantJobsList.length === 0) {
               return (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <LoadingSpinner size={40} />
@@ -1197,7 +1172,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
               );
             }
 
-            if (errorRelevantJobs) {
+            if (!isLoadingRelevantJobs && errorRelevantJobs) {
               return (
                 <Alert variant="destructive" className="my-6">
                   <ServerCrash className="h-5 w-5" />
@@ -1206,8 +1181,8 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                 </Alert>
               );
             }
-
-            if (allRelevantJobsFromApi.length === 0) {
+            
+            if (!isLoadingRelevantJobs && !errorRelevantJobs && relevantJobsList.length === 0) {
               return (
                  <div className="text-center py-12">
                   <FileWarning className="mx-auto h-12 w-12 text-muted-foreground" />
@@ -1242,18 +1217,22 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                     onPageChange={(page) => setRelevantJobsCurrentPage(page)}
                     canGoPrevious={relevantJobsCurrentPage > 1}
                     canGoNext={hasNextRelevantPage}
-                    isLoading={false} 
+                    isLoading={isLoadingRelevantJobs && relevantJobsList.length > 0} 
                   />
                 </>
               );
             }
             
-            return (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <LoadingSpinner size={40} />
-                  <p className="mt-3 text-lg text-muted-foreground">Processing jobs...</p>
-                </div>
-            );
+            // Fallback for any other unhandled loading state (e.g. if not first load but still loading)
+            if (isLoadingRelevantJobs) {
+                return (
+                    <div className="flex flex-col items-center justify-center py-12 text-center">
+                      <LoadingSpinner size={40} />
+                      <p className="mt-3 text-lg text-muted-foreground">Processing jobs...</p>
+                    </div>
+                );
+            }
+            return null; // Should ideally not be reached if logic above is complete
           })()}
         </TabsContent>
 
@@ -1341,7 +1320,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                 onPageChange={(page) => setAllJobsCurrentPage(page)}
                 canGoPrevious={allJobsCurrentPage > 1}
                 canGoNext={hasNextAllPage}
-                isLoading={isLoadingAllJobs}
+                isLoading={isLoadingAllJobs && allJobsList.length > 0}
               />
             </>
           )}
