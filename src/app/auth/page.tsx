@@ -89,10 +89,10 @@ export default function AuthPage() {
       const backendUserId = backendResponse.data.user_id;
       console.log("AuthPage: Backend login successful. User ID:", backendUserId);
 
-      if (backendUserId === undefined || backendUserId === null) { 
+      if (backendUserId === undefined || backendUserId === null) {
         throw new Error("Backend login did not return a valid user ID.");
       }
-      
+
       setPendingBackendIdForFirebaseAuth(backendUserId);
       console.log(`AuthPage: Attempting Firebase signInWithEmailAndPassword for ${data.email}...`);
       await signInWithEmailAndPassword(firebaseAuth, data.email, data.password);
@@ -156,7 +156,7 @@ export default function AuthPage() {
       };
       console.log("AuthPage: Attempting backend registration for:", data.email, "with payload:", backendRegisterPayload);
       const backendRegisterResponse = await apiClient.post<UserRegistrationResponse>('/users/', backendRegisterPayload);
-      
+
       if (!backendRegisterResponse.data.messages || backendRegisterResponse.data.messages.toLowerCase() !== 'success') {
         throw new Error(backendRegisterResponse.data.messages || "Backend registration failed to confirm success.");
       }
@@ -188,7 +188,7 @@ export default function AuthPage() {
             registerForm.setError("email", { type: "manual", message: "This email is already registered with our system." });
         } else if (error.response.status === 405) {
             errorMessage = "Registration endpoint not found or method not allowed by backend. Please contact support.";
-        } else if (error.response.status === 422) { 
+        } else if (error.response.status === 422) {
             errorMessage = "Registration failed due to invalid data. Please check your inputs.";
             if (error.response.data && Array.isArray(error.response.data.detail)) {
               error.response.data.detail.forEach((err: any) => {
@@ -236,11 +236,11 @@ export default function AuthPage() {
     }
   };
 
-  if (isLoadingAuth || (currentUser && !isLoggingOut) ) { 
+  if (isLoadingAuth || (currentUser && !isLoggingOut) ) {
     return (
       <div className="flex min-h-[calc(100vh-12rem)] flex-col items-center justify-center p-4">
         <Card className="w-full max-w-md shadow-xl bg-card text-center p-8">
-          <LoadingSpinner size={40} />
+          <LoadingSpinner size={40} className="mx-auto" />
           <p className="mt-4 text-muted-foreground">
             {isLoadingAuth ? "Loading authentication..." : (currentUser ? "Redirecting..." : "Please wait...")}
           </p>
