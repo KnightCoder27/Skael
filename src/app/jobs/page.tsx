@@ -251,9 +251,10 @@ export default function JobExplorerPage() {
       
       const cleanedPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== undefined)) as RelevantJobsRequestPayload;
 
-      const response = await apiClient.post<{ jobs: BackendJobListingResponseItem[] }>('/jobs/relevant_jobs', cleanedPayload);
+      const response = await apiClient.post<BackendJobListingResponseItem[] | { jobs: BackendJobListingResponseItem[] }>('/jobs/relevant_jobs', cleanedPayload);
       
-      const jobsToMap = response.data?.jobs;
+      const jobsToMap = Array.isArray(response.data) ? response.data : response.data?.jobs;
+
 
       if (!jobsToMap || !Array.isArray(jobsToMap)) {
         console.error("Invalid response structure for relevant jobs (after check):", response.data);
