@@ -237,8 +237,8 @@ export default function JobExplorerPage() {
     try {
       const payload: RelevantJobsRequestPayload = {
         job_title: currentUser.desired_job_role || undefined,
-        technology: currentUser.skills && currentUser.skills.length > 0 ? currentUser.skills.join(', ') : undefined,
-        location: currentUser.preferred_locations && currentUser.preferred_locations.length > 0 ? currentUser.preferred_locations.join(', ') : undefined,
+        technology: currentUser.skills?.join(', ') || undefined,
+        location: currentUser.preferred_locations?.join(', ') || undefined,
         experience: currentUser.experience?.toString() || undefined,
         skip: (page - 1) * JOBS_PER_PAGE,
         limit: JOBS_PER_PAGE,
@@ -1145,20 +1145,18 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
         </TabsContent>
 
         <TabsContent value="relevant" className="space-y-6">
-          {isLoadingRelevantJobs && relevantJobsList.length === 0 && (
+          {isLoadingRelevantJobs && relevantJobsList.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <LoadingSpinner size={40} />
               <p className="mt-3 text-lg text-muted-foreground">Loading relevant jobs...</p>
             </div>
-          )}
-          {!isLoadingRelevantJobs && errorRelevantJobs && (
+          ) : !isLoadingRelevantJobs && errorRelevantJobs ? (
             <Alert variant="destructive" className="my-6">
               <ServerCrash className="h-5 w-5" />
               <AlertTitle>Error Loading Relevant Jobs</AlertTitle>
               <AlertDescription>{errorRelevantJobs}</AlertDescription>
             </Alert>
-          )}
-          {!isLoadingRelevantJobs && !errorRelevantJobs && relevantJobsList.length === 0 && (
+          ) : !isLoadingRelevantJobs && relevantJobsList.length === 0 ? (
              <div className="text-center py-12">
               <FileWarning className="mx-auto h-12 w-12 text-muted-foreground" />
               <h3 className="mt-2 text-xl font-semibold">No Relevant Jobs Found</h3>
@@ -1169,8 +1167,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                 </p>
               )}
             </div>
-          )}
-          {relevantJobsList.length > 0 && (
+          ) : relevantJobsList.length > 0 ? (
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {relevantJobsList.map((job, index) => (
@@ -1192,7 +1189,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                 isLoading={isLoadingRelevantJobs}
               />
             </>
-          )}
+          ) : null}
         </TabsContent>
 
         <TabsContent value="all" className="space-y-6">
