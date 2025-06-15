@@ -155,15 +155,16 @@ export interface UserProfileForJobFetching { // For POST /jobs/fetch_jobs
   posted_at_max_age_days?: number; // Max age of job postings in days
 }
 
-// UserProfileForRelevantJobs now mirrors UserProfileForJobFetching as per clarification
-export interface UserProfileForRelevantJobs { // For POST /jobs/relevant_jobs
-  job_titles?: string[];
-  skills?: string[];
-  experience?: number | null;
-  locations?: string[];
-  countries?: string[];
-  remote?: boolean | null;
+// Payload for POST /jobs/relevant_jobs (new simpler structure)
+export interface RelevantJobsRequestPayload {
+  job_title?: string;
+  technology?: string;
+  location?: string;
+  experience?: string; // Backend expects experience as string here
+  skip?: number;
+  limit?: number;
 }
+
 
 /**
  * Represents a job listing, aligned with JobListingResponse from backend.
@@ -181,7 +182,7 @@ export interface JobListing {
   api_id?: string | null;
   url?: string | null;
   date_posted?: string | null; // Date string
-  employment_status?: string[] | null;
+  employment_status?: string[] | null; // Updated
   matching_phrase?: string[] | null;
   matching_words?: string[] | null;
   company_domain?: string | null; // Derived from company_obj or fallback
@@ -190,8 +191,8 @@ export interface JobListing {
   remote?: boolean | null;
   hybrid?: boolean | null;
   salary_string?: string | null;
-  min_salary?: number | null;
-  max_salary?: number | null;
+  min_salary?: number | null; // Changed to number (float in backend)
+  max_salary?: number | null; // Changed to number (float in backend)
   currency?: string | null;
   country?: string | null;
   seniority?: string | null;
@@ -202,7 +203,7 @@ export interface JobListing {
   job_expired?: boolean | null;
   industry_id?: string | null; // Can be string or number based on backend
   fetched_data?: string | null; // Date string, assuming this is what backend 'fetched_data' field means
-  key_info?: string | null;
+  key_info?: string | null; // Updated
   hiring_team?: HiringTeamMember[] | null;
 
   // Frontend specific fields or enhancements
@@ -219,18 +220,18 @@ export interface BackendJobListingResponseItem {
   job_title: string;
   url?: string | null;
   date_posted?: string | null;
-  company?: string | null; // Keep for potential fallback if company_obj is missing in older data
+  // company field removed, company_obj is the source
   company_obj?: BackendCompanyObject | null;
-  company_domain?: string | null; // Keep for potential fallback
-  employment_status?: string[] | null;
+  company_domain?: string | null;
+  employment_status?: string[] | null; // Updated
   final_url?: string | null;
   source_url?: string | null;
   location?: string | null;
   remote?: boolean | null;
   hybrid?: boolean | null;
   salary_string?: string | null;
-  min_salary?: number | null;
-  max_salary?: number | null;
+  min_salary?: number | null; // Changed to number (float in backend)
+  max_salary?: number | null; // Changed to number (float in backend)
   currency?: string | null;
   country?: string | null; // Top-level country if company_obj not present
   seniority?: string | null;
@@ -245,8 +246,8 @@ export interface BackendJobListingResponseItem {
   matching_phrase?: string[] | null;
   matching_words?: string[] | null;
   experience?: string | null;
-  key_info?: string | null;
-  technologies?: BackendTechnologyObject[] | null;
+  key_info?: string | null; // Updated
+  technologies?: BackendTechnologyObject[] | null; // Updated
   hiring_team?: HiringTeamMember[] | null;
 }
 

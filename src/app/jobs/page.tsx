@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { JobListing, LocalUserActivity, ActivityType, UserProfileForJobFetching, UserProfileForRelevantJobs, Technology, SaveJobPayload, AnalyzeJobPayload, UserActivityOut, BackendJobListingResponseItem, BackendMatchScoreLogItem, ActivityIn, AnalyzeResultOut, BackendTechnologyObject } from '@/types';
+import type { JobListing, LocalUserActivity, ActivityType, UserProfileForJobFetching, RelevantJobsRequestPayload, Technology, SaveJobPayload, AnalyzeJobPayload, UserActivityOut, BackendJobListingResponseItem, BackendMatchScoreLogItem, ActivityIn, AnalyzeResultOut, BackendTechnologyObject } from '@/types';
 import useLocalStorage from '@/hooks/use-local-storage';
 import { useAuth } from '@/contexts/AuthContext';
 import apiClient from '@/lib/apiClient';
@@ -90,6 +90,7 @@ export default function JobExplorerPage() {
 
   const [filterTechnology, setFilterTechnology] = useState('');
   const [filterLocation, setFilterLocation] = useState('');
+  const [filterExperience, setFilterExperience] = useState(''); // New filter for All Jobs tab
 
   const [relevantJobsCurrentPage, setRelevantJobsCurrentPage] = useState(1);
   const [allJobsCurrentPage, setAllJobsCurrentPage] = useState(1);
@@ -161,14 +162,20 @@ export default function JobExplorerPage() {
         numericDbId = -Date.now() - Math.random();
     }
 
-    const companyName = backendJob.company_obj?.company_name || backendJob.company || "N/A";
+    const companyName = backendJob.company_obj?.company_name || "N/A";
     const companyLogo = backendJob.company_obj?.logo || `https://placehold.co/100x100.png?text=${encodeURIComponent(companyName?.[0] || 'J')}`;
-    const companyDomain = backendJob.company_obj?.company_domain || backendJob.company_domain || null;
+    const companyDomain = backendJob.company_obj?.company_domain || null;
     const countryCode = backendJob.company_obj?.country_code || backendJob.country_code || null;
 
     const technologiesFormatted: Technology[] = Array.isArray(backendJob.technologies)
       ? backendJob.technologies
-          .filter((techObj): techObj is BackendTechnologyObject => typeof techObj === 'object' && techObj !== null && techObj.id !== undefined && techObj.technology_name !== undefined && techObj.technology_slug !== undefined)
+          .filter((techObj): techObj is BackendTechnologyObject => 
+            typeof techObj === 'object' && 
+            techObj !== null && 
+            techObj.id !== undefined && 
+            techObj.technology_name !== undefined && 
+            techObj.technology_slug !== undefined
+          )
           .map(techObj => ({
             id: techObj.id,
             technology_name: techObj.technology_name,
@@ -228,25 +235,18 @@ export default function JobExplorerPage() {
     setIsLoadingRelevantJobs(true);
     setErrorRelevantJobs(null);
     try {
-      const payload: UserProfileForRelevantJobs = {
-        job_titles: currentUser.desired_job_role ? [currentUser.desired_job_role] : [],
-        skills: currentUser.skills || [],
-        experience: currentUser.experience ?? 0,
-        locations: currentUser.preferred_locations || [],
-        countries: currentUser.countries || [], 
-        remote: currentUser.remote_preference === "Remote" ? true : (currentUser.remote_preference === "Onsite" ? false : null),
+      const payload: RelevantJobsRequestPayload = {
+        job_title: currentUser.desired_job_role || undefined,
+        technology: currentUser.skills && currentUser.skills.length > 0 ? currentUser.skills[0] : undefined,
+        location: currentUser.preferred_locations && currentUser.preferred_locations.length > 0 ? currentUser.preferred_locations[0] : undefined,
+        experience: currentUser.experience?.toString() || undefined,
+        skip: (page - 1) * JOBS_PER_PAGE,
+        limit: JOBS_PER_PAGE,
       };
-      const cleanedPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== undefined && v !== null && (Array.isArray(v) ? v.length > 0 : true)));
+      
+      const cleanedPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== undefined)) as RelevantJobsRequestPayload;
 
-      if (!cleanedPayload.hasOwnProperty('job_titles')) cleanedPayload.job_titles = [];
-      if (!cleanedPayload.hasOwnProperty('skills')) cleanedPayload.skills = [];
-      if (!cleanedPayload.hasOwnProperty('locations')) cleanedPayload.locations = [];
-      if (!cleanedPayload.hasOwnProperty('countries')) cleanedPayload.countries = [];
-
-      const skip = (page - 1) * JOBS_PER_PAGE;
-      const limit = JOBS_PER_PAGE;
-
-      const response = await apiClient.post<BackendJobListingResponseItem[] | { jobs: BackendJobListingResponseItem[] }>('/jobs/relevant_jobs', cleanedPayload, { params: { skip, limit } });
+      const response = await apiClient.post<BackendJobListingResponseItem[] | { jobs: BackendJobListingResponseItem[] }>('/jobs/relevant_jobs', cleanedPayload);
       
       const jobsToMap = Array.isArray(response.data) ? response.data : response.data?.jobs;
 
@@ -325,12 +325,13 @@ export default function JobExplorerPage() {
       const skip = (page - 1) * JOBS_PER_PAGE;
       const limit = JOBS_PER_PAGE;
       const params = new URLSearchParams();
-      if (filterTechnology) params.append('technology', filterTechnology);
+      if (filterTechnology) params.append('tech', filterTechnology); // Changed to 'tech'
       if (filterLocation) params.append('location', filterLocation);
+      if (filterExperience) params.append('experience', filterExperience); // Added experience filter
       params.append('skip', skip.toString());
       params.append('limit', limit.toString());
 
-      const finalEndpoint = `/jobs/?${params.toString()}`;
+      const finalEndpoint = `/jobs/list_jobs/?${params.toString()}`;
 
       const response = await apiClient.get<BackendJobListingResponseItem[] | { jobs: BackendJobListingResponseItem[] }>(finalEndpoint);
       
@@ -344,9 +345,9 @@ export default function JobExplorerPage() {
       setAllJobsList(mappedJobs);
       setHasNextAllPage(mappedJobs.length === JOBS_PER_PAGE);
 
-      if (mappedJobs.length === 0 && (filterTechnology || filterLocation)) {
+      if (mappedJobs.length === 0 && (filterTechnology || filterLocation || filterExperience)) {
         toast({ title: "No Jobs Found", description: "No jobs matched your filter criteria." });
-      } else if (filterTechnology || filterLocation) {
+      } else if (filterTechnology || filterLocation || filterExperience) {
          toast({ title: "Filters Applied", description: `Showing jobs matching your criteria.` });
       }
     } catch (error) {
@@ -363,11 +364,12 @@ export default function JobExplorerPage() {
     } finally {
       setIsLoadingAllJobs(false);
     }
-  }, [currentUser, toast, mapBackendJobToFrontend, filterTechnology, filterLocation]);
+  }, [currentUser, toast, mapBackendJobToFrontend, filterTechnology, filterLocation, filterExperience]);
 
   const handleClearFilters = useCallback(() => {
     setFilterTechnology('');
     setFilterLocation('');
+    setFilterExperience('');
     setAllJobsCurrentPage(1);
   }, []);
 
@@ -489,7 +491,7 @@ export default function JobExplorerPage() {
       if (activeTab === "relevant") {
         fetchRelevantJobs(relevantJobsCurrentPage);
       } else if (activeTab === "all") {
-        if (!filterTechnology && !filterLocation) {
+        if (!filterTechnology && !filterLocation && !filterExperience) {
           fetchAllJobs(allJobsCurrentPage);
         } else {
           handleApplyFilters(allJobsCurrentPage);
@@ -505,6 +507,7 @@ export default function JobExplorerPage() {
     allJobsCurrentPage,
     filterTechnology,
     filterLocation,
+    filterExperience, // Added dependency
     fetchRelevantJobs,
     fetchAllJobs,
     handleApplyFilters
@@ -1195,7 +1198,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
         <TabsContent value="all" className="space-y-6">
           <div className="p-4 border rounded-lg bg-card shadow-sm mb-6">
             <h3 className="text-lg font-semibold mb-3 flex items-center"><Filter className="mr-2 h-5 w-5 text-primary" />Filter All Jobs</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               <div>
                 <Label htmlFor="filter-tech" className="text-sm font-medium">Technology</Label>
                 <Input
@@ -1216,13 +1219,23 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                   className="mt-1"
                 />
               </div>
+              <div>
+                <Label htmlFor="filter-exp" className="text-sm font-medium">Experience (e.g., 5+ years)</Label>
+                <Input
+                  id="filter-exp"
+                  placeholder="e.g., 3 years, Senior"
+                  value={filterExperience}
+                  onChange={(e) => setFilterExperience(e.target.value)}
+                  className="mt-1"
+                />
+              </div>
             </div>
             <div className="mt-4 flex gap-2">
               <Button onClick={() => setAllJobsCurrentPage(1)} disabled={isLoadingAllJobs}>
-                {isLoadingAllJobs && (filterTechnology || filterLocation) ? <LoadingSpinner className="mr-2" /> : <Search className="mr-2 h-4 w-4" />}
+                {isLoadingAllJobs && (filterTechnology || filterLocation || filterExperience) ? <LoadingSpinner className="mr-2" /> : <Search className="mr-2 h-4 w-4" />}
                 Apply Filters
               </Button>
-              <Button variant="outline" onClick={handleClearFilters} disabled={isLoadingAllJobs || (!filterTechnology && !filterLocation)}>
+              <Button variant="outline" onClick={handleClearFilters} disabled={isLoadingAllJobs || (!filterTechnology && !filterLocation && !filterExperience)}>
                 <XCircle className="mr-2 h-4 w-4" /> Clear Filters
               </Button>
             </div>
@@ -1246,7 +1259,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
               <FileWarning className="mx-auto h-12 w-12 text-muted-foreground" />
               <h3 className="mt-2 text-xl font-semibold">No Jobs Found</h3>
               <p className="mt-1 text-muted-foreground">
-                {filterTechnology || filterLocation ? "No jobs match your current filters." : "No jobs were found in our database. Try generating jobs from the \"Generate Jobs\" tab."}
+                {filterTechnology || filterLocation || filterExperience ? "No jobs match your current filters." : "No jobs were found in our database. Try generating jobs from the \"Generate Jobs\" tab."}
               </p>
             </div>
           )}
