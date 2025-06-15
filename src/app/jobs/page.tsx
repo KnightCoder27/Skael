@@ -237,8 +237,8 @@ export default function JobExplorerPage() {
     try {
       const payload: RelevantJobsRequestPayload = {
         job_title: currentUser.desired_job_role || undefined,
-        technology: currentUser.skills && currentUser.skills.length > 0 ? currentUser.skills[0] : undefined,
-        location: currentUser.preferred_locations && currentUser.preferred_locations.length > 0 ? currentUser.preferred_locations[0] : undefined,
+        technology: currentUser.skills && currentUser.skills.length > 0 ? currentUser.skills.join(', ') : undefined,
+        location: currentUser.preferred_locations && currentUser.preferred_locations.length > 0 ? currentUser.preferred_locations.join(', ') : undefined,
         experience: currentUser.experience?.toString() || undefined,
         skip: (page - 1) * JOBS_PER_PAGE,
         limit: JOBS_PER_PAGE,
@@ -325,9 +325,9 @@ export default function JobExplorerPage() {
       const skip = (page - 1) * JOBS_PER_PAGE;
       const limit = JOBS_PER_PAGE;
       const params = new URLSearchParams();
-      if (filterTechnology) params.append('tech', filterTechnology); // Changed to 'tech'
+      if (filterTechnology) params.append('tech', filterTechnology);
       if (filterLocation) params.append('location', filterLocation);
-      if (filterExperience) params.append('experience', filterExperience); // Added experience filter
+      if (filterExperience) params.append('experience', filterExperience);
       params.append('skip', skip.toString());
       params.append('limit', limit.toString());
 
@@ -1200,7 +1200,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
             <h3 className="text-lg font-semibold mb-3 flex items-center"><Filter className="mr-2 h-5 w-5 text-primary" />Filter All Jobs</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               <div>
-                <Label htmlFor="filter-tech" className="text-sm font-medium">Technology</Label>
+                <Label htmlFor="filter-tech" className="text-sm font-medium">Technology (comma-separated)</Label>
                 <Input
                   id="filter-tech"
                   placeholder="e.g., Python, React"
@@ -1210,7 +1210,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                 />
               </div>
               <div>
-                <Label htmlFor="filter-loc" className="text-sm font-medium">Location</Label>
+                <Label htmlFor="filter-loc" className="text-sm font-medium">Location (comma-separated)</Label>
                 <Input
                   id="filter-loc"
                   placeholder="e.g., New York, Remote"
