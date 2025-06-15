@@ -119,11 +119,12 @@ export default function JobExplorerPage() {
 
   const [isCacheReadyForAnalysis, setIsCacheReadyForAnalysis] = useState(false);
   const [jobPendingAnalysis, setJobPendingAnalysis] = useState<JobListing | null>(null);
+  const [filtersReady, setFiltersReady] = useState(false); // Flag for filter readiness
   
   const isFetchingRelevantJobsForPage = useRef<number | null>(null);
 
 
-  // Pre-populate fetch filters from currentUser
+  // Pre-populate fetch filters from currentUser and set filtersReady
   useEffect(() => {
     console.log("JobsPage: Filter pre-population useEffect triggered. currentUser:", currentUser);
     if (currentUser) {
@@ -132,7 +133,6 @@ export default function JobExplorerPage() {
       setFetchLocationsInput(currentUser.preferred_locations?.join(', ') || '');
       
       const countriesStringForFilter = currentUser.countries?.join(', ') || '';
-      console.log(`JobsPage useEffect (pre-population): currentUser.id=${currentUser.id}, currentUser.countries (array)=${JSON.stringify(currentUser.countries)}, countriesStringForFilter=${countriesStringForFilter}`);
       setFetchCountriesInput(countriesStringForFilter);
 
       setFetchExperienceInput(currentUser.experience?.toString() || '');
@@ -143,6 +143,9 @@ export default function JobExplorerPage() {
       else if (userRemotePref === 'onsite') remotePref = 'false';
       else if (userRemotePref === 'hybrid') remotePref = 'any'; 
       setFetchRemotePreferenceInput(remotePref);
+      setFiltersReady(true); // Mark filters as ready after population
+    } else {
+      setFiltersReady(false); // Reset if no current user
     }
   }, [currentUser]);
 
@@ -232,16 +235,16 @@ export default function JobExplorerPage() {
  const fetchRelevantJobs = useCallback(async (pageToFetch = 1) => {
     if (!currentUser || !currentUser.id) {
       setErrorRelevantJobs("Please log in to view relevant jobs.");
-      setRelevantJobsList([]); // Clear list if no user
+      setRelevantJobsList([]); 
       return;
     }
     
     if (isFetchingRelevantJobsForPage.current === pageToFetch) {
-      console.log(`JobExplorer: fetchRelevantJobs - Already fetching page ${pageToFetch}. Current ref: ${isFetchingRelevantJobsForPage.current}. Skipping duplicate.`);
+      console.log(`JobExplorer: fetchRelevantJobs - Already fetching page ${pageToFetch}. Skipping duplicate.`);
       return; 
     }
     
-    console.log(`JobExplorer: fetchRelevantJobs - Proceeding to fetch for page ${pageToFetch}. Prior ref value: ${isFetchingRelevantJobsForPage.current}`);
+    console.log(`JobExplorer: fetchRelevantJobs - Proceeding to fetch for page ${pageToFetch}.`);
     
     setIsLoadingRelevantJobs(true);
     isFetchingRelevantJobsForPage.current = pageToFetch; 
@@ -275,8 +278,6 @@ export default function JobExplorerPage() {
       if (pageToFetch === relevantJobsCurrentPage) {
         setRelevantJobsList(mappedJobs);
         setHasNextRelevantPage(mappedJobs.length === JOBS_PER_PAGE);
-      } else {
-         console.log(`JobExplorer: fetchRelevantJobs - Fetched page ${pageToFetch} but current page is ${relevantJobsCurrentPage}. Not updating list for ${pageToFetch}.`);
       }
 
     } catch (error) {
@@ -297,10 +298,8 @@ export default function JobExplorerPage() {
     } finally {
       if (isFetchingRelevantJobsForPage.current === pageToFetch) {
         isFetchingRelevantJobsForPage.current = null;
-        console.log(`JobExplorer: fetchRelevantJobs - Cleared ref for page ${pageToFetch}.`);
       }
       setIsLoadingRelevantJobs(false);
-      console.log(`JobExplorer: fetchRelevantJobs - Finished for page ${pageToFetch}. isLoadingRelevantJobs set to false.`);
     }
   }, [currentUser, toast, mapBackendJobToFrontend, relevantJobsCurrentPage]);
 
@@ -401,23 +400,20 @@ export default function JobExplorerPage() {
     setFilterTechnology('');
     setFilterLocation('');
     setFilterExperience('');
-    setAllJobsCurrentPage(1); // This will trigger a fetch due to useEffect dependency on allJobsCurrentPage
+    setAllJobsCurrentPage(1); 
   }, []);
 
 
  const populateCacheAndSavedJobIds = useCallback(async () => {
     if (!currentUser || !currentUser.id) {
-      console.log("JobExplorer: populateCache - No current user or user ID. Cache not populated from backend.");
       setIsCacheReadyForAnalysis(true);
       return;
     }
-    console.log("JobExplorer: Starting populateCacheAndSavedJobIds for user:", currentUser.id);
     setIsCacheReadyForAnalysis(false);
 
     const newAiCacheUpdates: JobAnalysisCache = {};
     let generalActivitiesError = null;
 
-    console.log("JobExplorer: Checking currentUser.match_scores:", currentUser?.match_scores);
     if (currentUser.match_scores && Array.isArray(currentUser.match_scores)) {
         currentUser.match_scores.forEach(scoreLog => {
             if (scoreLog.job_id != null && scoreLog.score != null && scoreLog.explanation != null) {
@@ -427,9 +423,6 @@ export default function JobExplorerPage() {
                 };
             }
         });
-        console.log(`JobExplorer: Populated ${Object.keys(newAiCacheUpdates).length} AI analysis entries from currentUser.match_scores.`);
-    } else {
-        console.log("JobExplorer: currentUser.match_scores is NOT available or not an array. Historical AI scores cannot be populated from user object.");
     }
 
     try {
@@ -461,7 +454,6 @@ export default function JobExplorerPage() {
         if (prevSavedIds.size === currentSavedIds.size && [...prevSavedIds].every(id => currentSavedIds.has(id))) {
           return prevSavedIds;
         }
-        console.log("JobExplorer: Saved Job IDs updated from activities:", currentSavedIds);
         return currentSavedIds;
       });
     } catch (error) {
@@ -476,7 +468,6 @@ export default function JobExplorerPage() {
                    newAiCacheUpdates[Number(key)]?.matchExplanation !== prevCache[Number(key)]?.matchExplanation
           );
           if (changed) {
-            console.log("JobExplorer: AI Analysis cache updated from currentUser.match_scores.");
             return { ...prevCache, ...newAiCacheUpdates };
           }
           return prevCache;
@@ -492,14 +483,11 @@ export default function JobExplorerPage() {
             }
             return job;
           });
-          if(listChanged) console.log("JobExplorer: Job list updated with new AI scores from currentUser.match_scores.");
           return listChanged ? newList : list;
         };
-        // Only update lists if they exist or have data.
-        // The primary update for relevantJobsList will be via its direct fetch.
         setAllJobsList(prev => updateJobItemsInList(prev, newAiCacheUpdates));
         setFetchedApiJobs(prev => updateJobItemsInList(prev, newAiCacheUpdates));
-        if (relevantJobsList.length > 0) { // Apply to relevantJobsList if it already has content
+        if (relevantJobsList.length > 0) { 
             setRelevantJobsList(prev => updateJobItemsInList(prev, newAiCacheUpdates));
         }
       }
@@ -507,8 +495,6 @@ export default function JobExplorerPage() {
     if (generalActivitiesError) {
       toast({ title: "Partial Cache Sync", description: "Could not sync all activity data. Saved job status might be affected.", variant: "destructive" });
     }
-
-    console.log("JobExplorer: populateCacheAndSavedJobIds finished. Setting isCacheReadyForAnalysis to true.");
     setIsCacheReadyForAnalysis(true);
   }, [currentUser, setJobAnalysisCache, setSavedJobIds, toast, relevantJobsList.length]);
 
@@ -523,7 +509,7 @@ export default function JobExplorerPage() {
 
   // Effect to fetch data when tab or dependencies change
   useEffect(() => {
-    if (currentUser && !isLoggingOut && isCacheReadyForAnalysis) {
+    if (currentUser && !isLoggingOut && isCacheReadyForAnalysis && filtersReady) { // Added filtersReady condition
       if (activeTab === "relevant") {
          fetchRelevantJobs(relevantJobsCurrentPage);
       } else if (activeTab === "all") {
@@ -539,9 +525,10 @@ export default function JobExplorerPage() {
     currentUser, 
     isLoggingOut,
     isCacheReadyForAnalysis,
-    relevantJobsCurrentPage, // for "relevant" tab pagination
-    allJobsCurrentPage, // for "all" tab pagination
-    filterTechnology, filterLocation, filterExperience, // for "all" tab filters
+    filtersReady, // Added filtersReady dependency
+    relevantJobsCurrentPage, 
+    allJobsCurrentPage, 
+    filterTechnology, filterLocation, filterExperience, 
     fetchRelevantJobs,
     fetchAllJobs,
     handleApplyFilters
@@ -626,13 +613,11 @@ export default function JobExplorerPage() {
       action_type: activityData.action_type,
       activity_metadata: activityData.activity_metadata,
     };
-    console.log('New local activity to be logged:', newActivity);
     setLocalUserActivities(prevActivities => [newActivity, ...prevActivities]);
   }, [setLocalUserActivities, currentUser]);
 
 
 const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
-    console.log(`JobExplorer: performAiAnalysis called for job ${jobToAnalyze.id}.`);
     if (!currentUser || !currentUser.id || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0) {
         toast({ title: "Profile Incomplete", description: "AI analysis requires your professional summary and skills in your profile.", variant: "destructive" });
         setIsLoadingExplanation(false);
@@ -663,7 +648,6 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
           setJobAnalysisCache(prevCache => ({ ...prevCache, [jobToAnalyze.id as number]: explanationResult }));
         }
 
-        // Log AI_JOB_ANALYZED activity to backend
         if (currentUser.id && jobToAnalyze.id >= 0) {
             const activityPayload: ActivityIn = {
                 user_id: currentUser.id,
@@ -718,20 +702,17 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
     } finally {
         setIsLoadingExplanation(false);
         setJobPendingAnalysis(null);
-        console.log(`JobExplorer: performAiAnalysis finished for job ${jobToAnalyze.id}. isLoadingExplanation: false`);
     }
   }, [currentUser, toast, setJobAnalysisCache, addLocalActivity]);
 
 
   const fetchJobDetailsWithAI = useCallback(async (job: JobListing) => {
-    console.log(`JobExplorer: fetchJobDetailsWithAI called for job ${job.id}. isCacheReadyForAnalysis: ${isCacheReadyForAnalysis}`);
     setSelectedJobForDetails(job); 
     setIsDetailsModalOpen(true);
     setIsLoadingExplanation(true);
     setJobPendingAnalysis(null);
 
     if (typeof job.id !== 'number' || isNaN(job.id) || job.id < 0) {
-        console.warn(`fetchJobDetailsWithAI: Cannot fetch AI details for job with invalid frontend ID:`, job);
         toast({ title: "Error", description: "Cannot perform AI analysis on job with invalid ID.", variant: "destructive"});
         setIsLoadingExplanation(false);
         return;
@@ -739,11 +720,8 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
 
     if (currentUser && currentUser.id) {
         try {
-            console.log(`JobExplorer: Attempting to fetch existing match score for job ${job.id} from /jobs/${job.id}/match_score?user_id=${currentUser.id}`);
             const response = await apiClient.get<AnalyzeResultOut>(`/jobs/${job.id}/match_score?user_id=${currentUser.id}`);
-            console.log(`JobExplorer: Response from /match_score for job ${job.id}:`, response.data);
             if (response.data && response.data.score !== undefined && response.data.explanation !== undefined) {
-                console.log(`JobExplorer: Fetched existing AI analysis for job ${job.id} from backend.`);
                 const backendAnalysis = {
                     matchScore: response.data.score,
                     matchExplanation: response.data.explanation,
@@ -753,49 +731,37 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                 setIsLoadingExplanation(false);
                 return; 
             }
-            console.log(`JobExplorer: Backend response for /match_score for job ${job.id} did not contain complete data or was empty.`);
         } catch (error) {
             const axiosError = error as AxiosError;
-            if (axiosError.response && axiosError.response.status === 404) {
-                console.log(`JobExplorer: No existing AI analysis found for job ${job.id} on backend (404). Proceeding to check cache/generate.`);
-            } else {
+            if (!(axiosError.response && axiosError.response.status === 404)) {
                 console.error(`JobExplorer: Error fetching existing match score for job ${job.id}:`, error);
                 toast({ title: "Error Fetching Score", description: "Could not fetch existing AI analysis. Will try generating.", variant: "destructive" });
             }
         }
-    } else {
-        console.log("JobExplorer: No current user or user ID, skipping backend match_score check.");
     }
 
 
     const cachedData = jobAnalysisCache[job.id];
     if (cachedData && cachedData.matchScore !== undefined && cachedData.matchExplanation !== undefined) {
-      console.log(`JobExplorer: Using cached AI analysis for job ${job.id} from jobAnalysisCache.`);
       setSelectedJobForDetails(prevJob => prevJob ? { ...prevJob, ...cachedData } : null);
       setIsLoadingExplanation(false);
       return;
     }
 
     if (isCacheReadyForAnalysis) {
-        console.log(`JobExplorer: Cache is ready, proceeding to performAiAnalysis for job ${job.id} as it's not in backend/cache.`);
         await performAiAnalysis(job);
     } else {
-        console.log(`JobExplorer: Cache not ready. Setting job ${job.id} as pending analysis.`);
         setJobPendingAnalysis(job);
     }
   }, [currentUser, isCacheReadyForAnalysis, performAiAnalysis, toast, setJobAnalysisCache, jobAnalysisCache]);
 
 
   useEffect(() => {
-    console.log(`JobExplorer: useEffect for pending analysis. isCacheReady: ${isCacheReadyForAnalysis}, pendingJob: ${jobPendingAnalysis?.id}, selectedJobModal: ${selectedJobForDetails?.id}`);
     if (isCacheReadyForAnalysis && jobPendingAnalysis && selectedJobForDetails?.id === jobPendingAnalysis.id) {
-      console.log(`JobExplorer: Cache is ready. Processing pending analysis for job ${jobPendingAnalysis.id}.`);
-      
       if (currentUser && currentUser.id && jobPendingAnalysis.id >=0) {
          apiClient.get<AnalyzeResultOut>(`/jobs/${jobPendingAnalysis.id}/match_score?user_id=${currentUser.id}`)
           .then(response => {
             if (response.data && response.data.score !== undefined && response.data.explanation !== undefined) {
-              console.log(`JobExplorer (pending): Fetched existing AI analysis for job ${jobPendingAnalysis.id} from backend.`);
               const backendAnalysis = { matchScore: response.data.score, matchExplanation: response.data.explanation };
               setSelectedJobForDetails(prevJob => prevJob ? { ...prevJob, ...backendAnalysis } : null);
               setJobAnalysisCache(prevCache => ({ ...prevCache, [jobPendingAnalysis.id as number]: backendAnalysis }));
@@ -804,12 +770,10 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
             } else {
               const cachedData = jobAnalysisCache[jobPendingAnalysis.id];
               if (cachedData && cachedData.matchScore !== undefined && cachedData.matchExplanation !== undefined) {
-                console.log(`JobExplorer (pending): Found pending job ${jobPendingAnalysis.id} in cache after cache became ready. Using cached data.`);
                 setSelectedJobForDetails(prevJob => prevJob ? { ...prevJob, ...cachedData } : null);
                 setIsLoadingExplanation(false);
                 setJobPendingAnalysis(null);
               } else {
-                console.log(`JobExplorer (pending): Pending job ${jobPendingAnalysis.id} not in backend or cache even after cache is ready. Performing AI analysis.`);
                 performAiAnalysis(jobPendingAnalysis);
               }
             }
@@ -817,7 +781,6 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
           .catch(error => {
             const axiosError = error as AxiosError;
              if (axiosError.response && axiosError.response.status === 404) {
-                console.log(`JobExplorer (pending): No existing AI analysis found for job ${jobPendingAnalysis.id} on backend (404). Proceeding to check cache/generate.`);
                  const cachedData = jobAnalysisCache[jobPendingAnalysis.id];
                 if (cachedData && cachedData.matchScore !== undefined && cachedData.matchExplanation !== undefined) {
                     setSelectedJobForDetails(prevJob => prevJob ? { ...prevJob, ...cachedData } : null);
@@ -827,7 +790,6 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                     performAiAnalysis(jobPendingAnalysis);
                 }
             } else {
-                console.error(`JobExplorer (pending): Error fetching existing match score for job ${jobPendingAnalysis.id}:`, error);
                 toast({ title: "Error", description: "Could not fetch existing AI analysis for pending job. Proceeding with generation.", variant: "destructive" });
                 performAiAnalysis(jobPendingAnalysis); 
             }
@@ -888,7 +850,6 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
              } else {
                  next.delete(job.id);
              }
-             console.log("JobExplorer: Saved Job IDs (local state) updated:", next);
              return next;
         });
 
@@ -1180,13 +1141,13 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
 
         <TabsContent value="relevant" className="space-y-6">
           {(() => {
-            if (!currentUser || !isCacheReadyForAnalysis && !isLoadingRelevantJobs && !errorRelevantJobs) {
-              return (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <LoadingSpinner size={40} />
-                  <p className="mt-3 text-lg text-muted-foreground">Preparing to load relevant jobs...</p>
-                </div>
-              );
+            if (!currentUser || (!isCacheReadyForAnalysis && !filtersReady && !isLoadingRelevantJobs && !errorRelevantJobs)) {
+                return (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <LoadingSpinner size={40} />
+                    <p className="mt-3 text-lg text-muted-foreground">Initializing...</p>
+                  </div>
+                );
             }
             if (isLoadingRelevantJobs && relevantJobsList.length === 0) {
               return (
@@ -1205,7 +1166,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                 </Alert>
               );
             }
-            if (!isLoadingRelevantJobs && !errorRelevantJobs && relevantJobsList.length === 0) {
+            if (!isLoadingRelevantJobs && !errorRelevantJobs && relevantJobsList.length === 0 && filtersReady && isCacheReadyForAnalysis) {
               return (
                  <div className="text-center py-12">
                   <FileWarning className="mx-auto h-12 w-12 text-muted-foreground" />
@@ -1244,7 +1205,29 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                 </>
               );
             }
-            if (isLoadingRelevantJobs) {
+             if (isLoadingRelevantJobs && relevantJobsList.length > 0) { // Still loading next page
+                return (
+                    <>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {relevantJobsList.map((job, index) => (
+                            <JobCard
+                            key={job.api_id ? `relevant-api-${job.api_id}` : `relevant-db-${job.id}-${index}`}
+                            job={job}
+                            onViewDetails={handleViewDetails}
+                            onSaveJob={handleSaveJob}
+                            onGenerateMaterials={openMaterialsModal}
+                            isSaved={savedJobIds.has(job.id)}
+                            />
+                        ))}
+                        </div>
+                         <div className="flex flex-col items-center justify-center py-12 text-center">
+                            <LoadingSpinner size={32} />
+                            <p className="mt-2 text-sm text-muted-foreground">Loading more...</p>
+                        </div>
+                    </>
+                );
+            }
+            if (isLoadingRelevantJobs || !filtersReady || !isCacheReadyForAnalysis) { // Default loading if still processing prerequisites
                 return (
                     <div className="flex flex-col items-center justify-center py-12 text-center">
                       <LoadingSpinner size={40} />
