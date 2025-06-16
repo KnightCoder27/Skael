@@ -24,6 +24,8 @@ import { SimpleJobListItem } from '@/components/app/simple-job-list-item';
 import { PaginationControls } from '@/components/app/PaginationControls';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+
 
 // AI Flow Imports
 import { jobMatchExplanation, type JobMatchExplanationInput } from '@/ai/flows/job-match-explanation';
@@ -32,7 +34,10 @@ import {
   generateResume,
   generateCoverLetter,
   type GenerateDocumentInput,
+  type QAndA, // Added for the new interactive Q&A feature
 } from '@/ai/flows/resume-cover-letter-generator';
+import { generateQuestions, type GenerateQuestionsInput, type GenerateQuestionsOutput } from '@/ai/flows/question-generator-flow';
+
 
 interface JobAnalysisCache {
   [jobId: number]: {
@@ -108,6 +113,14 @@ export default function JobExplorerPage() {
 
   const [selectedJobForMaterials, setSelectedJobForMaterials] = useState<JobListing | null>(null);
   const [isMaterialsModalOpen, setIsMaterialsModalOpen] = useState(false);
+
+  // New state for Q&A based material generation
+  const [materialGenerationStep, setMaterialGenerationStep] = useState<'initial' | 'questions' | 'generating' | 'done'>('initial');
+  const [generatedQuestions, setGeneratedQuestions] = useState<GenerateQuestionsOutput['questions'] | null>(null);
+  const [userAnswers, setUserAnswers] = useState<QAndA[]>([]);
+  const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
+  const [docTypeForGeneration, setDocTypeForGeneration] = useState<'resume' | 'coverLetter' | null>(null);
+
 
   const [isLoadingResume, setIsLoadingResume] = useState(false);
   const [isLoadingCoverLetter, setIsLoadingCoverLetter] = useState(false);
@@ -256,9 +269,9 @@ export default function JobExplorerPage() {
 
       const payload: RelevantJobsRequestPayload = {
         job_title: currentUser.desired_job_role || undefined,
-        technology: currentUser.skills?.join(', ') || undefined,
-        location: currentUser.preferred_locations?.join(', ') || undefined,
-        experience: currentUser.experience?.toString() || undefined,
+        technology: currentUser.skills?.join(',') || undefined, // Corrected: join array
+        location: currentUser.preferred_locations?.join(',') || undefined, // Corrected: join array
+        experience: currentUser.experience?.toString() || undefined, // Corrected: to string
         skip: skip,
         limit: limit,
       };
@@ -285,7 +298,7 @@ export default function JobExplorerPage() {
       if (pageToFetch === relevantJobsCurrentPage) {
         let specificErrorMessage: string | null = null;
         if (error instanceof AxiosError && error.response?.data?.detail) {
-          specificErrorMessage = error.response.data.detail;
+          specificErrorMessage = typeof error.response.data.detail === 'string' ? error.response.data.detail : JSON.stringify(error.response.data.detail);
         } else if (error instanceof Error && error.message) {
           specificErrorMessage = error.message;
         }
@@ -315,9 +328,9 @@ export default function JobExplorerPage() {
     try {
       const skip = (page - 1) * JOBS_PER_PAGE;
       const limit = JOBS_PER_PAGE;
-      const response = await apiClient.get<BackendJobListingResponseItem[] | { jobs: BackendJobListingResponseItem[] }>('/jobs/list_jobs/', { params: { skip, limit } });
+      const response = await apiClient.get<{ jobs: BackendJobListingResponseItem[] }>('/jobs/list_jobs/', { params: { skip, limit } });
 
-      const jobsToMap = Array.isArray(response.data) ? response.data : response.data?.jobs;
+      const jobsToMap = response.data?.jobs; // Corrected: access data.jobs
 
       if (!jobsToMap || !Array.isArray(jobsToMap)) {
         console.error("Invalid response structure for all jobs (after check):", response.data);
@@ -330,7 +343,7 @@ export default function JobExplorerPage() {
       console.error("Error in fetchAllJobs:", error);
       let specificErrorMessage: string | null = null;
       if (error instanceof AxiosError && error.response?.data?.detail) {
-        specificErrorMessage = error.response.data.detail;
+        specificErrorMessage = typeof error.response.data.detail === 'string' ? error.response.data.detail : JSON.stringify(error.response.data.detail);
       } else if (error instanceof Error && error.message) {
         specificErrorMessage = error.message;
       }
@@ -361,11 +374,11 @@ export default function JobExplorerPage() {
       params.append('skip', skip.toString());
       params.append('limit', limit.toString());
 
-      const finalEndpoint = `/jobs/list_jobs/?${params.toString()}`;
+      const finalEndpoint = `/jobs/?${params.toString()}`; // Corrected: endpoint for filtered list
 
-      const response = await apiClient.get<BackendJobListingResponseItem[] | { jobs: BackendJobListingResponseItem[] }>(finalEndpoint);
+      const response = await apiClient.get<{ jobs: BackendJobListingResponseItem[] }>(finalEndpoint);
       
-      const jobsToMap = Array.isArray(response.data) ? response.data : response.data?.jobs;
+      const jobsToMap = response.data?.jobs; // Corrected: access data.jobs
 
       if (!jobsToMap || !Array.isArray(jobsToMap)) {
         console.error("Invalid response structure for filtered jobs (after check):", response.data);
@@ -384,7 +397,7 @@ export default function JobExplorerPage() {
       console.error("Error in handleApplyFilters:", error);
       let specificErrorMessage: string | null = null;
       if (error instanceof AxiosError && error.response?.data?.detail) {
-        specificErrorMessage = error.response.data.detail;
+        specificErrorMessage = typeof error.response.data.detail === 'string' ? error.response.data.detail : JSON.stringify(error.response.data.detail);
       } else if (error instanceof Error && error.message) {
         specificErrorMessage = error.message;
       }
@@ -587,7 +600,7 @@ export default function JobExplorerPage() {
         toast({ title: "Job Fetch Complete", description: "No new jobs were found from the external API matching your criteria." });
       }
     } catch (error) {
-      const message = error instanceof AxiosError && error.response?.data?.detail ? error.response.data.detail : "Failed to initiate job fetching from external API.";
+      const message = error instanceof AxiosError && error.response?.data?.detail ? (typeof error.response.data.detail === 'string' ? error.response.data.detail : JSON.stringify(error.response.data.detail)) : "Failed to initiate job fetching from external API.";
       setErrorGenerateJobs(message);
       setFetchedApiJobs([]);
       setLastFetchCount(0);
@@ -863,134 +876,116 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
     } catch (error) {
         console.error(`Error ${actionTypeForBackend.toLowerCase()} job to backend:`, error);
         const errorMessage = error instanceof AxiosError && error.response?.data?.detail
-                           ? error.response.data.detail
+                           ? (typeof error.response.data.detail === 'string' ? error.response.data.detail : JSON.stringify(error.response.data.detail))
                            : `Could not sync job ${actionTypeForBackend.toLowerCase()} with backend.`;
         toast({ title: "Backend Sync Failed", description: errorMessage, variant: "destructive" });
     }
   };
 
-  const openMaterialsModal = (job: JobListing) => {
+const openMaterialsModal = (job: JobListing, docType: 'resume' | 'coverLetter') => {
     if (typeof job.id !== 'number' || isNaN(job.id)) {
         toast({ title: "Error", description: "Cannot generate materials for job with invalid ID.", variant: "destructive"});
         return;
     }
     setSelectedJobForMaterials(job);
+    setDocTypeForGeneration(docType);
+    setMaterialGenerationStep('initial');
+    setGeneratedQuestions(null);
+    setUserAnswers([]);
     setGeneratedResume(null);
     setGeneratedCoverLetter(null);
-    setExtractedJobPoints(null);
-    setJobForExtractedPoints(null);
-    setIsLoadingResume(false);
-    setIsLoadingCoverLetter(false);
     setIsMaterialsModalOpen(true);
-  };
+};
 
-  const getPointsForJob = async (jobToGetPointsFor: JobListing): Promise<ExtractJobDescriptionPointsOutput | null> => {
-    if (typeof jobToGetPointsFor.id !== 'number' || isNaN(jobToGetPointsFor.id)) return null;
-    if (jobToGetPointsFor.id === jobForExtractedPoints?.id && extractedJobPoints) return extractedJobPoints;
-    try {
-      const pointsInput: ExtractJobDescriptionPointsInput = { jobDescription: jobToGetPointsFor.description || '' };
-      const pointsResult = await extractJobDescriptionPoints(pointsInput);
-      setExtractedJobPoints(pointsResult);
-      setJobForExtractedPoints(jobToGetPointsFor);
-      return pointsResult;
-    } catch (error) {
-      console.error("Error extracting job description points:", error);
-      toast({ title: "Point Extraction Failed", description: "Could not extract key points from job description.", variant: "destructive" });
-      return null;
-    }
-  };
+const handleAnswerChange = (index: number, answer: string) => {
+    setUserAnswers(prev => {
+        const newAnswers = [...prev];
+        if (newAnswers[index]) {
+            newAnswers[index].answer = answer;
+        }
+        return newAnswers;
+    });
+};
 
-  const handleTriggerAIResumeGeneration = async (jobToGenerateFor: JobListing) => {
-    if (typeof jobToGenerateFor.id !== 'number' || isNaN(jobToGenerateFor.id)) return;
+const handleStartQuestionGeneration = async () => {
+    if (!selectedJobForMaterials || !docTypeForGeneration) return;
     if (!currentUser || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0) {
-      toast({ title: "Profile Incomplete", description: "Please complete your profile (summary, skills) to generate materials.", variant: "destructive" });
-      return;
+        toast({ title: "Profile Incomplete", description: "Please complete your profile (summary, skills) to generate materials.", variant: "destructive" });
+        return;
     }
-    setIsLoadingResume(true);
-    setGeneratedResume(null);
-    try {
-      const points = await getPointsForJob(jobToGenerateFor);
-      if (!points) { setIsLoadingResume(false); return; }
-      const resumeInput: GenerateDocumentInput = { jobDescription: jobToGenerateFor.description || '', userProfile: currentUser.professional_summary || '', pointsToMention: [...(points.keyRequirements || []), ...(points.keySkills || [])]};
-      const resumeResult = await generateResume(resumeInput);
-      if (resumeResult) {
-        setGeneratedResume(resumeResult.resume);
-        addLocalActivity({
-          action_type: "RESUME_GENERATED_FOR_JOB",
-          job_id: jobToGenerateFor.id,
-          user_id: currentUser.id,
-          activity_metadata: {
-            jobTitle: jobToGenerateFor.job_title,
-            company: jobToGenerateFor.company,
-            success: true
-          }
-        });
-      }
-    } catch (error) {
-      console.error("Error generating resume:", error);
-      toast({ title: "Resume Generation Failed", description: "Could not generate resume.", variant: "destructive" });
-       addLocalActivity({
-          action_type: "RESUME_GENERATED_FOR_JOB",
-          job_id: jobToGenerateFor.id,
-          user_id: currentUser?.id,
-          activity_metadata: {
-            jobTitle: jobToGenerateFor.job_title,
-            company: jobToGenerateFor.company,
-            success: false,
-            error: error instanceof Error ? error.message : "Unknown error"
-          }
-        });
-    } finally {
-      setIsLoadingResume(false);
-    }
-  };
 
-  const handleTriggerAICoverLetterGeneration = async (jobToGenerateFor: JobListing) => {
-    if (typeof jobToGenerateFor.id !== 'number' || isNaN(jobToGenerateFor.id)) return;
-    if (!currentUser || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0) {
-      toast({ title: "Profile Incomplete", description: "Please complete your profile (summary, skills) to generate materials.", variant: "destructive" });
-      return;
-    }
-    setIsLoadingCoverLetter(true);
-    setGeneratedCoverLetter(null);
+    setIsLoadingQuestions(true);
+    setMaterialGenerationStep('questions');
     try {
-      const points = await getPointsForJob(jobToGenerateFor);
-      if (!points) { setIsLoadingCoverLetter(false); return; }
-      const coverLetterInput: GenerateDocumentInput = { jobDescription: jobToGenerateFor.description || '', userProfile: currentUser.professional_summary || '', pointsToMention: [...(points.keyRequirements || []), ...(points.keySkills || [])]};
-      const coverLetterResult = await generateCoverLetter(coverLetterInput);
-      if (coverLetterResult) {
-        setGeneratedCoverLetter(coverLetterResult.coverLetter);
-        addLocalActivity({
-          action_type: "COVER_LETTER_GENERATED_FOR_JOB",
-          job_id: jobToGenerateFor.id,
-          user_id: currentUser.id,
-          activity_metadata: {
-            jobTitle: jobToGenerateFor.job_title,
-            company: jobToGenerateFor.company,
-            success: true
-          }
-        });
-      }
+        const input: GenerateQuestionsInput = {
+            jobDescription: selectedJobForMaterials.description || '',
+            userProfile: currentUser.professional_summary || '',
+            documentType: docTypeForGeneration,
+        };
+        const questionsResult = await generateQuestions(input);
+        setGeneratedQuestions(questionsResult.questions);
+        setUserAnswers(questionsResult.questions.map(q => ({ question: q.question, answer: '' }))); // Initialize answers
     } catch (error) {
-      console.error("Error generating cover letter:", error);
-      toast({ title: "Cover Letter Generation Failed", description: "Could not generate cover letter.", variant: "destructive" });
-      addLocalActivity({
-          action_type: "COVER_LETTER_GENERATED_FOR_JOB",
-          job_id: jobToGenerateFor.id,
-          user_id: currentUser?.id,
-          activity_metadata: {
-            jobTitle: jobToGenerateFor.job_title,
-            company: jobToGenerateFor.company,
-            success: false,
-            error: error instanceof Error ? error.message : "Unknown error"
-          }
-        });
+        console.error("Error generating questions:", error);
+        toast({ title: "Question Generation Failed", description: "Could not generate guiding questions.", variant: "destructive" });
+        setMaterialGenerationStep('initial'); // Revert to initial if questions fail
     } finally {
-      setIsLoadingCoverLetter(false);
+        setIsLoadingQuestions(false);
     }
-  };
+};
 
-  const isProfileIncompleteForAIFeatures = currentUser && (!currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0);
+
+const handleProceedWithAnswers = async () => {
+    if (!selectedJobForMaterials || !docTypeForGeneration || !currentUser?.professional_summary) {
+        toast({ title: "Error", description: "Missing information to generate document.", variant: "destructive" });
+        return;
+    }
+    if (userAnswers.some(qa => !qa.answer.trim())) {
+        toast({ title: "Answers Incomplete", description: "Please answer all questions to proceed.", variant: "destructive" });
+        return;
+    }
+
+    setMaterialGenerationStep('generating');
+
+    try {
+        const pointsInput: ExtractJobDescriptionPointsInput = { jobDescription: selectedJobForMaterials.description || '' };
+        const pointsResult = await extractJobDescriptionPoints(pointsInput);
+        const pointsToMention = [...(pointsResult?.keyRequirements || []), ...(pointsResult?.keySkills || [])];
+
+        const generationInput: GenerateDocumentInput = {
+            jobDescription: selectedJobForMaterials.description || '',
+            userProfile: currentUser.professional_summary,
+            pointsToMention: pointsToMention,
+            qAndA: userAnswers,
+        };
+
+        if (docTypeForGeneration === 'resume') {
+            setIsLoadingResume(true);
+            const resumeResult = await generateResume(generationInput);
+            setGeneratedResume(resumeResult.resume);
+            setIsLoadingResume(false);
+            addLocalActivity({ action_type: "RESUME_GENERATED_FOR_JOB", job_id: selectedJobForMaterials.id, user_id: currentUser.id, activity_metadata: { jobTitle: selectedJobForMaterials.job_title, success: true } });
+        } else if (docTypeForGeneration === 'coverLetter') {
+            setIsLoadingCoverLetter(true);
+            const coverLetterResult = await generateCoverLetter(generationInput);
+            setGeneratedCoverLetter(coverLetterResult.coverLetter);
+            setIsLoadingCoverLetter(false);
+            addLocalActivity({ action_type: "COVER_LETTER_GENERATED_FOR_JOB", job_id: selectedJobForMaterials.id, user_id: currentUser.id, activity_metadata: { jobTitle: selectedJobForMaterials.job_title, success: true } });
+        }
+        setMaterialGenerationStep('done');
+    } catch (error) {
+        console.error(`Error generating ${docTypeForGeneration}:`, error);
+        toast({ title: `${docTypeForGeneration === 'resume' ? 'Resume' : 'Cover Letter'} Generation Failed`, variant: "destructive" });
+        setMaterialGenerationStep('questions'); // Allow user to retry or adjust
+        if (docTypeForGeneration === 'resume') setIsLoadingResume(false);
+        if (docTypeForGeneration === 'coverLetter') setIsLoadingCoverLetter(false);
+        addLocalActivity({ action_type: docTypeForGeneration === 'resume' ? "RESUME_GENERATED_FOR_JOB" : "COVER_LETTER_GENERATED_FOR_JOB", job_id: selectedJobForMaterials.id, user_id: currentUser.id, activity_metadata: { jobTitle: selectedJobForMaterials.job_title, success: false, error: error instanceof Error ? error.message : "Unknown" } });
+    }
+};
+
+
+  const isProfileIncompleteForAIFeatures = currentUser && (!currentUser.username || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0);
+
 
   if (isLoggingOut) return <FullPageLoading message="Logging out..." />;
   if (isLoadingAuth) return <FullPageLoading message="Authenticating..." />;
@@ -1014,7 +1009,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
           <Info className="h-5 w-5 text-primary" />
           <AlertTitle className="font-semibold text-primary">Complete Your Profile for Full AI Features!</AlertTitle>
           <AlertDescription className="text-primary/80">
-            AI-powered match analysis and material generation require a complete profile (summary and skills). Some AI features may be limited.
+            AI-powered match analysis and material generation require a complete profile (username, summary and skills). Some AI features may be limited.
             <Button variant="link" asChild className="p-0 h-auto ml-1 text-primary font-semibold">
               <Link href="/profile">Update your profile now.</Link>
             </Button>
@@ -1045,48 +1040,57 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                             <Label htmlFor="fetch-skills" className="flex items-center text-sm font-medium"><Star className="mr-2 h-4 w-4 text-muted-foreground" />Skills (comma-separated)</Label>
                             <Input id="fetch-skills" placeholder="e.g., Python, React, Project Management" value={fetchSkillsInput} onChange={(e) => setFetchSkillsInput(e.target.value)} className="mt-1" />
                         </div>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <Label htmlFor="fetch-locations" className="flex items-center text-sm font-medium"><MapPinned className="mr-2 h-4 w-4 text-muted-foreground" />Locations (comma-separated)</Label>
                             <Input id="fetch-locations" placeholder="e.g., New York, Remote, London" value={fetchLocationsInput} onChange={(e) => setFetchLocationsInput(e.target.value)} className="mt-1" />
                         </div>
                         <div>
-                            <Label htmlFor="fetch-countries" className="flex items-center text-sm font-medium"><Globe className="mr-2 h-4 w-4 text-muted-foreground" />Countries (comma-separated)</Label>
-                            <Input id="fetch-countries" placeholder="e.g., US, CA, GB, India" value={fetchCountriesInput} onChange={(e) => setFetchCountriesInput(e.target.value)} className="mt-1" />
-                             <p className="text-xs text-muted-foreground mt-1">Optional. Enter country names or ISO alpha-2 codes (e.g., United States, CA).</p>
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
                             <Label htmlFor="fetch-experience" className="flex items-center text-sm font-medium"><CheckSquare className="mr-2 h-4 w-4 text-muted-foreground" />Years of Experience</Label>
                             <Input id="fetch-experience" type="number" placeholder="e.g., 5" value={fetchExperienceInput} onChange={(e) => setFetchExperienceInput(e.target.value)} className="mt-1" />
                         </div>
-                        <div>
-                            <Label htmlFor="fetch-remote" className="flex items-center text-sm font-medium"><Wifi className="mr-2 h-4 w-4 text-muted-foreground" />Remote Preference</Label>
-                            <Select value={fetchRemotePreferenceInput} onValueChange={(value) => setFetchRemotePreferenceInput(value as 'any' | 'true' | 'false')}>
-                                <SelectTrigger className="w-full mt-1">
-                                    <SelectValue placeholder="Select preference" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="any">Any</SelectItem>
-                                    <SelectItem value="true">Remote Only</SelectItem>
-                                    <SelectItem value="false">On-site/Hybrid</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                             <Label htmlFor="fetch-limit" className="flex items-center text-sm font-medium"><ListFilter className="mr-2 h-4 w-4 text-muted-foreground" />Max Jobs to Fetch</Label>
-                            <Input id="fetch-limit" type="number" min="1" max={MAX_JOB_FETCH_LIMIT.toString()} placeholder={`1-${MAX_JOB_FETCH_LIMIT}`} value={fetchLimitInput} onChange={(e) => setFetchLimitInput(e.target.value)} className="mt-1" />
-                            <p className="text-xs text-muted-foreground mt-1">Max: {MAX_JOB_FETCH_LIMIT}</p>
-                        </div>
-                        <div>
-                            <Label htmlFor="fetch-max-age" className="flex items-center text-sm font-medium"><CalendarDays className="mr-2 h-4 w-4 text-muted-foreground" />Max Job Posting Age (Days)</Label>
-                            <Input id="fetch-max-age" type="number" min="1" placeholder="e.g., 30" value={fetchMaxAgeDaysInput} onChange={(e) => setFetchMaxAgeDaysInput(e.target.value)} className="mt-1" />
-                        </div>
-                    </div>
+                    <Accordion type="single" collapsible className="w-full">
+                      <AccordionItem value="advanced-filters">
+                        <AccordionTrigger className="text-sm font-medium hover:no-underline text-primary">
+                            <div className="flex items-center">
+                                <Filter className="mr-2 h-4 w-4" /> Advanced Filters
+                            </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="pt-4 space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <Label htmlFor="fetch-countries" className="flex items-center text-sm font-medium"><Globe className="mr-2 h-4 w-4 text-muted-foreground" />Countries (comma-separated)</Label>
+                                    <Input id="fetch-countries" placeholder="e.g., US, CA, GB, India" value={fetchCountriesInput} onChange={(e) => setFetchCountriesInput(e.target.value)} className="mt-1" />
+                                    <p className="text-xs text-muted-foreground mt-1">Optional. Enter country names or ISO alpha-2 codes (e.g., United States, CA).</p>
+                                </div>
+                                <div>
+                                    <Label htmlFor="fetch-remote" className="flex items-center text-sm font-medium"><Wifi className="mr-2 h-4 w-4 text-muted-foreground" />Remote Preference</Label>
+                                    <Select value={fetchRemotePreferenceInput} onValueChange={(value) => setFetchRemotePreferenceInput(value as 'any' | 'true' | 'false')}>
+                                        <SelectTrigger className="w-full mt-1">
+                                            <SelectValue placeholder="Select preference" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="any">Any</SelectItem>
+                                            <SelectItem value="true">Remote Only</SelectItem>
+                                            <SelectItem value="false">On-site/Hybrid</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <Label htmlFor="fetch-limit" className="flex items-center text-sm font-medium"><ListFilter className="mr-2 h-4 w-4 text-muted-foreground" />Max Jobs to Fetch</Label>
+                                    <Input id="fetch-limit" type="number" min="1" max={MAX_JOB_FETCH_LIMIT.toString()} placeholder={`1-${MAX_JOB_FETCH_LIMIT}`} value={fetchLimitInput} onChange={(e) => setFetchLimitInput(e.target.value)} className="mt-1" />
+                                    <p className="text-xs text-muted-foreground mt-1">Max: {MAX_JOB_FETCH_LIMIT}</p>
+                                </div>
+                                <div>
+                                    <Label htmlFor="fetch-max-age" className="flex items-center text-sm font-medium"><CalendarDays className="mr-2 h-4 w-4 text-muted-foreground" />Max Job Posting Age (Days)</Label>
+                                    <Input id="fetch-max-age" type="number" min="1" placeholder="e.g., 30" value={fetchMaxAgeDaysInput} onChange={(e) => setFetchMaxAgeDaysInput(e.target.value)} className="mt-1" />
+                                </div>
+                            </div>
+                        </AccordionContent>
+                      </AccordionItem>
+                    </Accordion>
                      <Button onClick={handleGenerateJobs} disabled={isLoadingGenerateJobs} size="lg" className="w-full md:w-auto mt-4">
                         {isLoadingGenerateJobs ? <LoadingSpinner className="mr-2" /> : <DatabaseZap className="mr-2 h-5 w-5" />}
                         {isLoadingGenerateJobs ? 'Fetching Jobs...' : `Fetch Up to ${Math.min(Number(fetchLimitInput) || DEFAULT_JOB_FETCH_LIMIT, MAX_JOB_FETCH_LIMIT)} Jobs`}
@@ -1121,7 +1125,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                       job={job}
                       onViewDetails={handleViewDetails}
                       onSaveJob={handleSaveJob}
-                      onGenerateMaterials={openMaterialsModal}
+                      onGenerateMaterials={(jobForMat) => openMaterialsModal(jobForMat, 'resume')} // Default to resume, modal will allow choosing
                       isSaved={savedJobIds.has(job.id)}
                     />
                   ))}
@@ -1190,7 +1194,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                         job={job}
                         onViewDetails={handleViewDetails}
                         onSaveJob={handleSaveJob}
-                        onGenerateMaterials={openMaterialsModal}
+                        onGenerateMaterials={(jobForMat) => openMaterialsModal(jobForMat, 'resume')}
                         isSaved={savedJobIds.has(job.id)}
                       />
                     ))}
@@ -1215,7 +1219,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                             job={job}
                             onViewDetails={handleViewDetails}
                             onSaveJob={handleSaveJob}
-                            onGenerateMaterials={openMaterialsModal}
+                            onGenerateMaterials={(jobForMat) => openMaterialsModal(jobForMat, 'resume')}
                             isSaved={savedJobIds.has(job.id)}
                             />
                         ))}
@@ -1334,19 +1338,56 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
         job={selectedJobForDetails}
         isOpen={isDetailsModalOpen}
         onClose={() => setIsDetailsModalOpen(false)}
-        onGenerateMaterials={openMaterialsModal}
+        onGenerateMaterials={(jobForMat) => openMaterialsModal(jobForMat, 'resume')}
         isLoadingExplanation={isLoadingExplanation}
       />
-      <ApplicationMaterialsModal
+     <ApplicationMaterialsModal
         isOpen={isMaterialsModalOpen}
-        onClose={() => setIsMaterialsModalOpen(false)}
-        resume={generatedResume}
-        coverLetter={generatedCoverLetter}
+        onClose={() => {
+            setIsMaterialsModalOpen(false);
+            // Reset Q&A states when modal closes
+            setMaterialGenerationStep('initial');
+            setGeneratedQuestions(null);
+            setUserAnswers([]);
+            setDocTypeForGeneration(null);
+        }}
+        job={selectedJobForMaterials}
+        step={materialGenerationStep}
+        docType={docTypeForGeneration}
+        generatedQuestions={generatedQuestions}
+        userAnswers={userAnswers}
+        isLoadingQuestions={isLoadingQuestions}
         isLoadingResume={isLoadingResume}
         isLoadingCoverLetter={isLoadingCoverLetter}
-        job={selectedJobForMaterials}
-        onGenerateResume={handleTriggerAIResumeGeneration}
-        onGenerateCoverLetter={handleTriggerAICoverLetterGeneration}
+        generatedResume={generatedResume}
+        generatedCoverLetter={generatedCoverLetter}
+        onAnswerChange={handleAnswerChange}
+        onStartQuestionGeneration={handleStartQuestionGeneration}
+        onProceedWithAnswers={handleProceedWithAnswers}
+        onGenerateDirectly={async (jobToGenFor, type) => { // Placeholder for direct generation if needed, or remove
+            if (type === 'resume') {
+                // Simplified direct resume generation
+                setMaterialGenerationStep('generating');
+                setIsLoadingResume(true);
+                const points = await extractJobDescriptionPoints({ jobDescription: jobToGenFor.description || '' });
+                const input: GenerateDocumentInput = { jobDescription: jobToGenFor.description || '', userProfile: currentUser?.professional_summary || '', pointsToMention: [...(points?.keyRequirements || []), ...(points?.keySkills || [])] };
+                const result = await generateResume(input);
+                setGeneratedResume(result.resume);
+                setIsLoadingResume(false);
+                setMaterialGenerationStep('done');
+
+            } else {
+                 // Simplified direct cover letter generation
+                setMaterialGenerationStep('generating');
+                setIsLoadingCoverLetter(true);
+                const points = await extractJobDescriptionPoints({ jobDescription: jobToGenFor.description || '' });
+                const input: GenerateDocumentInput = { jobDescription: jobToGenFor.description || '', userProfile: currentUser?.professional_summary || '', pointsToMention: [...(points?.keyRequirements || []), ...(points?.keySkills || [])] };
+                const result = await generateCoverLetter(input);
+                setGeneratedCoverLetter(result.coverLetter);
+                setIsLoadingCoverLetter(false);
+                setMaterialGenerationStep('done');
+            }
+        }}
       />
     </div>
   );
@@ -1355,3 +1396,4 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
     
 
     
+
