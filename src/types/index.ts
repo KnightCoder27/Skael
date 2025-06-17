@@ -80,6 +80,44 @@ export interface BackendMatchScoreLogItem {
  */
 export type SavedJob = BackendJobListingResponseItem;
 
+/**
+ * Represents an item of work experience.
+ */
+export interface WorkExperienceItem {
+  id?: string; // Optional frontend ID for list management
+  company_name: string;
+  job_title: string;
+  start_date: string; // e.g., "YYYY-MM" or "YYYY-MM-DD"
+  end_date?: string | null; // e.g., "YYYY-MM", "YYYY-MM-DD", or "Present"
+  description?: string | null;
+}
+
+/**
+ * Represents an item of education.
+ */
+export interface EducationItem {
+  id?: string; // Optional frontend ID for list management
+  institution_name: string;
+  degree: string;
+  field_of_study?: string | null;
+  start_date: string; // e.g., "YYYY-MM" or "YYYY"
+  end_date?: string | null; // e.g., "YYYY-MM", "YYYY", or "Present"
+  description?: string | null;
+}
+
+/**
+ * Represents a certification.
+ */
+export interface CertificationItem {
+  id?: string; // Optional frontend ID for list management
+  certification_name: string;
+  issuing_organization: string;
+  issue_date: string; // e.g., "YYYY-MM"
+  expiration_date?: string | null; // e.g., "YYYY-MM" or "Does not expire"
+  credential_id?: string | null;
+  credential_url?: string | null;
+}
+
 
 /**
  * Represents a user of the application, aligned with backend's UserOut.
@@ -102,6 +140,9 @@ export interface User {
   joined_date?: string; // ISO datetime string
   match_scores?: BackendMatchScoreLogItem[];
   saved_jobs?: SavedJob[];
+  work_experience?: WorkExperienceItem[];
+  education?: EducationItem[];
+  certifications?: CertificationItem[];
 }
 
 // API Request/Response types from the guide
@@ -144,6 +185,9 @@ export interface UserUpdateAPI {
   professional_summary?: string | null;
   expected_salary?: number | null;
   resume?: string | null; // File path or URL
+  work_experience?: WorkExperienceItem[] | null;
+  education?: EducationItem[] | null;
+  certifications?: CertificationItem[] | null;
 }
 
 // General success response for PUT /users/{id} and DELETE /users/{id}
@@ -219,8 +263,8 @@ export interface JobListing {
   // Frontend specific fields or enhancements
   technologies?: Technology[]; // Mapped from backend's BackendTechnologyObject[]
   companyLogo?: string; // Derived from company_obj.logo or placeholder
-  matchScore?: number; // For AI features, populated client-side
-  matchExplanation?: string; // For AI features, populated client-side
+  matchScore?: number; // For AI features, populated client-side or from backend
+  matchExplanation?: string; // For AI features, populated client-side or from backend
 }
 
 // Type for the raw backend job listing item, before mapping
@@ -255,7 +299,7 @@ export interface BackendJobListingResponseItem {
   discovered_at?: string | null;
   matching_phrase?: string[] | null;
   matching_words?: string[] | null;
-  experience?: string | null; // Note: This field is present here from existing code. Docs don't specify for JobListingResponse.
+  experience?: string | null;
   key_info?: string | null;
   technologies?: BackendTechnologyObject[] | null;
   hiring_team?: HiringTeamMember[] | null;
@@ -298,29 +342,15 @@ export interface ActivityLogResponse {
 
 
 // Payload for POST /jobs/{id}/save - matches SaveJob from docs (though SaveJob schema not detailed in docs)
-// Assuming it takes user_id. Activity related fields are usually for logging, not direct save action.
-// The backend doc for POST /jobs/{id}/save just says "Body: SaveJob (required)".
-// Based on typical "save" actions, user_id and job_id are essential.
-// For frontend, we also pass action_type and metadata to a combined endpoint or to log activity.
-// If POST /jobs/{id}/save is PURELY for saving, it might only need user_id (if not from token) and job_id.
-// Let's refine this. The SaveJobPayload was used with a generic save endpoint.
-// The specific SaveJob in docs for POST /jobs/{id}/save might be simpler.
-// However, response includes activity_id, so it's likely logging too.
-export interface SaveJobPayload { // For POST /jobs/{id}/save
-  user_id: number; // Assuming backend needs this if not derivable from token
-  // job_id is in the path
-  // The docs don't specify fields for SaveJob.
-  // Keeping it simple, if more fields are needed, backend should specify.
-  // If action_type and metadata are part of SaveJob, they should be added here.
-  // For now, keeping the activity_metadata part for frontend's addLocalActivity logic,
-  // but the actual backend payload might be simpler.
-  action_type: "JOB_SAVED"; // Explicitly for saving. Unsaving is DELETE.
+export interface SaveJobPayload {
+  user_id: number;
+  action_type: "JOB_SAVED";
   activity_metadata?: { [key: string]: any } | null;
 }
 
 export interface SaveJobResponse { // For POST /jobs/{id}/save
   messages: string; // "success"
-  activity_id: number; // Changed from string to number based on typical ID types
+  activity_id: number;
 }
 
 // For DELETE /jobs/{id}/save
@@ -332,8 +362,6 @@ export interface DeleteSavedJobResponse {
 
 // Payload for POST /jobs/{id}/analyze - matches AnalyzeResultIn from docs
 export interface AnalyzeResultIn {
-  // Docs: AnalyzeResultIn (required). Schema not detailed.
-  // Assuming it takes user_id, score, explanation. job_id is in path.
   user_id: number;
   score: number;
   explanation: string;
@@ -341,16 +369,16 @@ export interface AnalyzeResultIn {
 
 // For Resumes - matches ResumeIn from docs
 export interface ResumeIn {
-  user_id: number; // User whose resume it is
-  job_id?: number | null; // Optional job this resume is tailored for
-  source: string; // e.g., "upload", "generated"
-  content: string; // The resume content (e.g., text, or URL to stored file)
+  user_id: number;
+  job_id?: number | null;
+  source: string;
+  content: string;
 }
 
 // Response for POST /users/{id}/resume
 export interface ResumeUploadResponse {
   messages: string; // "success"
-  resume_id: number; // Changed from string to number
+  resume_id: number;
 }
 
 export type ActivityType =
@@ -377,8 +405,8 @@ export interface UserActivityOut {
   id: number; // DB ID of the activity log
   user_id: number;
   job_id: number | null;
-  action_type: string; // e.g., "JOB_SAVED", "APPLICATION_SUBMITTED"
-  activity_metadata: { [key: string]: any } | null; // JSON or similar for extra details
+  action_type: string;
+  activity_metadata: { [key: string]: any } | null;
   created_at: string; // ISO 8601 datetime string
 }
 
@@ -390,13 +418,7 @@ export interface FeedbackIn {
 
 // Type for GET /jobs/{id}/match_score and POST /jobs/{id}/analyze response - matches AnalyzeResultOut from docs
 export interface AnalyzeResultOut {
-  // user_id is not in the response for GET /jobs/{id}/match_score as per docs, only job_id
-  // For POST /jobs/{id}/analyze, it's likely user_id, job_id, score, explanation.
-  // Let's assume the response always includes at least score and explanation.
-  // The docs show AnalyzeResultOut for both, let's use the one for GET /jobs/{id}/match_score as base.
-  // If POST returns more, it can be a superset.
-  // user_id?: number; // Was present, but not in GET /jobs/{id}/match_score output schema
-  job_id?: number; // Also often implicit from context.
+  job_id?: number;
   score: number;
   explanation: string;
 }

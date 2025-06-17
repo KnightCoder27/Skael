@@ -2,11 +2,11 @@
 "use client";
 
 import { useEffect, useState, ChangeEvent } from 'react';
-import { useForm, type SubmitHandler, Controller } from 'react-hook-form';
+import { useForm, type SubmitHandler, Controller, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useAuth } from '@/contexts/AuthContext';
-import type { User, UserUpdateAPI, RemotePreferenceAPI, UserModifyResponse } from '@/types';
+import type { User, UserUpdateAPI, RemotePreferenceAPI, UserModifyResponse, WorkExperienceItem, EducationItem, CertificationItem } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -17,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
-import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon, MessageSquare, UploadCloud, Paperclip, XCircle } from 'lucide-react';
+import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon, MessageSquare, UploadCloud, Paperclip, XCircle, GraduationCap, Award, PlusCircle, Building, School, ScrollText } from 'lucide-react';
 import { FullPageLoading, LoadingSpinner } from '@/components/app/loading-spinner';
 import apiClient from '@/lib/apiClient';
 import { auth as firebaseAuth, storage } from '@/lib/firebase';
@@ -29,6 +29,36 @@ import { Progress } from '@/components/ui/progress';
 
 
 const remotePreferenceOptions: RemotePreferenceAPI[] = ["Remote", "Hybrid", "Onsite"];
+
+const workExperienceSchema = z.object({
+  id: z.string().optional(), // For client-side keying, not sent to backend usually
+  company_name: z.string().min(1, "Company name is required."),
+  job_title: z.string().min(1, "Job title is required."),
+  start_date: z.string().min(1, "Start date is required."),
+  end_date: z.string().optional().nullable(),
+  description: z.string().max(1000, "Description cannot exceed 1000 characters.").optional().nullable(),
+});
+
+const educationSchema = z.object({
+  id: z.string().optional(),
+  institution_name: z.string().min(1, "Institution name is required."),
+  degree: z.string().min(1, "Degree is required."),
+  field_of_study: z.string().optional().nullable(),
+  start_date: z.string().min(1, "Start date is required."),
+  end_date: z.string().optional().nullable(),
+  description: z.string().max(500, "Description cannot exceed 500 characters.").optional().nullable(),
+});
+
+const certificationSchema = z.object({
+  id: z.string().optional(),
+  certification_name: z.string().min(1, "Certification name is required."),
+  issuing_organization: z.string().min(1, "Issuing organization is required."),
+  issue_date: z.string().min(1, "Issue date is required."),
+  expiration_date: z.string().optional().nullable(),
+  credential_id: z.string().optional().nullable(),
+  credential_url: z.string().url("Must be a valid URL.").optional().nullable(),
+});
+
 
 const profileSchema = z.object({
   username: z.string().min(2, 'Name should be at least 2 characters.').max(50, 'Name cannot exceed 50 characters.'),
@@ -43,6 +73,9 @@ const profileSchema = z.object({
   remote_preference: z.enum(remotePreferenceOptions, { errorMap: () => ({ message: "Please select a valid remote preference."}) }).optional().nullable(),
   expected_salary: z.coerce.number().positive("Expected salary must be a positive number.").optional().nullable(),
   resume: z.string().url('Resume must be a valid URL (this will be the Firebase Storage URL).').max(1024, 'Resume URL too long.').optional().nullable(),
+  work_experience: z.array(workExperienceSchema).optional().nullable(),
+  education: z.array(educationSchema).optional().nullable(),
+  certifications: z.array(certificationSchema).optional().nullable(),
 });
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
@@ -74,9 +107,17 @@ export default function ProfilePage() {
       remote_preference: undefined,
       expected_salary: null,
       resume: null,
+      work_experience: [],
+      education: [],
+      certifications: [],
     }
   });
-  const { register, handleSubmit, formState: { errors, isSubmitting: isFormSubmitting }, reset, control, setValue, watch } = form;
+  const { register, handleSubmit, formState: { errors, isSubmitting: isFormSubmitting, touchedFields }, reset, control, setValue, watch } = form;
+
+  const { fields: workFields, append: appendWork, remove: removeWork } = useFieldArray({ control, name: "work_experience" });
+  const { fields: eduFields, append: appendEdu, remove: removeEdu } = useFieldArray({ control, name: "education" });
+  const { fields: certFields, append: appendCert, remove: removeCert } = useFieldArray({ control, name: "certifications" });
+
 
   const watchedResumeUrl = watch("resume");
 
@@ -133,6 +174,9 @@ export default function ProfilePage() {
             remote_preference: formRPValue,
             expected_salary: currentUser.expected_salary ?? null,
             resume: currentUser.resume || null,
+            work_experience: currentUser.work_experience?.map(w => ({...w, id: w.id || crypto.randomUUID() })) || [],
+            education: currentUser.education?.map(e => ({...e, id: e.id || crypto.randomUUID() })) || [],
+            certifications: currentUser.certifications?.map(c => ({...c, id: c.id || crypto.randomUUID() })) || [],
         };
         newResumeUrlToSet = currentUser.resume || null;
         setHasPopulatedFromCurrentUser(true);
@@ -145,6 +189,7 @@ export default function ProfilePage() {
             skills: null, experience: null, preferred_locations: null, countries: '',
             remote_preference: undefined,
             expected_salary: null, resume: null,
+            work_experience: [], education: [], certifications: [],
         };
         newResumeUrlToSet = null;
     } else if (!firebaseUser && !currentUser) {
@@ -154,6 +199,7 @@ export default function ProfilePage() {
             skills: null, experience: null, preferred_locations: null, countries: '',
             remote_preference: undefined,
             expected_salary: null, resume: null,
+            work_experience: [], education: [], certifications: [],
        };
        newResumeUrlToSet = null;
     }
@@ -188,20 +234,19 @@ export default function ProfilePage() {
   const handleRemoveResume = async () => {
     if (!currentResumeUrl || !firebaseUser) return;
 
-    setIsUploadingResume(true); // Use this state to disable buttons during operation
+    setIsUploadingResume(true);
     try {
       const fileRef = storageRef(storage, currentResumeUrl);
       await deleteObject(fileRef);
 
       if (backendUserId) {
-        // Update backend by setting resume field to null
         const updatePayload: Partial<UserUpdateAPI> = { resume: null };
         await apiClient.put(`/users/${backendUserId}`, updatePayload);
         
-        setValue('resume', null); // Update form state
-        setCurrentResumeUrl(null); // Update local state
-        setSelectedResumeFile(null); // Clear any selected file
-        await refetchBackendUser(); // Refresh context
+        setValue('resume', null);
+        setCurrentResumeUrl(null);
+        setSelectedResumeFile(null);
+        await refetchBackendUser();
         toast({ title: "Resume Removed", description: "Your resume has been removed." });
       }
     } catch (error) {
@@ -209,9 +254,6 @@ export default function ProfilePage() {
       let errorMessage = "Could not remove resume.";
       if (error instanceof AxiosError && error.response) {
          errorMessage = error.response.data?.detail || error.response.data?.messages || "Failed to update resume status on backend.";
-         if (error.response.status === 204) { // Backend might return 204 on successful update with null
-            // This is okay, proceed as success
-         }
       }
       toast({ title: "Removal Failed", description: errorMessage, variant: "destructive" });
     } finally {
@@ -226,7 +268,7 @@ export default function ProfilePage() {
       return;
     }
 
-    let newResumeUrl: string | null | undefined = data.resume; // Start with existing or cleared URL
+    let newResumeUrl: string | null | undefined = data.resume;
 
     if (selectedResumeFile) {
       setIsUploadingResume(true);
@@ -236,14 +278,12 @@ export default function ProfilePage() {
       const uploadTask = uploadBytesResumable(fileStorageRef, selectedResumeFile);
 
       try {
-        // Delete old resume if it exists and a new one is being uploaded
         if (currentResumeUrl && currentResumeUrl !== newResumeUrl) {
             try {
                 const oldResumeRef = storageRef(storage, currentResumeUrl);
                 await deleteObject(oldResumeRef);
             } catch (deleteError) {
                 console.warn("Could not delete old resume during update:", deleteError);
-                // Non-critical, proceed with upload
             }
         }
 
@@ -257,9 +297,9 @@ export default function ProfilePage() {
             async () => {
               const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
               newResumeUrl = downloadURL;
-              setValue('resume', newResumeUrl); // Update RHF field with new URL
-              setCurrentResumeUrl(newResumeUrl); // Update local display state
-              setSelectedResumeFile(null); // Clear selected file
+              setValue('resume', newResumeUrl);
+              setCurrentResumeUrl(newResumeUrl);
+              setSelectedResumeFile(null);
               resolve();
             }
           );
@@ -268,7 +308,7 @@ export default function ProfilePage() {
         toast({ title: "Resume Upload Failed", description: "Could not upload your new resume. Profile not updated with new resume.", variant: "destructive" });
         setIsUploadingResume(false);
         setUploadResumeProgress(null);
-        return; // Stop submission if resume upload fails
+        return;
       } finally {
         setIsUploadingResume(false);
         setUploadResumeProgress(null);
@@ -277,23 +317,24 @@ export default function ProfilePage() {
 
     const updatePayload: UserUpdateAPI = {
       username: data.username,
-      number: data.phone_number || null, // Ensure null if empty string
+      number: data.phone_number || null,
       desired_job_role: data.desired_job_role || null,
-      skills: data.skills || undefined, // Undefined if empty for backend to ignore or clear
+      skills: data.skills || undefined,
       experience: data.experience ?? null,
       preferred_locations: data.preferred_locations || undefined,
-      country: data.countries, // Backend expects 'country' as comma-separated string
+      country: data.countries,
       remote_preference: data.remote_preference || null,
       professional_summary: data.professional_summary || null,
       expected_salary: data.expected_salary ?? null,
-      resume: newResumeUrl, // This will be the new URL or existing/cleared URL
+      resume: newResumeUrl,
+      work_experience: data.work_experience?.map(({id, ...rest}) => rest) || [], // Remove client-side ID
+      education: data.education?.map(({id, ...rest}) => rest) || [],
+      certifications: data.certifications?.map(({id, ...rest}) => rest) || [],
     };
 
-    // Filter out undefined values to prevent sending them, unless they are explicitly meant to clear a field (use null for that)
     const filteredUpdatePayload = Object.fromEntries(
         Object.entries(updatePayload).filter(([_, v]) => v !== undefined)
     ) as Partial<UserUpdateAPI>;
-
 
     try {
       const response = await apiClient.put<UserModifyResponse>(`/users/${backendUserId}`, filteredUpdatePayload);
@@ -312,7 +353,7 @@ export default function ProfilePage() {
        if (error instanceof AxiosError && error.response) {
         if (error.response.status === 400) {
           errorMessage = error.response.data?.detail || error.response.data?.messages || "Invalid data submitted. Please check your inputs.";
-        } else if (error.response.status === 204) { // No content, but user not found
+        } else if (error.response.status === 204) {
           errorMessage = "User profile not found on server. Cannot update.";
         } else {
           errorMessage = error.response.data?.detail || error.response.data?.messages || errorMessage;
@@ -344,7 +385,6 @@ export default function ProfilePage() {
             const oldResumeRef = storageRef(storage, currentUser.resume);
             await deleteObject(oldResumeRef);
         } catch (storageError: any) {
-            // Log but don't block deletion if resume not found (e.g. already deleted)
             if (storageError.code !== 'storage/object-not-found') {
                 console.warn("Could not delete resume from storage during account deletion:", storageError);
             }
@@ -355,20 +395,18 @@ export default function ProfilePage() {
           throw new Error(response.data.messages || "Backend reported an issue with account deletion.");
       }
       
-      await deleteFirebaseUser(firebaseUser); // This will trigger onAuthStateChanged
+      await deleteFirebaseUser(firebaseUser);
 
       toast({
         title: "Account Deleted",
         description: "Your account has been permanently deleted.",
       });
-      // AuthContext's onAuthStateChanged will handle clearing local state and redirect
     } catch (error) {
       console.error("Error deleting account:", error);
       let errorMessage = "Could not delete account. Please try again.";
        if (error instanceof AxiosError && error.response) {
-        if (error.response.status === 204) { // User not found on backend
+        if (error.response.status === 204) {
              errorMessage = "User account not found on the server, but attempting to delete Firebase user.";
-             // Try to delete Firebase user anyway
             try {
                 if (firebaseUser) await deleteFirebaseUser(firebaseUser);
                 toast({ title: "Account Deletion Partial", description: "Backend account not found, Firebase user deleted if existed." });
@@ -384,7 +422,7 @@ export default function ProfilePage() {
         errorMessage = error.message;
       }
       toast({ title: "Deletion Failed", description: errorMessage, variant: "destructive" });
-      setIsLoggingOut(false); // Reset if deletion process fails before Firebase sign out
+      setIsLoggingOut(false);
     }
   };
 
@@ -420,218 +458,390 @@ export default function ProfilePage() {
         </p>
       </header>
 
-      <Card className="shadow-lg">
-        <form onSubmit={handleSubmit(onSubmit)}>
-          <CardHeader>
-            <CardTitle className="font-headline text-xl">Personal & Contact Information</CardTitle>
-            <CardDescription>
-              Basic information about you. Your email is used for account identity.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <Label htmlFor="username">Full Name</Label>
-                <Input id="username" {...register('username')} placeholder="Your Full Name" className={errors.username ? 'border-destructive' : ''} />
-                {errors.username && <p className="text-sm text-destructive">{errors.username.message}</p>}
+      <form onSubmit={handleSubmit(onSubmit)}>
+        <Card className="shadow-lg">
+            <CardHeader>
+              <CardTitle className="font-headline text-xl">Personal & Contact Information</CardTitle>
+              <CardDescription>
+                Basic information about you. Your email is used for account identity.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label htmlFor="username">Full Name</Label>
+                  <Input id="username" {...register('username')} placeholder="Your Full Name" className={errors.username ? 'border-destructive' : ''} />
+                  {errors.username && <p className="text-sm text-destructive">{errors.username.message}</p>}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="email_id">Email Address</Label>
+                  <Input
+                    id="email_id"
+                    type="email"
+                    {...register('email_id')}
+                    placeholder="you@example.com"
+                    className={errors.email_id ? 'border-destructive' : ''}
+                    readOnly
+                  />
+                  {errors.email_id && <p className="text-sm text-destructive">{errors.email_id.message}</p>}
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label htmlFor="phone_number">Phone Number</Label>
+                  <div className="relative flex items-center">
+                      <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input id="phone_number" type="tel" {...register('phone_number')} placeholder="(123) 456-7890" className={`pl-10 ${errors.phone_number ? 'border-destructive' : ''}`} />
+                  </div>
+                  <p className="text-xs text-muted-foreground">Optional.</p>
+                  {errors.phone_number && <p className="text-sm text-destructive">{errors.phone_number.message}</p>}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="preferred_locations">Preferred Locations (comma-separated)</Label>
+                  <div className="relative flex items-center">
+                      <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input id="preferred_locations" {...register('preferred_locations')} placeholder="e.g., New York, Remote, London" className={`pl-10 ${errors.preferred_locations ? 'border-destructive' : ''}`} />
+                  </div>
+                  <p className="text-xs text-muted-foreground">Optional. Enter cities or "Remote".</p>
+                  {errors.preferred_locations && <p className="text-sm text-destructive">{errors.preferred_locations.message}</p>}
+                </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="email_id">Email Address</Label>
-                <Input
-                  id="email_id"
-                  type="email"
-                  {...register('email_id')}
-                  placeholder="you@example.com"
-                  className={errors.email_id ? 'border-destructive' : ''}
-                  readOnly
+                  <Label htmlFor="countries">Target Countries (comma-separated)</Label>
+                  <div className="relative flex items-center">
+                      <Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input id="countries" {...register('countries')} placeholder="e.g., US, CA, GB, India" className={`pl-10 ${errors.countries ? 'border-destructive' : ''}`} />
+                  </div>
+                  <p className="text-xs text-muted-foreground">Required. Enter country names or ISO alpha-2 codes (e.g., United States, CA). Helps in fetching relevant jobs.</p>
+                  {errors.countries && <p className="text-sm text-destructive">{errors.countries.message}</p>}
+                </div>
+            </CardContent>
+        </Card>
+
+        <Separator className="my-6" />
+
+        <Card className="shadow-lg">
+            <CardHeader>
+              <CardTitle className="font-headline text-xl">Professional Background</CardTitle>
+              <CardDescription>
+                Your experience, skills, and resume summary are crucial for AI matching.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-2">
+                <Label htmlFor="professional_summary" className="text-base flex items-center"><BookUser className="mr-2 h-5 w-5 text-primary/80"/>Professional Summary</Label>
+                <Textarea
+                  id="professional_summary"
+                  {...register('professional_summary')}
+                  placeholder="A detailed summary of your professional background, achievements, and career goals."
+                  rows={8}
+                  className={errors.professional_summary ? 'border-destructive' : ''}
                 />
-                {errors.email_id && <p className="text-sm text-destructive">{errors.email_id.message}</p>}
+                {errors.professional_summary && <p className="text-sm text-destructive">{errors.professional_summary.message}</p>}
               </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                      <Label htmlFor="experience">Years of Professional Experience</Label>
+                      <div className="relative flex items-center">
+                          <Briefcase className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                          <Input id="experience" type="number" {...register('experience')} placeholder="e.g., 5" className={`pl-10 ${errors.experience ? 'border-destructive' : ''}`} />
+                      </div>
+                      <p className="text-xs text-muted-foreground">Optional.</p>
+                      {errors.experience && <p className="text-sm text-destructive">{errors.experience.message}</p>}
+                  </div>
+
+                  <div className="space-y-2">
+                      <Label htmlFor="resume-upload">Your Resume</Label>
+                      <Input
+                          id="resume-upload"
+                          type="file"
+                          onChange={handleResumeFileChange}
+                          accept=".pdf,.doc,.docx"
+                          className="mb-1 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
+                          disabled={isUploadingResume || overallSubmitting}
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">Optional. PDF or Word doc, max 5MB.</p>
+                      {selectedResumeFile && !isUploadingResume && (
+                          <p className="text-xs text-muted-foreground mt-1">Selected: {selectedResumeFile.name}. Ready to upload on save.</p>
+                      )}
+                      {currentResumeUrl && !selectedResumeFile && !isUploadingResume && (
+                          <div className="mt-2 mb-2 flex items-center justify-between p-2 border rounded-md bg-muted/50">
+                              <a href={currentResumeUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center truncate">
+                                  <Paperclip className="w-4 h-4 mr-2 shrink-0" />
+                                  <span className="truncate">{currentResumeUrl.split('/').pop()?.split('?')[0].substring(currentResumeUrl.lastIndexOf('_') + 1) || "View Current Resume"}</span>
+                              </a>
+                              <Button type="button" variant="ghost" size="icon" onClick={handleRemoveResume} className="h-7 w-7 text-destructive hover:bg-destructive/10" disabled={overallSubmitting || isUploadingResume}>
+                                  <XCircle className="w-4 h-4" />
+                                  <span className="sr-only">Remove resume</span>
+                              </Button>
+                          </div>
+                      )}
+                      {isUploadingResume && uploadResumeProgress !== null && (
+                          <div className="mt-2">
+                              <Progress value={uploadResumeProgress} className="w-full h-2" />
+                              <p className="text-xs text-muted-foreground text-center mt-1">Uploading: {Math.round(uploadResumeProgress)}%</p>
+                          </div>
+                      )}
+                      {errors.resume && <p className="text-sm text-destructive">{errors.resume.message}</p>}
+                      <input type="hidden" {...register('resume')} />
+                  </div>
+              </div>
+
               <div className="space-y-2">
-                <Label htmlFor="phone_number">Phone Number</Label>
-                <div className="relative flex items-center">
-                    <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input id="phone_number" type="tel" {...register('phone_number')} placeholder="(123) 456-7890" className={`pl-10 ${errors.phone_number ? 'border-destructive' : ''}`} />
-                </div>
-                 <p className="text-xs text-muted-foreground">Optional.</p>
-                {errors.phone_number && <p className="text-sm text-destructive">{errors.phone_number.message}</p>}
+                <Label htmlFor="skills" className="text-base flex items-center"><ListChecks className="mr-2 h-5 w-5 text-primary/80"/>Key Skills (comma-separated)</Label>
+                <Textarea
+                  id="skills"
+                  {...register('skills')}
+                  placeholder="e.g., React, Node.js, Python, Project Management, UI/UX Design"
+                  rows={3}
+                  className={errors.skills ? 'border-destructive' : ''}
+                />
+                <p className="text-xs text-muted-foreground">Optional. This helps AI find relevant jobs.</p>
+                {errors.skills && <p className="text-sm text-destructive">{errors.skills.message}</p>}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="preferred_locations">Preferred Locations (comma-separated)</Label>
-                 <div className="relative flex items-center">
-                    <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input id="preferred_locations" {...register('preferred_locations')} placeholder="e.g., New York, Remote, London" className={`pl-10 ${errors.preferred_locations ? 'border-destructive' : ''}`} />
-                </div>
-                <p className="text-xs text-muted-foreground">Optional. Enter cities or "Remote".</p>
-                {errors.preferred_locations && <p className="text-sm text-destructive">{errors.preferred_locations.message}</p>}
-              </div>
-            </div>
-             <div className="space-y-2">
-                <Label htmlFor="countries">Target Countries (comma-separated)</Label>
-                 <div className="relative flex items-center">
-                    <Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input id="countries" {...register('countries')} placeholder="e.g., US, CA, GB, India" className={`pl-10 ${errors.countries ? 'border-destructive' : ''}`} />
-                </div>
-                <p className="text-xs text-muted-foreground">Required. Enter country names or ISO alpha-2 codes (e.g., United States, CA). Helps in fetching relevant jobs.</p>
-                {errors.countries && <p className="text-sm text-destructive">{errors.countries.message}</p>}
-              </div>
-          </CardContent>
+            </CardContent>
+        </Card>
 
-          <Separator className="my-6" />
-
+        <Separator className="my-6" />
+        
+        {/* Work Experience Section */}
+        <Card className="shadow-lg">
           <CardHeader>
-            <CardTitle className="font-headline text-xl">Professional Background</CardTitle>
-            <CardDescription>
-              Your experience, skills, and resume summary are crucial for AI matching.
-            </CardDescription>
+            <CardTitle className="font-headline text-xl flex items-center"><Building className="mr-2 h-5 w-5 text-primary" />Work Experience</CardTitle>
+            <CardDescription>Detail your professional roles and responsibilities.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="professional_summary" className="text-base flex items-center"><BookUser className="mr-2 h-5 w-5 text-primary/80"/>Professional Summary</Label>
-              <Textarea
-                id="professional_summary"
-                {...register('professional_summary')}
-                placeholder="A detailed summary of your professional background, achievements, and career goals."
-                rows={8}
-                className={errors.professional_summary ? 'border-destructive' : ''}
-              />
-              {errors.professional_summary && <p className="text-sm text-destructive">{errors.professional_summary.message}</p>}
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                    <Label htmlFor="experience">Years of Professional Experience</Label>
-                    <div className="relative flex items-center">
-                        <Briefcase className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                        <Input id="experience" type="number" {...register('experience')} placeholder="e.g., 5" className={`pl-10 ${errors.experience ? 'border-destructive' : ''}`} />
+          <CardContent className="space-y-4">
+            {workFields.map((field, index) => (
+              <Card key={field.id} className="p-4 bg-muted/30 border-dashed">
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor={`work_experience.${index}.company_name`}>Company Name</Label>
+                      <Input {...register(`work_experience.${index}.company_name`)} placeholder="e.g., Acme Corp" className={errors.work_experience?.[index]?.company_name ? 'border-destructive' : ''}/>
+                      {errors.work_experience?.[index]?.company_name && <p className="text-sm text-destructive">{errors.work_experience[index]?.company_name?.message}</p>}
                     </div>
-                    <p className="text-xs text-muted-foreground">Optional.</p>
-                    {errors.experience && <p className="text-sm text-destructive">{errors.experience.message}</p>}
-                </div>
-
-                <div className="space-y-2">
-                    <Label htmlFor="resume-upload">Your Resume</Label>
-                    <Input
-                        id="resume-upload"
-                        type="file"
-                        onChange={handleResumeFileChange}
-                        accept=".pdf,.doc,.docx"
-                        className="mb-1 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
-                        disabled={isUploadingResume || overallSubmitting}
-                    />
-                    <p className="text-xs text-muted-foreground mt-1">Optional. PDF or Word doc, max 5MB.</p>
-                    {selectedResumeFile && !isUploadingResume && (
-                        <p className="text-xs text-muted-foreground mt-1">Selected: {selectedResumeFile.name}. Ready to upload on save.</p>
-                    )}
-                     {currentResumeUrl && !selectedResumeFile && !isUploadingResume && (
-                        <div className="mt-2 mb-2 flex items-center justify-between p-2 border rounded-md bg-muted/50">
-                            <a href={currentResumeUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center truncate">
-                                <Paperclip className="w-4 h-4 mr-2 shrink-0" />
-                                <span className="truncate">{currentResumeUrl.split('/').pop()?.split('?')[0].substring(currentResumeUrl.lastIndexOf('_') + 1) || "View Current Resume"}</span>
-                            </a>
-                            <Button type="button" variant="ghost" size="icon" onClick={handleRemoveResume} className="h-7 w-7 text-destructive hover:bg-destructive/10" disabled={overallSubmitting || isUploadingResume}>
-                                <XCircle className="w-4 h-4" />
-                                <span className="sr-only">Remove resume</span>
-                            </Button>
-                        </div>
-                    )}
-                     {isUploadingResume && uploadResumeProgress !== null && (
-                        <div className="mt-2">
-                            <Progress value={uploadResumeProgress} className="w-full h-2" />
-                            <p className="text-xs text-muted-foreground text-center mt-1">Uploading: {Math.round(uploadResumeProgress)}%</p>
-                        </div>
-                    )}
-                    {errors.resume && <p className="text-sm text-destructive">{errors.resume.message}</p>}
-                    <input type="hidden" {...register('resume')} />
-                </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="skills" className="text-base flex items-center"><ListChecks className="mr-2 h-5 w-5 text-primary/80"/>Key Skills (comma-separated)</Label>
-              <Textarea
-                id="skills"
-                {...register('skills')}
-                placeholder="e.g., React, Node.js, Python, Project Management, UI/UX Design"
-                rows={3}
-                className={errors.skills ? 'border-destructive' : ''}
-              />
-              <p className="text-xs text-muted-foreground">Optional. This helps AI find relevant jobs.</p>
-              {errors.skills && <p className="text-sm text-destructive">{errors.skills.message}</p>}
-            </div>
-          </CardContent>
-
-          <Separator className="my-6" />
-
-          <CardHeader>
-            <CardTitle className="font-headline text-xl">Job Preferences</CardTitle>
-            <CardDescription>
-              Help us tailor job suggestions to your ideal role and work environment.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="desired_job_role" className="text-base">Ideal Job Role</Label>
-              <Textarea
-                id="desired_job_role"
-                {...register('desired_job_role')}
-                placeholder="e.g., Senior Frontend Developer specializing in e-commerce, interested in mid-size tech companies..."
-                rows={5}
-                className={errors.desired_job_role ? 'border-destructive' : ''}
-              />
-              {errors.desired_job_role && <p className="text-sm text-destructive">{errors.desired_job_role.message}</p>}
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                    <Label htmlFor="remote_preference">Remote Work Preference</Label>
-                    <Controller
-                        name="remote_preference"
-                        control={control}
-                        render={({ field }) => {
-                            return (
-                                <Select
-                                    onValueChange={field.onChange}
-                                    value={field.value ?? undefined}
-                                    disabled={overallSubmitting}
-                                >
-                                    <SelectTrigger className={`relative w-full justify-start pl-10 pr-3 ${errors.remote_preference ? 'border-destructive' : ''}`}>
-                                        <CloudSun className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                                        <SelectValue placeholder="Select preference" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {remotePreferenceOptions.map(option => (
-                                            <SelectItem key={option} value={option}>{option}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            );
-                        }}
-                    />
-                    <p className="text-xs text-muted-foreground">Optional.</p>
-                    {errors.remote_preference && <p className="text-sm text-destructive">{errors.remote_preference.message}</p>}
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="expected_salary">Expected Salary (Numeric)</Label>
-                     <div className="relative flex items-center">
-                        <DollarSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                        <Input id="expected_salary" type="number" {...register('expected_salary')} placeholder="e.g., 120000" className={`pl-10 ${errors.expected_salary ? 'border-destructive' : ''}`} disabled={overallSubmitting}/>
+                    <div>
+                      <Label htmlFor={`work_experience.${index}.job_title`}>Job Title</Label>
+                      <Input {...register(`work_experience.${index}.job_title`)} placeholder="e.g., Software Engineer" className={errors.work_experience?.[index]?.job_title ? 'border-destructive' : ''}/>
+                      {errors.work_experience?.[index]?.job_title && <p className="text-sm text-destructive">{errors.work_experience[index]?.job_title?.message}</p>}
                     </div>
-                    <p className="text-xs text-muted-foreground">Optional. Enter as a number (e.g., 120000 for $120,000).</p>
-                    {errors.expected_salary && <p className="text-sm text-destructive">{errors.expected_salary.message}</p>}
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor={`work_experience.${index}.start_date`}>Start Date</Label>
+                      <Input {...register(`work_experience.${index}.start_date`)} placeholder="YYYY-MM-DD or Month YYYY" className={errors.work_experience?.[index]?.start_date ? 'border-destructive' : ''}/>
+                      {errors.work_experience?.[index]?.start_date && <p className="text-sm text-destructive">{errors.work_experience[index]?.start_date?.message}</p>}
+                    </div>
+                    <div>
+                      <Label htmlFor={`work_experience.${index}.end_date`}>End Date (or "Present")</Label>
+                      <Input {...register(`work_experience.${index}.end_date`)} placeholder="YYYY-MM-DD, Month YYYY, or Present"/>
+                    </div>
+                  </div>
+                  <div>
+                    <Label htmlFor={`work_experience.${index}.description`}>Description</Label>
+                    <Textarea {...register(`work_experience.${index}.description`)} placeholder="Key responsibilities and achievements..." rows={3} className={errors.work_experience?.[index]?.description ? 'border-destructive' : ''}/>
+                     {errors.work_experience?.[index]?.description && <p className="text-sm text-destructive">{errors.work_experience[index]?.description?.message}</p>}
+                  </div>
+                  <Button type="button" variant="outline" size="sm" onClick={() => removeWork(index)} className="text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/50">
+                    <Trash2 className="mr-2 h-3.5 w-3.5" /> Remove Experience
+                  </Button>
                 </div>
-            </div>
-          </CardContent>
-          <CardFooter className="flex-col items-start gap-4 sm:flex-row sm:justify-between sm:items-center pt-6 border-t">
-            <Button type="submit" disabled={overallSubmitting} size="lg" className="shadow-md hover:shadow-lg transition-shadow">
-              {isUploadingResume ? <UploadCloud className="mr-2 h-4 w-4 animate-pulse" /> : (isFormSubmitting ? <LoadingSpinner size={16} className="mr-2" /> : null)}
-              {isUploadingResume ? 'Uploading Resume...' : (isFormSubmitting ? 'Saving Profile...' : 'Save Profile')}
-              {!overallSubmitting && <Edit3 className="ml-2 h-4 w-4" />}
+              </Card>
+            ))}
+            <Button type="button" variant="outline" onClick={() => appendWork({ id: crypto.randomUUID(), company_name: '', job_title: '', start_date: '', end_date: '', description: '' })}>
+              <PlusCircle className="mr-2 h-4 w-4" /> Add Work Experience
             </Button>
-          </CardFooter>
-        </form>
-      </Card>
+          </CardContent>
+        </Card>
+
+        <Separator className="my-6" />
+
+        {/* Education Section */}
+        <Card className="shadow-lg">
+          <CardHeader>
+            <CardTitle className="font-headline text-xl flex items-center"><School className="mr-2 h-5 w-5 text-primary" />Education</CardTitle>
+            <CardDescription>List your academic qualifications.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {eduFields.map((field, index) => (
+              <Card key={field.id} className="p-4 bg-muted/30 border-dashed">
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor={`education.${index}.institution_name`}>Institution Name</Label>
+                      <Input {...register(`education.${index}.institution_name`)} placeholder="e.g., University of Example" className={errors.education?.[index]?.institution_name ? 'border-destructive' : ''}/>
+                       {errors.education?.[index]?.institution_name && <p className="text-sm text-destructive">{errors.education[index]?.institution_name?.message}</p>}
+                    </div>
+                    <div>
+                      <Label htmlFor={`education.${index}.degree`}>Degree</Label>
+                      <Input {...register(`education.${index}.degree`)} placeholder="e.g., B.S. in Computer Science" className={errors.education?.[index]?.degree ? 'border-destructive' : ''}/>
+                       {errors.education?.[index]?.degree && <p className="text-sm text-destructive">{errors.education[index]?.degree?.message}</p>}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor={`education.${index}.field_of_study`}>Field of Study (Optional)</Label>
+                      <Input {...register(`education.${index}.field_of_study`)} placeholder="e.g., Artificial Intelligence"/>
+                    </div>
+                     <div>
+                      <Label htmlFor={`education.${index}.start_date`}>Start Date</Label>
+                      <Input {...register(`education.${index}.start_date`)} placeholder="YYYY-MM or YYYY" className={errors.education?.[index]?.start_date ? 'border-destructive' : ''}/>
+                       {errors.education?.[index]?.start_date && <p className="text-sm text-destructive">{errors.education[index]?.start_date?.message}</p>}
+                    </div>
+                  </div>
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                     <div>
+                        <Label htmlFor={`education.${index}.end_date`}>End Date (or "Present")</Label>
+                        <Input {...register(`education.${index}.end_date`)} placeholder="YYYY-MM, YYYY, or Present"/>
+                     </div>
+                   </div>
+                  <div>
+                    <Label htmlFor={`education.${index}.description`}>Description (Optional)</Label>
+                    <Textarea {...register(`education.${index}.description`)} placeholder="Relevant coursework, activities, honors..." rows={3} className={errors.education?.[index]?.description ? 'border-destructive' : ''}/>
+                     {errors.education?.[index]?.description && <p className="text-sm text-destructive">{errors.education[index]?.description?.message}</p>}
+                  </div>
+                  <Button type="button" variant="outline" size="sm" onClick={() => removeEdu(index)} className="text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/50">
+                    <Trash2 className="mr-2 h-3.5 w-3.5" /> Remove Education
+                  </Button>
+                </div>
+              </Card>
+            ))}
+            <Button type="button" variant="outline" onClick={() => appendEdu({ id: crypto.randomUUID(), institution_name: '', degree: '', start_date: '' })}>
+              <PlusCircle className="mr-2 h-4 w-4" /> Add Education
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Separator className="my-6" />
+
+        {/* Certifications Section */}
+        <Card className="shadow-lg">
+          <CardHeader>
+            <CardTitle className="font-headline text-xl flex items-center"><ScrollText className="mr-2 h-5 w-5 text-primary" />Certifications & Licenses</CardTitle>
+            <CardDescription>Include your professional certifications and licenses.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {certFields.map((field, index) => (
+              <Card key={field.id} className="p-4 bg-muted/30 border-dashed">
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor={`certifications.${index}.certification_name`}>Certification Name</Label>
+                      <Input {...register(`certifications.${index}.certification_name`)} placeholder="e.g., AWS Certified Solutions Architect" className={errors.certifications?.[index]?.certification_name ? 'border-destructive' : ''}/>
+                       {errors.certifications?.[index]?.certification_name && <p className="text-sm text-destructive">{errors.certifications[index]?.certification_name?.message}</p>}
+                    </div>
+                    <div>
+                      <Label htmlFor={`certifications.${index}.issuing_organization`}>Issuing Organization</Label>
+                      <Input {...register(`certifications.${index}.issuing_organization`)} placeholder="e.g., Amazon Web Services" className={errors.certifications?.[index]?.issuing_organization ? 'border-destructive' : ''}/>
+                      {errors.certifications?.[index]?.issuing_organization && <p className="text-sm text-destructive">{errors.certifications[index]?.issuing_organization?.message}</p>}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor={`certifications.${index}.issue_date`}>Issue Date</Label>
+                      <Input {...register(`certifications.${index}.issue_date`)} placeholder="YYYY-MM" className={errors.certifications?.[index]?.issue_date ? 'border-destructive' : ''}/>
+                      {errors.certifications?.[index]?.issue_date && <p className="text-sm text-destructive">{errors.certifications[index]?.issue_date?.message}</p>}
+                    </div>
+                    <div>
+                      <Label htmlFor={`certifications.${index}.expiration_date`}>Expiration Date (Optional)</Label>
+                      <Input {...register(`certifications.${index}.expiration_date`)} placeholder="YYYY-MM or N/A"/>
+                    </div>
+                  </div>
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <Label htmlFor={`certifications.${index}.credential_id`}>Credential ID (Optional)</Label>
+                        <Input {...register(`certifications.${index}.credential_id`)} placeholder="e.g., ABC-123-XYZ"/>
+                    </div>
+                     <div>
+                        <Label htmlFor={`certifications.${index}.credential_url`}>Credential URL (Optional)</Label>
+                        <Input {...register(`certifications.${index}.credential_url`)} placeholder="https://example.com/credential" className={errors.certifications?.[index]?.credential_url ? 'border-destructive' : ''}/>
+                        {errors.certifications?.[index]?.credential_url && <p className="text-sm text-destructive">{errors.certifications[index]?.credential_url?.message}</p>}
+                    </div>
+                   </div>
+                  <Button type="button" variant="outline" size="sm" onClick={() => removeCert(index)} className="text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/50">
+                     <Trash2 className="mr-2 h-3.5 w-3.5" /> Remove Certification
+                  </Button>
+                </div>
+              </Card>
+            ))}
+            <Button type="button" variant="outline" onClick={() => appendCert({id: crypto.randomUUID(), certification_name: '', issuing_organization: '', issue_date: '' })}>
+              <PlusCircle className="mr-2 h-4 w-4" /> Add Certification
+            </Button>
+          </CardContent>
+        </Card>
+        
+        <Separator className="my-6" />
+
+        <Card className="shadow-lg">
+            <CardHeader>
+              <CardTitle className="font-headline text-xl">Job Preferences</CardTitle>
+              <CardDescription>
+                Help us tailor job suggestions to your ideal role and work environment.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-2">
+                <Label htmlFor="desired_job_role" className="text-base">Ideal Job Role</Label>
+                <Textarea
+                  id="desired_job_role"
+                  {...register('desired_job_role')}
+                  placeholder="e.g., Senior Frontend Developer specializing in e-commerce, interested in mid-size tech companies..."
+                  rows={5}
+                  className={errors.desired_job_role ? 'border-destructive' : ''}
+                />
+                {errors.desired_job_role && <p className="text-sm text-destructive">{errors.desired_job_role.message}</p>}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                      <Label htmlFor="remote_preference">Remote Work Preference</Label>
+                      <Controller
+                          name="remote_preference"
+                          control={control}
+                          render={({ field }) => {
+                              return (
+                                  <Select
+                                      onValueChange={field.onChange}
+                                      value={field.value ?? undefined}
+                                      disabled={overallSubmitting}
+                                  >
+                                      <SelectTrigger className={`relative w-full justify-start pl-10 pr-3 ${errors.remote_preference ? 'border-destructive' : ''}`}>
+                                          <CloudSun className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                                          <SelectValue placeholder="Select preference" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                          {remotePreferenceOptions.map(option => (
+                                              <SelectItem key={option} value={option}>{option}</SelectItem>
+                                          ))}
+                                      </SelectContent>
+                                  </Select>
+                              );
+                          }}
+                      />
+                      <p className="text-xs text-muted-foreground">Optional.</p>
+                      {errors.remote_preference && <p className="text-sm text-destructive">{errors.remote_preference.message}</p>}
+                  </div>
+                  <div className="space-y-2">
+                      <Label htmlFor="expected_salary">Expected Salary (Numeric)</Label>
+                      <div className="relative flex items-center">
+                          <DollarSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                          <Input id="expected_salary" type="number" {...register('expected_salary')} placeholder="e.g., 120000" className={`pl-10 ${errors.expected_salary ? 'border-destructive' : ''}`} disabled={overallSubmitting}/>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Optional. Enter as a number (e.g., 120000 for $120,000).</p>
+                      {errors.expected_salary && <p className="text-sm text-destructive">{errors.expected_salary.message}</p>}
+                  </div>
+              </div>
+            </CardContent>
+            <CardFooter className="flex-col items-start gap-4 sm:flex-row sm:justify-between sm:items-center pt-6 border-t">
+              <Button type="submit" disabled={overallSubmitting} size="lg" className="shadow-md hover:shadow-lg transition-shadow">
+                {isUploadingResume ? <UploadCloud className="mr-2 h-4 w-4 animate-pulse" /> : (isFormSubmitting ? <LoadingSpinner size={16} className="mr-2" /> : null)}
+                {isUploadingResume ? 'Uploading Resume...' : (isFormSubmitting ? 'Saving Profile...' : 'Save Profile')}
+                {!overallSubmitting && <Edit3 className="ml-2 h-4 w-4" />}
+              </Button>
+            </CardFooter>
+        </Card>
+      </form>
 
       <Separator className="my-10" />
 
