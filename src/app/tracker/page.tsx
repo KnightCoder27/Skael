@@ -3,10 +3,10 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import useLocalStorage from '@/hooks/use-local-storage';
-import type { TrackedApplication, ApplicationStatus, UserActivityOut, ActivityIn, JobListing, BackendJobListingResponseItem, Technology, BackendTechnologyObject } from '@/types';
+import type { TrackedApplication, ApplicationStatus, UserActivityOut, ActivityIn, JobListing, BackendJobListingResponseItem, Technology, BackendTechnologyObject, SaveJobPayload, SaveJobResponse, DeleteSavedJobResponse } from '@/types';
 import { ApplicationTrackerTable } from '@/components/app/application-tracker-table';
 import { Button } from '@/components/ui/button';
-import { Briefcase, FilePlus2, LogOut as LogOutIcon, ServerCrash, FileWarning, Eye, MessageSquare } from 'lucide-react'; // Added MessageSquare
+import { Briefcase, FilePlus2, LogOut as LogOutIcon, ServerCrash, FileWarning, Eye, MessageSquare } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
@@ -14,11 +14,11 @@ import { useRouter } from 'next/navigation';
 import { FullPageLoading, LoadingSpinner } from '@/components/app/loading-spinner';
 import apiClient from '@/lib/apiClient';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import type { SaveJobPayload } from '@/types';
 import { JobDetailsModal } from '@/components/app/job-details-modal';
 import { ApplicationMaterialsModal } from '@/components/app/application-materials-modal';
-import { FeedbackDialog } from '@/components/app/feedback-dialog'; // Import FeedbackDialog
-import { Card, CardContent } from '@/components/ui/card'; // Import Card for feedback section
+import { FeedbackDialog } from '@/components/app/feedback-dialog';
+import { Card, CardContent } from '@/components/ui/card';
+import { AxiosError } from 'axios';
 
 // AI Flow Imports (for materials generation)
 import { extractJobDescriptionPoints, type ExtractJobDescriptionPointsInput, type ExtractJobDescriptionPointsOutput } from '@/ai/flows/job-description-point-extractor';
@@ -30,9 +30,7 @@ import {
 
 
 const isValidDbId = (idInput: any): idInput is number | string => {
-  if (idInput === null || idInput === undefined) {
-    return false;
-  }
+  if (idInput === null || idInput === undefined) return false;
   const numId = Number(idInput);
   return !isNaN(numId) && isFinite(numId);
 };
@@ -51,7 +49,6 @@ export default function TrackerPage() {
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [isLoadingJobDetails, setIsLoadingJobDetails] = useState(false);
 
-  // States for ApplicationMaterialsModal
   const [selectedJobForMaterials, setSelectedJobForMaterials] = useState<JobListing | null>(null);
   const [isMaterialsModalOpen, setIsMaterialsModalOpen] = useState(false);
   const [isLoadingResume, setIsLoadingResume] = useState(false);
@@ -71,11 +68,10 @@ export default function TrackerPage() {
         numericDbId = -Date.now() - Math.random();
     }
 
-    const companyName = backendJob.company_obj?.company_name || backendJob.company || "N/A";
+    const companyName = backendJob.company_obj?.company_name || "N/A"; // Removed backendJob.company fallback as company_obj is primary
     const companyLogo = backendJob.company_obj?.logo || `https://placehold.co/100x100.png?text=${encodeURIComponent(companyName?.[0] || 'J')}`;
-    const companyDomain = backendJob.company_obj?.company_domain || backendJob.company_domain || null;
+    const companyDomain = backendJob.company_obj?.company_domain || null; // Removed backendJob.company_domain fallback
     const countryCode = backendJob.company_obj?.country_code || backendJob.country_code || null;
-
 
     const technologiesFormatted: Technology[] = Array.isArray(backendJob.technologies)
       ? backendJob.technologies
@@ -122,7 +118,6 @@ export default function TrackerPage() {
       technologies: technologiesFormatted,
       key_info: backendJob.key_info || null,
       hiring_team: backendJob.hiring_team || null,
-      // matchScore and matchExplanation are not typically part of GET /jobs/{id} for tracker
     };
   }, []);
 
@@ -133,6 +128,7 @@ export default function TrackerPage() {
     setIsLoadingTracker(true);
     setErrorTracker(null);
     try {
+      // Docs: GET /users/{id}/activities. Current code: /activity/user/{id}. Keeping current.
       const response = await apiClient.get<UserActivityOut[]>(`/activity/user/${currentUser.id}`);
       const activities = response.data;
 
@@ -140,9 +136,6 @@ export default function TrackerPage() {
 
       activities.forEach(activity => {
         if (activity.job_id !== null && activity.job_id !== undefined && (activity.action_type === 'JOB_SAVED' || activity.action_type === 'JOB_UNSAVED')) {
-          if (activity.action_type === 'JOB_SAVED') {
-             console.log(`TrackerPage: Processing JOB_SAVED activity for job_id ${activity.job_id}, metadata:`, activity.activity_metadata);
-          }
           const existing = jobActions[activity.job_id];
           if (!existing || new Date(activity.created_at) > new Date(existing.timestamp)) {
             jobActions[activity.job_id] = {
@@ -162,7 +155,7 @@ export default function TrackerPage() {
         if (action === 'JOB_SAVED') {
           const metadata = activity.activity_metadata as any || {};
           derivedApplications.push({
-            id: activity.id.toString(),
+            id: activity.id.toString(), // Activity log ID
             jobId: jobId,
             jobTitle: metadata.jobTitle || 'N/A',
             company: metadata.company || 'N/A',
@@ -172,23 +165,32 @@ export default function TrackerPage() {
         }
       }
       setTrackedApplications(derivedApplications);
+       if (derivedApplications.length === 0) {
+         // Handled by table component if empty
+      }
     } catch (error) {
       console.error("Error fetching or processing activities for tracker:", error);
-      const message = error instanceof Error ? error.message : "Could not load tracked applications.";
+      let message = "Could not load tracked applications.";
+      if (error instanceof AxiosError && error.response) {
+        if (error.response.status === 204) {
+            message = "No activities found for your profile.";
+            setTrackedApplications([]); // Ensure list is empty
+        } else {
+            message = error.response.data?.detail || error.response.data?.messages || message;
+        }
+      } else if (error instanceof Error) {
+        message = error.message;
+      }
       setErrorTracker(message);
-      toast({ title: "Error Loading Tracker", description: message, variant: "destructive" });
+      toast({ title: "Error Loading Tracker", description: message, variant: (error instanceof AxiosError && error.response?.status === 204) ? "default" : "destructive" });
     } finally {
       setIsLoadingTracker(false);
     }
   }, [currentUser, toast, localStatusOverrides]);
 
   useEffect(() => {
-    if (isLoggingOut) {
-      console.log("TrackerPage: Logout in progress, skipping access denied logic and fetch.");
-      return;
-    }
+    if (isLoggingOut) return;
     if (!isLoadingAuth && !currentUser) {
-      console.log("TrackerPage: Access Denied. isLoadingAuth is false, currentUser is null. Redirecting to /auth.");
       toast({ title: "Access Denied", description: "Please log in to view your tracker.", variant: "destructive" });
       router.push('/auth');
     } else if (currentUser && currentUser.id && !isLoggingOut) {
@@ -202,41 +204,35 @@ export default function TrackerPage() {
       toast({ title: "Authentication Error", description: "Cannot update status.", variant: "destructive" });
       return;
     }
-
     const application = trackedApplications.find(app => app.jobId === jobId);
     if (!application) return;
-
     const oldStatus = application.status;
 
-    setLocalStatusOverrides(prevOverrides => ({
-      ...prevOverrides,
-      [jobId]: newStatus,
-    }));
+    setLocalStatusOverrides(prevOverrides => ({ ...prevOverrides, [jobId]: newStatus }));
     setTrackedApplications(prevApps =>
-      prevApps.map(app =>
-        app.jobId === jobId ? { ...app, status: newStatus, lastUpdated: new Date().toISOString() } : app
-      )
+      prevApps.map(app => app.jobId === jobId ? { ...app, status: newStatus, lastUpdated: new Date().toISOString() } : app)
     );
     toast({ title: "Status Updated Locally", description: `Application status changed to ${newStatus}. Syncing...` });
 
     if (newStatus !== oldStatus) {
+      // This activity logging is frontend specific for now.
+      // Backend docs don't specify an endpoint for "APPLICATION_STATUS_UPDATED".
+      // The existing /activity/log endpoint on frontend is used.
       const activityPayload: ActivityIn = {
         user_id: currentUser.id,
         job_id: jobId,
         action_type: "APPLICATION_STATUS_UPDATED",
         metadata: { 
-          jobTitle: application.jobTitle,
-          company: application.company,
-          oldStatus: oldStatus,
-          newStatus: newStatus,
+          jobTitle: application.jobTitle, company: application.company,
+          oldStatus: oldStatus, newStatus: newStatus,
         }
       };
       try {
-        await apiClient.post('/activity/log', activityPayload);
-        toast({ title: "Status Update Logged", description: `Change to ${newStatus} recorded on server.` });
+        await apiClient.post('/activity/log', activityPayload); // Assuming this is a general purpose log endpoint
+        toast({ title: "Status Update Logged", description: `Change to ${newStatus} recorded.` });
       } catch (error) {
         console.error("Error logging status update to backend:", error);
-        toast({ title: "Sync Failed", description: "Could not log status update to server.", variant: "destructive" });
+        toast({ title: "Sync Failed", description: "Could not log status update.", variant: "destructive" });
       }
     }
   };
@@ -248,35 +244,35 @@ export default function TrackerPage() {
     }
     const appToRemove = trackedApplications.find(app => app.jobId === jobId);
     if (!appToRemove) {
-        toast({ title: "Error", description: "Application not found in current list.", variant: "destructive"});
+        toast({ title: "Error", description: "Application not found.", variant: "destructive"});
         return;
     }
 
-    const payload: SaveJobPayload = {
-        user_id: currentUser.id,
-        job_id: jobId,
-        action_type: "JOB_UNSAVED",
-        activity_metadata: {
-            jobTitle: appToRemove.jobTitle,
-            company: appToRemove.company,
-            status: "Unsaved"
-        }
-    };
-
     try {
-        await apiClient.post(`/jobs/${jobId}/save`, payload);
-        toast({ title: "Application Removed", description: "The application has been marked as unsaved." });
-        
-        setTrackedApplications(prevApps => prevApps.filter(app => app.jobId !== jobId));
-        
-        setLocalStatusOverrides(prev => {
-            const newOverrides = {...prev};
-            delete newOverrides[jobId];
-            return newOverrides;
-        });
+        // Backend docs: DELETE /jobs/{id}/save?user_id={user_id}
+        const response = await apiClient.delete<DeleteSavedJobResponse>(`/jobs/${jobId}/save?user_id=${currentUser.id}`);
+        if (response.data.messages?.toLowerCase() === 'success' && response.data.msg?.toLowerCase().includes('deleted')) {
+            toast({ title: "Application Removed", description: `"${appToRemove.jobTitle}" removed from saved jobs.` });
+            setTrackedApplications(prevApps => prevApps.filter(app => app.jobId !== jobId));
+            setLocalStatusOverrides(prev => { const newOverrides = {...prev}; delete newOverrides[jobId]; return newOverrides; });
+        } else {
+            throw new Error(response.data.msg || "Backend did not confirm removal.");
+        }
     } catch (error) {
-        console.error("Error unsaving job via API:", error);
-        const message = error instanceof Error ? error.message : "Could not remove application from backend.";
+        console.error("Error removing application via API:", error);
+        let message = "Could not remove application from backend.";
+        if (error instanceof AxiosError && error.response) {
+            if (error.response.status === 204) { // Job not found to delete
+                message = "Application already removed or not found on server.";
+                 // Still remove from frontend if backend says it's not there
+                setTrackedApplications(prevApps => prevApps.filter(app => app.jobId !== jobId));
+                setLocalStatusOverrides(prev => { const newOverrides = {...prev}; delete newOverrides[jobId]; return newOverrides; });
+            } else {
+                 message = error.response.data?.detail || error.response.data?.messages || message;
+            }
+        } else if (error instanceof Error) {
+          message = error.message;
+        }
         toast({ title: "Removal Failed", description: message, variant: "destructive" });
     }
   };
@@ -286,13 +282,21 @@ export default function TrackerPage() {
     setIsLoadingJobDetails(true);
     setSelectedJobForDetailsModal(null);
     try {
+      // Backend docs: GET /jobs/{id}
       const response = await apiClient.get<BackendJobListingResponseItem>(`/jobs/${jobId}`);
       const mappedJob = mapBackendJobToTrackerJobListing(response.data);
       setSelectedJobForDetailsModal(mappedJob);
       setIsDetailsModalOpen(true);
     } catch (error) {
       console.error("Error fetching job details for tracker modal:", error);
-      toast({ title: "Error", description: "Could not fetch job details.", variant: "destructive" });
+      let message = "Could not fetch job details.";
+       if (error instanceof AxiosError && error.response) {
+           if (error.response.status === 204) message = "Job details not found.";
+           else message = error.response.data?.detail || error.response.data?.messages || message;
+       } else if (error instanceof Error) {
+           message = error.message;
+       }
+      toast({ title: "Error", description: message, variant: "destructive" });
     } finally {
       setIsLoadingJobDetails(false);
     }
@@ -320,14 +324,14 @@ export default function TrackerPage() {
       return pointsResult;
     } catch (error) {
       console.error("Error extracting job description points:", error);
-      toast({ title: "Point Extraction Failed", description: "Could not extract key points from job description.", variant: "destructive" });
+      toast({ title: "Point Extraction Failed", variant: "destructive" });
       return null;
     }
   };
 
   const handleTriggerAIResumeGeneration = async (jobToGenerateFor: JobListing) => {
     if (!currentUser || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0) {
-      toast({ title: "Profile Incomplete", description: "Please complete your profile (summary, skills) to generate materials.", variant: "destructive" });
+      toast({ title: "Profile Incomplete", description: "Complete profile needed.", variant: "destructive" });
       return;
     }
     setIsLoadingResume(true);
@@ -347,7 +351,7 @@ export default function TrackerPage() {
 
   const handleTriggerAICoverLetterGeneration = async (jobToGenerateFor: JobListing) => {
      if (!currentUser || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0) {
-      toast({ title: "Profile Incomplete", description: "Please complete your profile (summary, skills) to generate materials.", variant: "destructive" });
+      toast({ title: "Profile Incomplete", description: "Complete profile needed.", variant: "destructive" });
       return;
     }
     setIsLoadingCoverLetter(true);
@@ -389,7 +393,7 @@ export default function TrackerPage() {
             Application Tracker
           </h1>
           <p className="text-muted-foreground">
-            Stay organized and monitor your job application progress. Saved jobs are fetched from your activity log.
+            Monitor your job application progress. Saved jobs are fetched from your activity log.
           </p>
         </div>
         <Button asChild className="shadow-md hover:shadow-lg transition-shadow">
@@ -406,18 +410,18 @@ export default function TrackerPage() {
         </div>
       )}
 
-      {!isLoadingTracker && errorTracker && (
+      {!isLoadingTracker && errorTracker && !trackedApplications.length && ( // Show error only if no apps displayed
         <Alert variant="destructive" className="my-6">
           <ServerCrash className="h-5 w-5" />
           <AlertTitle>Error Loading Tracker Data</AlertTitle>
           <AlertDescription>
-            {errorTracker} Please try again later or check your connection.
+            {errorTracker}
             <Button variant="link" onClick={fetchAndProcessActivities} className="ml-2 p-0 h-auto">Retry</Button>
           </AlertDescription>
         </Alert>
       )}
 
-      {!isLoadingTracker && !errorTracker && (
+      {!isLoadingTracker && ( // Always render table structure, it handles empty state
         <ApplicationTrackerTable
           applications={trackedApplications}
           onUpdateStatus={handleUpdateStatus}
@@ -426,24 +430,12 @@ export default function TrackerPage() {
           isLoadingDetails={isLoadingJobDetails}
         />
       )}
-       {!isLoadingTracker && !errorTracker && trackedApplications.length === 0 && (
-         <Alert variant="default" className="my-6">
-            <FileWarning className="h-5 w-5" />
-            <AlertTitle>No Saved Jobs Yet</AlertTitle>
-            <AlertDescription>
-                You haven't saved any jobs yet. Go to the <Link href="/jobs" className="font-semibold text-primary hover:underline">Job Listings</Link> page to find and save jobs.
-            </AlertDescription>
-        </Alert>
-      )}
-
+      
       <JobDetailsModal
         job={selectedJobForDetailsModal}
         isOpen={isDetailsModalOpen}
         onClose={() => setIsDetailsModalOpen(false)}
         onGenerateMaterials={openMaterialsModalFromTracker}
-        // isLoadingExplanation: The modal shows AI explanation if job.matchScore is present.
-        // GET /jobs/{id} doesn't return matchScore, so it won't show by default from tracker.
-        // If AI explanation needs to be generated on-the-fly from tracker, modal logic needs adjustment or prop.
       />
       <ApplicationMaterialsModal
         isOpen={isMaterialsModalOpen}
@@ -477,4 +469,3 @@ export default function TrackerPage() {
     </div>
   );
 }
-

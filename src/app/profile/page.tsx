@@ -6,7 +6,7 @@ import { useForm, type SubmitHandler, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useAuth } from '@/contexts/AuthContext';
-import type { User, UserUpdateAPI, RemotePreferenceAPI } from '@/types';
+import type { User, UserUpdateAPI, RemotePreferenceAPI, UserModifyResponse } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -101,13 +101,11 @@ export default function ProfilePage() {
         setHasPopulatedFromCurrentUser(false);
         return;
     }
-    console.log("ProfilePage: Form population useEffect triggered. currentUser:", currentUser);
 
     let formValuesToReset: Partial<ProfileFormValues> = {};
     let newResumeUrlToSet: string | null = null;
 
     if (currentUser && currentUser.id) {
-        console.log("ProfilePage: Populating form from currentUser.id:", currentUser.id, "currentUser.countries:", currentUser.countries);
         const currentRPFromDBRaw: string | null | undefined = currentUser.remote_preference;
         let formRPValue: RemotePreferenceAPI | undefined = undefined;
 
@@ -121,8 +119,6 @@ export default function ProfilePage() {
             }
         }
         const countriesString = currentUser.countries?.join(', ') || '';
-        console.log(`ProfilePage useEffect: currentUser.id=${currentUser.id}, currentUser.countries (array)=${JSON.stringify(currentUser.countries)}, countriesStringForForm=${countriesString}`);
-
 
         formValuesToReset = {
             username: currentUser.username || firebaseUser?.displayName || '',
@@ -142,7 +138,6 @@ export default function ProfilePage() {
         setHasPopulatedFromCurrentUser(true);
 
     } else if (firebaseUser && !currentUser && !hasPopulatedFromCurrentUser) {
-        console.log("ProfilePage: Populating form from firebaseUser only.");
         formValuesToReset = {
             username: firebaseUser.displayName || '',
             email_id: firebaseUser.email || '',
@@ -153,7 +148,6 @@ export default function ProfilePage() {
         };
         newResumeUrlToSet = null;
     } else if (!firebaseUser && !currentUser) {
-       console.log("ProfilePage: No user, resetting form to defaults.");
        setHasPopulatedFromCurrentUser(false);
        formValuesToReset = {
             username: '', email_id: '', phone_number: null, professional_summary: null, desired_job_role: null,
@@ -165,12 +159,10 @@ export default function ProfilePage() {
     }
 
     if (Object.keys(formValuesToReset).length > 0 || newResumeUrlToSet !== currentResumeUrl) {
-        console.log("ProfilePage useEffect: Calling reset with formValuesToReset:", formValuesToReset);
         reset(formValuesToReset);
         setCurrentResumeUrl(newResumeUrlToSet);
     }
 }, [currentUser, firebaseUser, reset, isLoadingAuth, isLoggingOut, hasPopulatedFromCurrentUser, currentResumeUrl]);
-
 
 
   const handleResumeFileChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -196,22 +188,32 @@ export default function ProfilePage() {
   const handleRemoveResume = async () => {
     if (!currentResumeUrl || !firebaseUser) return;
 
-    setIsUploadingResume(true);
+    setIsUploadingResume(true); // Use this state to disable buttons during operation
     try {
       const fileRef = storageRef(storage, currentResumeUrl);
       await deleteObject(fileRef);
 
       if (backendUserId) {
-        await apiClient.put(`/users/${backendUserId}`, { resume: null });
-        setValue('resume', null);
-        setCurrentResumeUrl(null);
-        setSelectedResumeFile(null);
-        await refetchBackendUser();
+        // Update backend by setting resume field to null
+        const updatePayload: Partial<UserUpdateAPI> = { resume: null };
+        await apiClient.put(`/users/${backendUserId}`, updatePayload);
+        
+        setValue('resume', null); // Update form state
+        setCurrentResumeUrl(null); // Update local state
+        setSelectedResumeFile(null); // Clear any selected file
+        await refetchBackendUser(); // Refresh context
         toast({ title: "Resume Removed", description: "Your resume has been removed." });
       }
     } catch (error) {
       console.error("Error removing resume:", error);
-      toast({ title: "Removal Failed", description: "Could not remove resume. It might have already been deleted or there was a network issue.", variant: "destructive" });
+      let errorMessage = "Could not remove resume.";
+      if (error instanceof AxiosError && error.response) {
+         errorMessage = error.response.data?.detail || error.response.data?.messages || "Failed to update resume status on backend.";
+         if (error.response.status === 204) { // Backend might return 204 on successful update with null
+            // This is okay, proceed as success
+         }
+      }
+      toast({ title: "Removal Failed", description: errorMessage, variant: "destructive" });
     } finally {
       setIsUploadingResume(false);
     }
@@ -224,7 +226,7 @@ export default function ProfilePage() {
       return;
     }
 
-    let newResumeUrl: string | null | undefined = data.resume;
+    let newResumeUrl: string | null | undefined = data.resume; // Start with existing or cleared URL
 
     if (selectedResumeFile) {
       setIsUploadingResume(true);
@@ -234,31 +236,39 @@ export default function ProfilePage() {
       const uploadTask = uploadBytesResumable(fileStorageRef, selectedResumeFile);
 
       try {
+        // Delete old resume if it exists and a new one is being uploaded
+        if (currentResumeUrl && currentResumeUrl !== newResumeUrl) {
+            try {
+                const oldResumeRef = storageRef(storage, currentResumeUrl);
+                await deleteObject(oldResumeRef);
+            } catch (deleteError) {
+                console.warn("Could not delete old resume during update:", deleteError);
+                // Non-critical, proceed with upload
+            }
+        }
+
         await new Promise<void>((resolve, reject) => {
           uploadTask.on('state_changed',
             (snapshot) => {
               const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
               setUploadResumeProgress(progress);
             },
-            (error) => {
-              console.error("Upload error:", error);
-              reject(error);
-            },
+            (error) => reject(error),
             async () => {
               const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
               newResumeUrl = downloadURL;
-              setValue('resume', newResumeUrl);
-              setCurrentResumeUrl(newResumeUrl);
-              setSelectedResumeFile(null);
+              setValue('resume', newResumeUrl); // Update RHF field with new URL
+              setCurrentResumeUrl(newResumeUrl); // Update local display state
+              setSelectedResumeFile(null); // Clear selected file
               resolve();
             }
           );
         });
       } catch (error) {
-        toast({ title: "Resume Upload Failed", description: "Could not upload your resume. Please try again.", variant: "destructive" });
+        toast({ title: "Resume Upload Failed", description: "Could not upload your new resume. Profile not updated with new resume.", variant: "destructive" });
         setIsUploadingResume(false);
         setUploadResumeProgress(null);
-        return;
+        return; // Stop submission if resume upload fails
       } finally {
         setIsUploadingResume(false);
         setUploadResumeProgress(null);
@@ -267,36 +277,48 @@ export default function ProfilePage() {
 
     const updatePayload: UserUpdateAPI = {
       username: data.username,
-      number: data.phone_number || undefined,
-      desired_job_role: data.desired_job_role || undefined,
-      skills: data.skills || undefined,
-      experience: data.experience ?? undefined,
+      number: data.phone_number || null, // Ensure null if empty string
+      desired_job_role: data.desired_job_role || null,
+      skills: data.skills || undefined, // Undefined if empty for backend to ignore or clear
+      experience: data.experience ?? null,
       preferred_locations: data.preferred_locations || undefined,
       country: data.countries, // Backend expects 'country' as comma-separated string
-      remote_preference: data.remote_preference || undefined,
-      professional_summary: data.professional_summary || undefined,
-      expected_salary: data.expected_salary ?? undefined,
-      resume: newResumeUrl,
+      remote_preference: data.remote_preference || null,
+      professional_summary: data.professional_summary || null,
+      expected_salary: data.expected_salary ?? null,
+      resume: newResumeUrl, // This will be the new URL or existing/cleared URL
     };
 
+    // Filter out undefined values to prevent sending them, unless they are explicitly meant to clear a field (use null for that)
     const filteredUpdatePayload = Object.fromEntries(
         Object.entries(updatePayload).filter(([_, v]) => v !== undefined)
     ) as Partial<UserUpdateAPI>;
 
-    console.log("ProfilePage: Attempting to update profile with payload:", filteredUpdatePayload);
 
     try {
-      await apiClient.put(`/users/${backendUserId}`, filteredUpdatePayload);
-      await refetchBackendUser();
-      toast({
-        title: 'Profile Updated',
-        description: 'Your profile information has been saved successfully.',
-      });
+      const response = await apiClient.put<UserModifyResponse>(`/users/${backendUserId}`, filteredUpdatePayload);
+      if (response.data.messages?.toLowerCase() === 'success') {
+        await refetchBackendUser();
+        toast({
+          title: 'Profile Updated',
+          description: 'Your profile information has been saved successfully.',
+        });
+      } else {
+        throw new Error(response.data.messages || "Backend reported an issue with the update.");
+      }
     } catch (error) {
       console.error("Error updating profile:", error);
       let errorMessage = "Could not update profile. Please try again.";
        if (error instanceof AxiosError && error.response) {
-        errorMessage = error.response.data?.detail || error.response.data?.messages || errorMessage;
+        if (error.response.status === 400) {
+          errorMessage = error.response.data?.detail || error.response.data?.messages || "Invalid data submitted. Please check your inputs.";
+        } else if (error.response.status === 204) { // No content, but user not found
+          errorMessage = "User profile not found on server. Cannot update.";
+        } else {
+          errorMessage = error.response.data?.detail || error.response.data?.messages || errorMessage;
+        }
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
       }
       toast({ title: "Update Failed", description: errorMessage, variant: "destructive" });
     }
@@ -321,29 +343,48 @@ export default function ProfilePage() {
         try {
             const oldResumeRef = storageRef(storage, currentUser.resume);
             await deleteObject(oldResumeRef);
-            console.log("Old resume deleted from Firebase Storage during account deletion.");
-        } catch (storageError) {
-            console.warn("Could not delete resume from storage during account deletion:", storageError);
+        } catch (storageError: any) {
+            // Log but don't block deletion if resume not found (e.g. already deleted)
+            if (storageError.code !== 'storage/object-not-found') {
+                console.warn("Could not delete resume from storage during account deletion:", storageError);
+            }
         }
       }
-      await apiClient.delete(`/users/${backendUserId}`);
-      await deleteFirebaseUser(firebaseUser);
+      const response = await apiClient.delete<UserModifyResponse>(`/users/${backendUserId}`);
+      if (response.data.messages?.toLowerCase() !== 'success') {
+          throw new Error(response.data.messages || "Backend reported an issue with account deletion.");
+      }
+      
+      await deleteFirebaseUser(firebaseUser); // This will trigger onAuthStateChanged
 
       toast({
         title: "Account Deleted",
         description: "Your account has been permanently deleted.",
-        variant: "destructive",
       });
+      // AuthContext's onAuthStateChanged will handle clearing local state and redirect
     } catch (error) {
       console.error("Error deleting account:", error);
       let errorMessage = "Could not delete account. Please try again.";
        if (error instanceof AxiosError && error.response) {
-        errorMessage = error.response.data?.detail || error.response.data?.messages || "Failed to delete account from backend.";
+        if (error.response.status === 204) { // User not found on backend
+             errorMessage = "User account not found on the server, but attempting to delete Firebase user.";
+             // Try to delete Firebase user anyway
+            try {
+                if (firebaseUser) await deleteFirebaseUser(firebaseUser);
+                toast({ title: "Account Deletion Partial", description: "Backend account not found, Firebase user deleted if existed." });
+            } catch (fbDeleteError) {
+                 errorMessage = "Backend account not found, and failed to delete Firebase user.";
+            }
+        } else {
+            errorMessage = error.response.data?.detail || error.response.data?.messages || "Failed to delete account from backend.";
+        }
       } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
         errorMessage = "Failed to delete Firebase account. You might need to re-authenticate.";
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
       }
       toast({ title: "Deletion Failed", description: errorMessage, variant: "destructive" });
-      setIsLoggingOut(false);
+      setIsLoggingOut(false); // Reset if deletion process fails before Firebase sign out
     }
   };
 
@@ -351,7 +392,7 @@ export default function ProfilePage() {
     return (
       <div className="flex min-h-[calc(100vh-12rem)] flex-col items-center justify-center p-4 text-center">
         <LogOutIcon className="w-12 h-12 text-primary mb-4 animate-pulse" />
-        <h2 className="text-2xl font-semibold mb-2">Logging Out</h2>
+        <h2 className="text-2xl font-semibold mb-2">Processing Account Deletion</h2>
         <p className="text-muted-foreground">Please wait...</p>
       </div>
     );
@@ -490,7 +531,7 @@ export default function ProfilePage() {
                                 <Paperclip className="w-4 h-4 mr-2 shrink-0" />
                                 <span className="truncate">{currentResumeUrl.split('/').pop()?.split('?')[0].substring(currentResumeUrl.lastIndexOf('_') + 1) || "View Current Resume"}</span>
                             </a>
-                            <Button type="button" variant="ghost" size="icon" onClick={handleRemoveResume} className="h-7 w-7 text-destructive hover:bg-destructive/10" disabled={overallSubmitting}>
+                            <Button type="button" variant="ghost" size="icon" onClick={handleRemoveResume} className="h-7 w-7 text-destructive hover:bg-destructive/10" disabled={overallSubmitting || isUploadingResume}>
                                 <XCircle className="w-4 h-4" />
                                 <span className="sr-only">Remove resume</span>
                             </Button>
@@ -690,4 +731,3 @@ export default function ProfilePage() {
     </div>
   );
 }
-

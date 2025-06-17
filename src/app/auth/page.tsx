@@ -51,9 +51,7 @@ export default function AuthPage() {
   const { currentUser, isLoadingAuth, setPendingBackendIdForFirebaseAuth, isLoggingOut } = useAuth();
 
   useEffect(() => {
-    console.log("AuthPage Effect for redirect: isLoadingAuth=", isLoadingAuth, "currentUser present=", !!currentUser, "isLoggingOut=", isLoggingOut);
     if (!isLoadingAuth && currentUser && !isLoggingOut) {
-      console.log("AuthPage Effect: Conditions met. Redirecting to /jobs.");
       toast({ title: "Login Successful", description: "Redirecting to your dashboard..." });
       router.push('/jobs');
     }
@@ -79,67 +77,46 @@ export default function AuthPage() {
     loginForm.clearErrors();
     toast({ title: "Processing Login...", description: "Verifying credentials..." });
     try {
+      // NOTE: Current frontend uses /users/login. New Backend Docs don't list this.
+      // Assuming /users/login is still functional for now.
       const backendLoginPayload: UserLoginType = { email: data.email, password: data.password };
-      console.log("AuthPage: Attempting backend login for:", data.email);
       const backendResponse = await apiClient.post<UserLoginResponse>('/users/login', backendLoginPayload);
-      // Ensure messages exists before accessing user_id
-      if (!backendResponse.data.messages || backendResponse.data.messages.toLowerCase() !== 'success') {
-        throw new Error(backendResponse.data.messages || "Backend login failed to confirm success.");
+
+      if (backendResponse.data.messages?.toLowerCase() !== 'success' || backendResponse.data.user_id === undefined) {
+        throw new Error(backendResponse.data.messages || "Backend login failed to confirm success or return user ID.");
       }
       const backendUserId = backendResponse.data.user_id;
-      console.log("AuthPage: Backend login successful. User ID:", backendUserId);
-
-      if (backendUserId === undefined || backendUserId === null) {
-        throw new Error("Backend login did not return a valid user ID.");
-      }
-
       setPendingBackendIdForFirebaseAuth(backendUserId);
-      console.log(`AuthPage: Attempting Firebase signInWithEmailAndPassword for ${data.email}...`);
       await signInWithEmailAndPassword(firebaseAuth, data.email, data.password);
-      console.log(`AuthPage: Firebase signInWithEmailAndPassword for ${data.email} completed (or did not throw). Waiting for onAuthStateChanged.`);
-      // Success toast and redirect will be handled by useEffect watching currentUser
+      // Success toast and redirect handled by useEffect
 
     } catch (error) {
-      console.error("AuthPage: Error during login submit process:", error);
-      setPendingBackendIdForFirebaseAuth(null); // Clear pending ID on any error
-
+      setPendingBackendIdForFirebaseAuth(null);
       let errorMessage = "An unexpected error occurred during login.";
       if (error instanceof AxiosError && error.response) {
-        errorMessage = error.response.data?.detail || error.response.data?.messages || "Login failed with backend. Please check your credentials.";
-         if (error.response.status === 401) {
-          loginForm.setError("password", { type: "manual", message: "Invalid email or password (backend)." });
+        // Standard backend error handling
+        errorMessage = error.response.data?.detail || error.response.data?.messages || "Login failed. Please check your credentials.";
+        if (error.response.status === 400 || error.response.status === 401) { // Common for bad creds
+          loginForm.setError("password", { type: "manual", message: "Invalid email or password." });
         }
       } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
+        // Firebase auth errors
         const firebaseError = error as any;
-        console.error("AuthPage: Detailed Firebase Login Error:", {
-          code: firebaseError.code,
-          message: firebaseError.message,
-          fullError: firebaseError
-        });
         const firebaseErrorCode = firebaseError.code;
         if (firebaseErrorCode === 'auth/invalid-credential' || firebaseErrorCode === 'auth/user-not-found' || firebaseErrorCode === 'auth/wrong-password') {
-          errorMessage = "Firebase: Invalid credentials. Please check your email and password.";
+          errorMessage = "Invalid credentials. Please check your email and password.";
           loginForm.setError("password", { type: "manual", message: errorMessage });
         } else if (firebaseErrorCode === 'auth/network-request-failed') {
-          errorMessage = "Network error connecting to Firebase. Please check your connection or if the domain is authorized in your Firebase project.";
-        } else if (firebaseErrorCode === 'auth/operation-not-allowed') {
-          errorMessage = "Firebase operation not allowed. This often means the current domain is not authorized in your Firebase project settings (Authentication -> Settings -> Authorized domains).";
-        }  else if (firebaseErrorCode === 'auth/invalid-api-key') {
-          errorMessage = "Invalid Firebase API Key. Please check your Firebase project configuration.";
+          errorMessage = "Network error connecting to authentication service.";
         } else {
-          errorMessage = `Firebase authentication failed: ${firebaseError.message} (Code: ${firebaseError.code})`;
+          errorMessage = `Authentication failed: ${firebaseError.message}`;
         }
       } else if (error instanceof Error) {
         errorMessage = error.message;
       }
 
-
       if (!loginForm.formState.errors.password && !loginForm.formState.errors.email) {
-        toast({
-            title: "Login Failed",
-            description: errorMessage,
-            variant: "destructive"
-        });
+        toast({ title: "Login Failed", description: errorMessage, variant: "destructive" });
       }
     }
   };
@@ -149,89 +126,57 @@ export default function AuthPage() {
     toast({ title: "Processing Registration...", description: "Creating account..." });
     try {
       const backendRegisterPayload: UserIn = {
-        username: data.name, // Corrected
-        email: data.email,    // Corrected
+        username: data.name,
+        email: data.email,
         number: data.phoneNumber && data.phoneNumber.trim() !== "" ? data.phoneNumber : null,
         password: data.password,
       };
-      console.log("AuthPage: Attempting backend registration for:", data.email, "with payload:", backendRegisterPayload);
       const backendRegisterResponse = await apiClient.post<UserRegistrationResponse>('/users/', backendRegisterPayload);
 
-      if (!backendRegisterResponse.data.messages || backendRegisterResponse.data.messages.toLowerCase() !== 'success') {
-        throw new Error(backendRegisterResponse.data.messages || "Backend registration failed to confirm success.");
+      if (backendRegisterResponse.data.messages?.toLowerCase() !== 'success' || backendRegisterResponse.data.user_id === undefined) {
+        throw new Error(backendRegisterResponse.data.messages || "Backend registration failed to confirm success or return user ID.");
       }
       const newBackendUserId = backendRegisterResponse.data.user_id;
-      console.log("AuthPage: Backend registration successful. User ID:", newBackendUserId);
-
-
-      if (newBackendUserId === undefined || newBackendUserId === null) {
-          throw new Error("Backend registration did not return a valid user ID.");
-      }
-
       setPendingBackendIdForFirebaseAuth(newBackendUserId);
-      console.log(`AuthPage: Attempting Firebase createUserWithEmailAndPassword for ${data.email}...`);
+
       const firebaseUserCredential = await createUserWithEmailAndPassword(firebaseAuth, data.email, data.password);
-      console.log(`AuthPage: Firebase createUserWithEmailAndPassword for ${data.email} successful. User UID: ${firebaseUserCredential.user.uid}`);
-      console.log(`AuthPage: Attempting to update Firebase profile display name for UID: ${firebaseUserCredential.user.uid} to: ${data.name}`);
       await updateProfile(firebaseUserCredential.user, { displayName: data.name });
-      console.log(`AuthPage: Firebase profile display name updated for UID: ${firebaseUserCredential.user.uid}. Waiting for onAuthStateChanged.`);
-      // Success toast and redirect will be handled by useEffect watching currentUser
+      // Success toast and redirect handled by useEffect
 
     } catch (error) {
-      console.error("AuthPage: Error during registration submit process:", error);
-      setPendingBackendIdForFirebaseAuth(null); // Clear pending ID on any error
-
+      setPendingBackendIdForFirebaseAuth(null);
       let errorMessage = "An unexpected error occurred during registration.";
-       if (error instanceof AxiosError && error.response) {
-        errorMessage = error.response.data?.detail || error.response.data?.messages ||  "Registration failed with backend. This email might already be in use.";
-         if (error.response.status === 400 && (error.response.data?.detail?.toLowerCase().includes("email already registered") || error.response.data?.messages?.toLowerCase().includes("email already registered"))) {
-            registerForm.setError("email", { type: "manual", message: "This email is already registered with our system." });
-        } else if (error.response.status === 405) {
-            errorMessage = "Registration endpoint not found or method not allowed by backend. Please contact support.";
-        } else if (error.response.status === 422) {
-            errorMessage = "Registration failed due to invalid data. Please check your inputs.";
-            if (error.response.data && Array.isArray(error.response.data.detail)) {
-              error.response.data.detail.forEach((err: any) => {
-                if (err.loc && err.loc.includes("number") && err.type === "string_type") {
-                  registerForm.setError("phoneNumber", { type: "manual", message: "Phone number format is invalid." });
-                }
-              });
-            }
+      if (error instanceof AxiosError && error.response) {
+        errorMessage = error.response.data?.detail || error.response.data?.messages || "Registration failed.";
+        if (error.response.status === 400) {
+          // Specific backend 400 errors based on docs
+          const detail = (error.response.data?.detail || error.response.data?.messages || "").toLowerCase();
+          if (detail.includes("email already registered")) {
+            registerForm.setError("email", { type: "manual", message: "This email is already registered." });
+            errorMessage = "This email is already registered.";
+          } else {
+            errorMessage = "Invalid data provided for registration.";
+          }
         }
       } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
+        // Firebase auth errors
         const firebaseError = error as any;
-        console.error("AuthPage: Detailed Firebase Registration Error:", {
-          code: firebaseError.code,
-          message: firebaseError.message,
-          fullError: firebaseError
-        });
         const firebaseErrorCode = firebaseError.code;
         if (firebaseErrorCode === 'auth/email-already-in-use') {
-            errorMessage = "This email is already in use with Firebase Authentication.";
+            errorMessage = "This email is already in use.";
             registerForm.setError("email", { type: "manual", message: errorMessage });
         } else if (firebaseErrorCode === 'auth/weak-password') {
-            errorMessage = "Firebase: Password is too weak (must be at least 6 characters by default).";
+            errorMessage = "Password is too weak.";
             registerForm.setError("password", { type: "manual", message: errorMessage });
-        } else if (firebaseErrorCode === 'auth/network-request-failed') {
-            errorMessage = "Network error connecting to Firebase. Please check your connection or if the domain is authorized in your Firebase project.";
-        } else if (firebaseErrorCode === 'auth/operation-not-allowed') {
-            errorMessage = "Firebase operation not allowed. This often means the current domain is not authorized in your Firebase project settings (Authentication -> Settings -> Authorized domains).";
-        } else if (firebaseErrorCode === 'auth/invalid-api-key') {
-            errorMessage = "Invalid Firebase API Key. Please check your Firebase project configuration.";
         } else {
-            errorMessage = `Firebase registration failed: ${firebaseError.message} (Code: ${firebaseError.code})`;
+            errorMessage = `Registration failed: ${firebaseError.message}`;
         }
       } else if (error instanceof Error) {
         errorMessage = error.message;
       }
 
-
       if (!registerForm.formState.errors.email && !registerForm.formState.errors.password) {
-        toast({
-            title: "Registration Failed",
-            description: errorMessage,
-            variant: "destructive"
-        });
+        toast({ title: "Registration Failed", description: errorMessage, variant: "destructive" });
       }
     }
   };
@@ -485,4 +430,3 @@ export default function AuthPage() {
     </div>
   );
 }
-
