@@ -241,9 +241,19 @@ export default function JobExplorerPage() {
         limit: limit,
       };
       const cleanedPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== undefined)) as RelevantJobsRequestPayload;
+      // This endpoint (/jobs/relevant_jobs) is not in the new Backend Documentation.md
+      // Assuming it's a custom endpoint and might still return { jobs: [...] } or a direct array.
+      // For now, let's assume it might also be updated or needs robust handling.
+      // The most robust way is to check the structure.
       const response = await apiClient.post<BackendJobListingResponseItem[] | { jobs: BackendJobListingResponseItem[] }>('/jobs/relevant_jobs', cleanedPayload);
       
-      const jobsToMap = Array.isArray(response.data) ? response.data : response.data?.jobs;
+      let jobsToMap: BackendJobListingResponseItem[] | undefined;
+      if (Array.isArray(response.data)) {
+          jobsToMap = response.data;
+      } else if (response.data && Array.isArray((response.data as any).jobs)) {
+          jobsToMap = (response.data as any).jobs;
+      }
+
       if (!jobsToMap || !Array.isArray(jobsToMap)) throw new Error("Invalid data structure from backend for relevant jobs.");
       
       const mappedJobs = jobsToMap.map(mapBackendJobToFrontend);
@@ -290,9 +300,10 @@ export default function JobExplorerPage() {
     try {
       const skip = (page - 1) * JOBS_PER_PAGE;
       const limit = JOBS_PER_PAGE;
-      const response = await apiClient.get<{ jobs: BackendJobListingResponseItem[] }>('/jobs/list_jobs/', { params: { skip, limit } });
+      // Using GET /jobs/ as per documentation
+      const response = await apiClient.get<BackendJobListingResponseItem[]>('/jobs/', { params: { skip, limit } });
 
-      const jobsToMap = response.data?.jobs;
+      const jobsToMap = response.data; // Expecting a direct array
       if (!jobsToMap || !Array.isArray(jobsToMap)) throw new Error("Invalid data structure from backend for all jobs.");
       
       const mappedJobs = jobsToMap.map(mapBackendJobToFrontend);
@@ -333,17 +344,15 @@ export default function JobExplorerPage() {
     try {
       const skip = (page - 1) * JOBS_PER_PAGE;
       const limit = JOBS_PER_PAGE;
-      const params = new URLSearchParams();
-      if (filterTechnology) params.append('tech', filterTechnology); 
-      if (filterLocation) params.append('location', filterLocation);
-      if (filterExperience) params.append('experience', filterExperience);
-      params.append('skip', skip.toString());
-      params.append('limit', limit.toString());
+      const params: Record<string, string | number> = { skip, limit };
+      if (filterTechnology) params.tech = filterTechnology; // Assuming 'tech' is the query param for technology
+      if (filterLocation) params.location = filterLocation;
+      if (filterExperience) params.experience = filterExperience;
 
-      const finalEndpoint = `/jobs/list_jobs/?${params.toString()}`; 
-      const response = await apiClient.get<{ jobs: BackendJobListingResponseItem[] }>(finalEndpoint);
+      // Using GET /jobs/ as per documentation for filtering
+      const response = await apiClient.get<BackendJobListingResponseItem[]>('/jobs/', { params });
       
-      const jobsToMap = response.data?.jobs;
+      const jobsToMap = response.data; // Expecting a direct array
       if (!jobsToMap || !Array.isArray(jobsToMap)) throw new Error("Invalid data structure from backend for filtered jobs.");
       
       const mappedJobs = jobsToMap.map(mapBackendJobToFrontend);
@@ -403,7 +412,8 @@ export default function JobExplorerPage() {
         });
     }
     try {
-      const response = await apiClient.get<UserActivityOut[]>(`/activity/user/${currentUser.id}`);
+      // Docs: GET /users/{id}/activities
+      const response = await apiClient.get<UserActivityOut[]>(`/users/${currentUser.id}/activities`);
       const activities = response.data;
       const latestJobActions: Record<number, { action: 'JOB_SAVED' | 'JOB_UNSAVED', timestamp: string }> = {};
 
@@ -538,6 +548,8 @@ export default function JobExplorerPage() {
     if (!cleanedPayload.hasOwnProperty('posted_at_max_age_days')) cleanedPayload.posted_at_max_age_days = DEFAULT_JOB_MAX_AGE_DAYS;
 
     try {
+      // This endpoint (/jobs/fetch_jobs) is not in the new Backend Documentation.md
+      // Assuming it is still functional and has its own response structure.
       const response = await apiClient.post<{ messages: string; jobs_fetched: number; jobs: BackendJobListingResponseItem[] }>('/jobs/fetch_jobs', cleanedPayload);
       setLastFetchCount(response.data.jobs_fetched);
       if (response.data.jobs_fetched > 0 && response.data.jobs) {
@@ -614,6 +626,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                 explanation: explanationResult.matchExplanation
             };
             try {
+                // Docs: POST /jobs/{id}/analyze
                 await apiClient.post<AnalyzeResultOut>(`/jobs/${jobToAnalyze.id}/analyze`, analyzePayload);
                 toast({ title: "AI Analysis Saved", description: "Match details saved to backend.", variant: "default" });
             } catch (analysisError) {
@@ -645,6 +658,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
 
     if (currentUser && currentUser.id) {
         try {
+            // Docs: GET /jobs/{id}/match_score?user_id={user_id}
             const response = await apiClient.get<AnalyzeResultOut>(`/jobs/${job.id}/match_score?user_id=${currentUser.id}`);
             if (response.data && response.data.score !== undefined && response.data.explanation !== undefined) {
                 const backendAnalysis = { matchScore: response.data.score, matchExplanation: response.data.explanation };
@@ -727,6 +741,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
 
     if (isCurrentlySaved) { 
         try {
+            // Docs: DELETE /jobs/{id}/save?user_id={user_id}
             await apiClient.delete<DeleteSavedJobResponse>(`/jobs/${job.id}/save?user_id=${currentUser.id}`);
             toast({ title: "Job Unsaved", description: `${job.job_title} removed from saved jobs.` });
             setSavedJobIds(prev => { const next = new Set(prev); next.delete(job.id); return next; });
@@ -748,6 +763,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
             activity_metadata: {...metadataForActivity, status: "Saved"}
         };
         try {
+            // Docs: POST /jobs/{id}/save
             const response = await apiClient.post<SaveJobResponse>(`/jobs/${job.id}/save`, payload);
             if (response.data.messages?.toLowerCase() === 'success' && response.data.activity_id !== undefined) {
                 toast({ title: "Job Saved!", description: `${job.job_title} added to your saved jobs.` });
@@ -759,7 +775,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
         } catch (error) {
             console.error(`Error saving job:`, error);
             const axiosError = error as AxiosError;
-            const errorMsg = axiosError.response?.data?.detail || axiosError.response?.data?.messages || "Could not save job to backend.";
+            const errorMsg = axiosError.response?.data?.detail || axiosError.response.data?.messages || "Could not save job to backend.";
             toast({ title: "Save Failed", description: errorMsg, variant: "destructive" });
         }
     }
@@ -1165,4 +1181,3 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
     </div>
   );
 }
-
