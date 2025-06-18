@@ -6,7 +6,7 @@ import type { JobListing } from '@/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, Briefcase, DollarSign, Percent, Bookmark, FileText } from 'lucide-react';
+import { MapPin, Briefcase, DollarSign, Bookmark, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface JobCardProps {
@@ -122,7 +122,7 @@ export function JobCard({ job, onViewDetails, onSaveJob, onGenerateMaterials, is
         {job.matchScore !== undefined && (
           <Badge variant={getMatchScoreVariant()}
                  className="py-1 px-2.5">
-            <Percent className="w-3.5 h-3.5 mr-1" /> Match: {job.matchScore}%
+            Match: {job.matchScore}
           </Badge>
         )}
       </CardContent>

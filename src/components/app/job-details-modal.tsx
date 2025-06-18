@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { MapPin, Briefcase, DollarSign, FileText, ExternalLink, Percent, Sparkles, CalendarDays, Clock3, Users, Info, Linkedin } from 'lucide-react';
+import { MapPin, Briefcase, DollarSign, FileText, ExternalLink, Sparkles, CalendarDays, Clock3, Users, Info, Linkedin } from 'lucide-react';
 import { LoadingSpinner } from './loading-spinner';
 import NextImage from 'next/image'; // Renamed to avoid conflict
 
@@ -191,7 +191,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isL
             )}
 
             {isLoadingExplanation ? (
-              <div className="py-6 text-center">
+              <div className="py-6 text-center flex flex-col items-center justify-center">
                 <LoadingSpinner size={32} />
                 <p className="text-muted-foreground mt-2">Analyzing match...</p>
               </div>
@@ -204,7 +204,7 @@ export function JobDetailsModal({ job, isOpen, onClose, onGenerateMaterials, isL
                   </h3>
                   <div className="flex items-center gap-2 mb-2">
                      <Badge variant={getMatchScoreVariant()}>
-                      <Percent className="w-4 h-4 mr-1" /> Match Score: {job.matchScore}%
+                      Match Score: {job.matchScore}
                     </Badge>
                   </div>
                   <p className="text-sm text-foreground/90 whitespace-pre-line leading-relaxed">

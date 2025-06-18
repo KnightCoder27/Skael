@@ -5,7 +5,7 @@ import type { JobListing, Technology } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Briefcase, CalendarDays, MapPin, Eye, Percent } from 'lucide-react';
+import { Briefcase, CalendarDays, MapPin, Eye } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 
 interface SimpleJobListItemProps {
@@ -95,7 +95,7 @@ export function SimpleJobListItem({ job, onViewDetails }: SimpleJobListItemProps
           {job.hybrid && <Badge variant="secondary" className="text-xs py-0.5 px-1.5">Hybrid</Badge>}
           {job.matchScore !== undefined && (
             <Badge variant={getMatchScoreVariant()} className="text-xs py-0.5 px-1.5">
-              <Percent className="w-3 h-3 mr-1" /> AI Match: {job.matchScore}%
+              AI Match: {job.matchScore}
             </Badge>
           )}
         </div>
@@ -113,4 +113,3 @@ export function SimpleJobListItem({ job, onViewDetails }: SimpleJobListItemProps
     </Card>
   );
 }
-
