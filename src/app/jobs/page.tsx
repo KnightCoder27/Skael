@@ -46,7 +46,7 @@ interface JobAnalysisCache {
 }
 
 type ActiveJobTab = "generate" | "relevant" | "all";
-const JOBS_PER_PAGE = 9;
+const JOBS_PER_PAGE = 10; // Updated limit
 const DEFAULT_JOB_FETCH_LIMIT = 10;
 const MAX_JOB_FETCH_LIMIT = 10;
 const DEFAULT_JOB_MAX_AGE_DAYS = 30;
@@ -241,10 +241,7 @@ export default function JobExplorerPage() {
         limit: limit,
       };
       const cleanedPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== undefined)) as RelevantJobsRequestPayload;
-      // This endpoint (/jobs/relevant_jobs) is not in the new Backend Documentation.md
-      // Assuming it's a custom endpoint and might still return { jobs: [...] } or a direct array.
-      // For now, let's assume it might also be updated or needs robust handling.
-      // The most robust way is to check the structure.
+
       const response = await apiClient.post<BackendJobListingResponseItem[] | { jobs: BackendJobListingResponseItem[] }>('/jobs/relevant_jobs', cleanedPayload);
       
       let jobsToMap: BackendJobListingResponseItem[] | undefined;
@@ -299,12 +296,12 @@ export default function JobExplorerPage() {
     setErrorAllJobs(null);
     try {
       const skip = (page - 1) * JOBS_PER_PAGE;
-      const limit = JOBS_PER_PAGE;
-      // Using GET /jobs/ as per documentation
-      const response = await apiClient.get<BackendJobListingResponseItem[]>('/jobs/', { params: { skip, limit } });
+      const limit = JOBS_PER_PAGE; // Uses updated JOBS_PER_PAGE (10)
+      // Using GET /jobs/list_jobs/ as per user request
+      const response = await apiClient.get<{ jobs: BackendJobListingResponseItem[] }>('/jobs/list_jobs/', { params: { skip, limit } });
 
-      const jobsToMap = response.data; // Expecting a direct array
-      if (!jobsToMap || !Array.isArray(jobsToMap)) throw new Error("Invalid data structure from backend for all jobs.");
+      const jobsToMap = response.data.jobs; // Expecting { jobs: [...] }
+      if (!jobsToMap || !Array.isArray(jobsToMap)) throw new Error("Invalid data structure from backend for all jobs (/jobs/list_jobs/).");
       
       const mappedJobs = jobsToMap.map(mapBackendJobToFrontend);
       setAllJobsList(mappedJobs);
@@ -313,18 +310,18 @@ export default function JobExplorerPage() {
         setErrorAllJobs("No jobs found."); 
       }
     } catch (error) {
-      console.error("Error in fetchAllJobs:", error);
+      console.error("Error in fetchAllJobs (/jobs/list_jobs/):", error);
       let specificErrorMessage: string | null = null;
       if (error instanceof AxiosError && error.response) {
         if (error.response.status === 204) {
-            specificErrorMessage = "No jobs found in the database.";
+            specificErrorMessage = "No jobs found in the database via /jobs/list_jobs/.";
         } else {
-            specificErrorMessage = error.response.data?.detail || error.response.data?.messages || "Could not load all jobs.";
+            specificErrorMessage = error.response.data?.detail || error.response.data?.messages || "Could not load all jobs from /jobs/list_jobs/.";
         }
       } else if (error instanceof Error) {
         specificErrorMessage = error.message;
       }
-      const finalMessage = specificErrorMessage || "Could not load all jobs.";
+      const finalMessage = specificErrorMessage || "Could not load all jobs from /jobs/list_jobs/.";
       setErrorAllJobs(finalMessage);
       toast({ title: "Failed to Load All Jobs", description: finalMessage, variant: error instanceof AxiosError && error.response?.status === 204 ? "default" : "destructive" });
     } finally {
@@ -343,40 +340,40 @@ export default function JobExplorerPage() {
     setErrorAllJobs(null);
     try {
       const skip = (page - 1) * JOBS_PER_PAGE;
-      const limit = JOBS_PER_PAGE;
+      const limit = JOBS_PER_PAGE; // Uses updated JOBS_PER_PAGE (10)
       const params: Record<string, string | number> = { skip, limit };
-      if (filterTechnology) params.tech = filterTechnology; // Assuming 'tech' is the query param for technology
+      if (filterTechnology) params.tech = filterTechnology;
       if (filterLocation) params.location = filterLocation;
       if (filterExperience) params.experience = filterExperience;
 
-      // Using GET /jobs/ as per documentation for filtering
-      const response = await apiClient.get<BackendJobListingResponseItem[]>('/jobs/', { params });
+      // Using GET /jobs/list_jobs/ as per user request for "all jobs" context
+      const response = await apiClient.get<{ jobs: BackendJobListingResponseItem[] }>('/jobs/list_jobs/', { params });
       
-      const jobsToMap = response.data; // Expecting a direct array
-      if (!jobsToMap || !Array.isArray(jobsToMap)) throw new Error("Invalid data structure from backend for filtered jobs.");
+      const jobsToMap = response.data.jobs; // Expecting { jobs: [...] }
+      if (!jobsToMap || !Array.isArray(jobsToMap)) throw new Error("Invalid data structure from backend for filtered jobs (/jobs/list_jobs/).");
       
       const mappedJobs = jobsToMap.map(mapBackendJobToFrontend);
       setAllJobsList(mappedJobs);
       setHasNextAllPage(mappedJobs.length === JOBS_PER_PAGE);
 
       if (mappedJobs.length === 0 && (filterTechnology || filterLocation || filterExperience)) {
-        toast({ title: "No Jobs Found", description: "No jobs matched your filter criteria." });
+        toast({ title: "No Jobs Found", description: "No jobs matched your filter criteria from /jobs/list_jobs/." });
       } else if (filterTechnology || filterLocation || filterExperience) {
-         toast({ title: "Filters Applied", description: `Showing jobs matching your criteria.` });
+         toast({ title: "Filters Applied", description: `Showing jobs matching your criteria from /jobs/list_jobs/.` });
       }
     } catch (error) {
-      console.error("Error in handleApplyFilters:", error);
+      console.error("Error in handleApplyFilters (/jobs/list_jobs/):", error);
       let specificErrorMessage: string | null = null;
       if (error instanceof AxiosError && error.response) {
         if (error.response.status === 204) {
-            specificErrorMessage = "No jobs found matching your filter criteria.";
+            specificErrorMessage = "No jobs found matching your filter criteria from /jobs/list_jobs/.";
         } else {
-            specificErrorMessage = error.response.data?.detail || error.response.data?.messages || "Could not load filtered jobs.";
+            specificErrorMessage = error.response.data?.detail || error.response.data?.messages || "Could not load filtered jobs from /jobs/list_jobs/.";
         }
       } else if (error instanceof Error) {
         specificErrorMessage = error.message;
       }
-      const finalMessage = specificErrorMessage || "Could not load filtered jobs.";
+      const finalMessage = specificErrorMessage || "Could not load filtered jobs from /jobs/list_jobs/.";
       setErrorAllJobs(finalMessage);
       toast({ title: "Failed to Load Filtered Jobs", description: finalMessage, variant: error instanceof AxiosError && error.response?.status === 204 ? "default" : "destructive" });
     } finally {
@@ -1181,3 +1178,4 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
     </div>
   );
 }
+
