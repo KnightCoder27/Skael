@@ -35,6 +35,23 @@ const isValidDbId = (idInput: any): idInput is number | string => {
   return !isNaN(numId) && isFinite(numId);
 };
 
+const getErrorMessage = (error: any): string => {
+  if (error instanceof AxiosError && error.response) {
+    const detail = error.response.data?.detail;
+    const messages = error.response.data?.messages;
+    if (detail) {
+      return typeof detail === 'string' ? detail : JSON.stringify(detail);
+    }
+    if (messages) {
+      return typeof messages === 'string' ? messages : JSON.stringify(messages);
+    }
+    return `Request failed with status code ${error.response.status}`;
+  } else if (error instanceof Error) {
+    return error.message;
+  }
+  return "An unexpected error occurred.";
+};
+
 
 export default function TrackerPage() {
   const { currentUser, isLoadingAuth, isLoggingOut } = useAuth();
@@ -68,9 +85,9 @@ export default function TrackerPage() {
         numericDbId = -Date.now() - Math.random();
     }
 
-    const companyName = backendJob.company_obj?.company_name || "N/A"; // Removed backendJob.company fallback as company_obj is primary
+    const companyName = backendJob.company_obj?.company_name || "N/A";
     const companyLogo = backendJob.company_obj?.logo || `https://placehold.co/100x100.png?text=${encodeURIComponent(companyName?.[0] || 'J')}`;
-    const companyDomain = backendJob.company_obj?.company_domain || null; // Removed backendJob.company_domain fallback
+    const companyDomain = backendJob.company_obj?.company_domain || null;
     const countryCode = backendJob.company_obj?.country_code || backendJob.country_code || null;
 
     const technologiesFormatted: Technology[] = Array.isArray(backendJob.technologies)
@@ -128,8 +145,7 @@ export default function TrackerPage() {
     setIsLoadingTracker(true);
     setErrorTracker(null);
     try {
-      // Docs: GET /users/{id}/activities. Current code: /activity/user/{id}. Keeping current.
-      const response = await apiClient.get<UserActivityOut[]>(`/activity/user/${currentUser.id}`);
+      const response = await apiClient.get<UserActivityOut[]>(`/users/${currentUser.id}/activities`);
       const activities = response.data;
 
       const jobActions: Record<number, { action: 'JOB_SAVED' | 'JOB_UNSAVED', activity: UserActivityOut, timestamp: string }> = {};
@@ -170,17 +186,7 @@ export default function TrackerPage() {
       }
     } catch (error) {
       console.error("Error fetching or processing activities for tracker:", error);
-      let message = "Could not load tracked applications.";
-      if (error instanceof AxiosError && error.response) {
-        if (error.response.status === 204) {
-            message = "No activities found for your profile.";
-            setTrackedApplications([]); // Ensure list is empty
-        } else {
-            message = error.response.data?.detail || error.response.data?.messages || message;
-        }
-      } else if (error instanceof Error) {
-        message = error.message;
-      }
+      const message = getErrorMessage(error);
       setErrorTracker(message);
       toast({ title: "Error Loading Tracker", description: message, variant: (error instanceof AxiosError && error.response?.status === 204) ? "default" : "destructive" });
     } finally {
@@ -218,10 +224,11 @@ export default function TrackerPage() {
       // This activity logging is frontend specific for now.
       // Backend docs don't specify an endpoint for "APPLICATION_STATUS_UPDATED".
       // The existing /activity/log endpoint on frontend is used.
+      // TODO: Confirm if backend has a specific endpoint for this, or if general activity log is okay.
       const activityPayload: ActivityIn = {
         user_id: currentUser.id,
         job_id: jobId,
-        action_type: "APPLICATION_STATUS_UPDATED",
+        action_type: "APPLICATION_STATUS_UPDATED", // This might need adjustment based on backend capabilities
         metadata: { 
           jobTitle: application.jobTitle, company: application.company,
           oldStatus: oldStatus, newStatus: newStatus,
@@ -249,7 +256,6 @@ export default function TrackerPage() {
     }
 
     try {
-        // Backend docs: DELETE /jobs/{id}/save?user_id={user_id}
         const response = await apiClient.delete<DeleteSavedJobResponse>(`/jobs/${jobId}/save?user_id=${currentUser.id}`);
         if (response.data.messages?.toLowerCase() === 'success' && response.data.msg?.toLowerCase().includes('deleted')) {
             toast({ title: "Application Removed", description: `"${appToRemove.jobTitle}" removed from saved jobs.` });
@@ -260,19 +266,7 @@ export default function TrackerPage() {
         }
     } catch (error) {
         console.error("Error removing application via API:", error);
-        let message = "Could not remove application from backend.";
-        if (error instanceof AxiosError && error.response) {
-            if (error.response.status === 204) { // Job not found to delete
-                message = "Application already removed or not found on server.";
-                 // Still remove from frontend if backend says it's not there
-                setTrackedApplications(prevApps => prevApps.filter(app => app.jobId !== jobId));
-                setLocalStatusOverrides(prev => { const newOverrides = {...prev}; delete newOverrides[jobId]; return newOverrides; });
-            } else {
-                 message = error.response.data?.detail || error.response.data?.messages || message;
-            }
-        } else if (error instanceof Error) {
-          message = error.message;
-        }
+        const message = getErrorMessage(error);
         toast({ title: "Removal Failed", description: message, variant: "destructive" });
     }
   };
@@ -282,20 +276,13 @@ export default function TrackerPage() {
     setIsLoadingJobDetails(true);
     setSelectedJobForDetailsModal(null);
     try {
-      // Backend docs: GET /jobs/{id}
       const response = await apiClient.get<BackendJobListingResponseItem>(`/jobs/${jobId}`);
       const mappedJob = mapBackendJobToTrackerJobListing(response.data);
       setSelectedJobForDetailsModal(mappedJob);
       setIsDetailsModalOpen(true);
     } catch (error) {
       console.error("Error fetching job details for tracker modal:", error);
-      let message = "Could not fetch job details.";
-       if (error instanceof AxiosError && error.response) {
-           if (error.response.status === 204) message = "Job details not found.";
-           else message = error.response.data?.detail || error.response.data?.messages || message;
-       } else if (error instanceof Error) {
-           message = error.message;
-       }
+      const message = getErrorMessage(error);
       toast({ title: "Error", description: message, variant: "destructive" });
     } finally {
       setIsLoadingJobDetails(false);
@@ -324,14 +311,15 @@ export default function TrackerPage() {
       return pointsResult;
     } catch (error) {
       console.error("Error extracting job description points:", error);
-      toast({ title: "Point Extraction Failed", variant: "destructive" });
+      const message = getErrorMessage(error);
+      toast({ title: "Point Extraction Failed", description: message, variant: "destructive" });
       return null;
     }
   };
 
   const handleTriggerAIResumeGeneration = async (jobToGenerateFor: JobListing) => {
     if (!currentUser || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0) {
-      toast({ title: "Profile Incomplete", description: "Complete profile needed.", variant: "destructive" });
+      toast({ title: "Profile Incomplete", description: "Complete profile needed for AI resume generation.", variant: "destructive" });
       return;
     }
     setIsLoadingResume(true);
@@ -343,7 +331,8 @@ export default function TrackerPage() {
       const resumeResult = await generateResume(resumeInput);
       if (resumeResult) setGeneratedResume(resumeResult.resume);
     } catch (error) {
-      toast({ title: "Resume Generation Failed", variant: "destructive" });
+      const message = getErrorMessage(error);
+      toast({ title: "Resume Generation Failed", description: message, variant: "destructive" });
     } finally {
       setIsLoadingResume(false);
     }
@@ -351,7 +340,7 @@ export default function TrackerPage() {
 
   const handleTriggerAICoverLetterGeneration = async (jobToGenerateFor: JobListing) => {
      if (!currentUser || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0) {
-      toast({ title: "Profile Incomplete", description: "Complete profile needed.", variant: "destructive" });
+      toast({ title: "Profile Incomplete", description: "Complete profile needed for AI cover letter generation.", variant: "destructive" });
       return;
     }
     setIsLoadingCoverLetter(true);
@@ -363,7 +352,8 @@ export default function TrackerPage() {
       const coverLetterResult = await generateCoverLetter(coverLetterInput);
       if (coverLetterResult) setGeneratedCoverLetter(coverLetterResult.coverLetter);
     } catch (error) {
-      toast({ title: "Cover Letter Generation Failed", variant: "destructive" });
+      const message = getErrorMessage(error);
+      toast({ title: "Cover Letter Generation Failed", description: message, variant: "destructive" });
     } finally {
       setIsLoadingCoverLetter(false);
     }
@@ -410,7 +400,7 @@ export default function TrackerPage() {
         </div>
       )}
 
-      {!isLoadingTracker && errorTracker && !trackedApplications.length && ( // Show error only if no apps displayed
+      {!isLoadingTracker && errorTracker && !trackedApplications.length && ( 
         <Alert variant="destructive" className="my-6">
           <ServerCrash className="h-5 w-5" />
           <AlertTitle>Error Loading Tracker Data</AlertTitle>
@@ -421,7 +411,7 @@ export default function TrackerPage() {
         </Alert>
       )}
 
-      {!isLoadingTracker && ( // Always render table structure, it handles empty state
+      {!isLoadingTracker && ( 
         <ApplicationTrackerTable
           applications={trackedApplications}
           onUpdateStatus={handleUpdateStatus}
