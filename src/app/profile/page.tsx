@@ -31,32 +31,32 @@ import { Progress } from '@/components/ui/progress';
 const remotePreferenceOptions: RemotePreferenceAPI[] = ["Remote", "Hybrid", "Onsite"];
 
 const workExperienceSchema = z.object({
-  id: z.string().optional(),
+  id: z.string().optional(), // Frontend ID for list management
   company_name: z.string().min(1, "Company name is required."),
   job_title: z.string().min(1, "Job title is required."),
-  start_date: z.string().min(1, "Start date is required."),
-  end_date: z.string().optional().nullable(),
+  start_date: z.string().min(1, "Start date is required."), // Keep as string for input, backend handles Date
+  end_date: z.string().optional().nullable(), // Keep as string for input
   description: z.string().max(1000, "Description cannot exceed 1000 characters.").optional().nullable(),
 });
 
 const educationSchema = z.object({
-  id: z.string().optional(),
-  institution_name: z.string().min(1, "Institution name is required."),
+  id: z.string().optional(), // Frontend ID
+  institution: z.string().min(1, "Institution name is required."), // Changed from institution_name
   degree: z.string().min(1, "Degree is required."),
-  field_of_study: z.string().optional().nullable(),
-  start_date: z.string().min(1, "Start date is required."),
-  end_date: z.string().optional().nullable(),
-  description: z.string().max(500, "Description cannot exceed 500 characters.").optional().nullable(),
+  start_year: z.coerce.number().int("Year must be a whole number.").optional().nullable(), // Changed from start_date
+  end_year: z.coerce.number().int("Year must be a whole number.").optional().nullable(),   // Changed from end_date
+  // field_of_study removed
+  // description removed
 });
 
 const certificationSchema = z.object({
-  id: z.string().optional(),
-  certification_name: z.string().min(1, "Certification name is required."),
-  issuing_organization: z.string().min(1, "Issuing organization is required."),
-  issue_date: z.string().min(1, "Issue date is required."),
-  expiration_date: z.string().optional().nullable(),
-  credential_id: z.string().optional().nullable(),
+  id: z.string().optional(), // Frontend ID
+  title: z.string().min(1, "Certification title is required."), // Changed from certification_name
+  issued_by: z.string().min(1, "Issuing organization is required.").optional().nullable(), // Changed from issuing_organization
+  issue_date: z.string().optional().nullable(), // Keep as string for input
   credential_url: z.string().url("Must be a valid URL.").optional().nullable(),
+  // expiration_date removed
+  // credential_id removed
 });
 
 
@@ -135,7 +135,7 @@ export default function ProfilePage() {
       certifications: [],
     }
   });
-  const { register, handleSubmit, formState: { errors, isSubmitting: isFormSubmitting, touchedFields }, reset, control, setValue, watch } = form;
+  const { register, handleSubmit, formState: { errors, isSubmitting: isFormSubmitting }, reset, control, setValue, watch } = form;
 
   const { fields: workFields, append: appendWork, remove: removeWork } = useFieldArray({ control, name: "work_experience" });
   const { fields: eduFields, append: appendEdu, remove: removeEdu } = useFieldArray({ control, name: "education" });
@@ -198,8 +198,27 @@ export default function ProfilePage() {
             expected_salary: currentUser.expected_salary ?? null,
             resume: currentUser.resume || null,
             work_experience: currentUser.work_experience?.map(w => ({...w, id: w.id || crypto.randomUUID() })) || [],
-            education: currentUser.education?.map(e => ({...e, id: e.id || crypto.randomUUID() })) || [],
-            certifications: currentUser.certifications?.map(c => ({...c, id: c.id || crypto.randomUUID() })) || [],
+            education: currentUser.education?.map(e_raw => {
+                // Map raw education data (potentially with old field names) to new form structure
+                const e = e_raw as any; // Cast to any to access potentially old field names
+                return {
+                    id: e.id || crypto.randomUUID(),
+                    institution: e.institution || e.institution_name || '',
+                    degree: e.degree || '',
+                    start_year: typeof e.start_year === 'number' ? e.start_year : (e.start_date ? parseInt(String(e.start_date).split('-')[0]) : null),
+                    end_year: typeof e.end_year === 'number' ? e.end_year : (e.end_date ? parseInt(String(e.end_date).split('-')[0]) : null),
+                };
+            }) || [],
+            certifications: currentUser.certifications?.map(c_raw => {
+                 const c = c_raw as any;
+                 return {
+                    id: c.id || crypto.randomUUID(),
+                    title: c.title || c.certification_name || '',
+                    issued_by: c.issued_by || c.issuing_organization || '',
+                    issue_date: c.issue_date || null,
+                    credential_url: c.credential_url || null,
+                 };
+            }) || [],
         };
         newResumeUrlToSet = currentUser.resume || null;
         setHasPopulatedFromCurrentUser(true);
@@ -349,7 +368,11 @@ export default function ProfilePage() {
       expected_salary: data.expected_salary ?? null,
       resume: newResumeUrl,
       work_experiences: data.work_experience?.map(({id, ...rest}) => rest) || [],
-      educations: data.education?.map(({id, ...rest}) => rest) || [],
+      educations: data.education?.map(({id, ...rest}) => ({
+        ...rest,
+        start_year: rest.start_year ? Number(rest.start_year) : null,
+        end_year: rest.end_year ? Number(rest.end_year) : null,
+      })) || [],
       certifications: data.certifications?.map(({id, ...rest}) => rest) || [],
     };
 
@@ -474,7 +497,7 @@ export default function ProfilePage() {
             <CardContent className="space-y-6">
               <div className="space-y-2">
                 <Label htmlFor="username">Full Name</Label>
-                <Input id="username" {...register('username')} placeholder="Your Full Name" className={`${errors.username ? 'border-destructive' : ''} md:max-w-sm`} />
+                <Input id="username" {...register('username')} placeholder="Your Full Name" className={`${errors.username ? 'border-destructive' : ''} md:max-w-md`} />
                 {errors.username && <p className="text-sm text-destructive">{errors.username.message}</p>}
               </div>
 
@@ -610,7 +633,7 @@ export default function ProfilePage() {
               </div>
             </CardContent>
         </Card>
-
+        
         <Separator className="my-6" />
 
         {/* Job Preferences Section */}
@@ -742,9 +765,9 @@ export default function ProfilePage() {
                 <div className="space-y-3">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor={`education.${index}.institution_name`}>Institution Name</Label>
-                      <Input {...register(`education.${index}.institution_name`)} placeholder="e.g., University of Example" className={errors.education?.[index]?.institution_name ? 'border-destructive' : ''}/>
-                       {errors.education?.[index]?.institution_name && <p className="text-sm text-destructive">{errors.education[index]?.institution_name?.message}</p>}
+                      <Label htmlFor={`education.${index}.institution`}>Institution</Label>
+                      <Input {...register(`education.${index}.institution`)} placeholder="e.g., University of Example" className={errors.education?.[index]?.institution ? 'border-destructive' : ''}/>
+                       {errors.education?.[index]?.institution && <p className="text-sm text-destructive">{errors.education[index]?.institution?.message}</p>}
                     </div>
                     <div>
                       <Label htmlFor={`education.${index}.degree`}>Degree</Label>
@@ -753,34 +776,24 @@ export default function ProfilePage() {
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor={`education.${index}.field_of_study`}>Field of Study (Optional)</Label>
-                      <Input {...register(`education.${index}.field_of_study`)} placeholder="e.g., Artificial Intelligence"/>
+                     <div>
+                      <Label htmlFor={`education.${index}.start_year`}>Start Year</Label>
+                      <Input type="number" {...register(`education.${index}.start_year`)} placeholder="YYYY" className={errors.education?.[index]?.start_year ? 'border-destructive' : ''}/>
+                       {errors.education?.[index]?.start_year && <p className="text-sm text-destructive">{errors.education[index]?.start_year?.message}</p>}
                     </div>
                      <div>
-                      <Label htmlFor={`education.${index}.start_date`}>Start Date</Label>
-                      <Input {...register(`education.${index}.start_date`)} placeholder="YYYY-MM or YYYY" className={errors.education?.[index]?.start_date ? 'border-destructive' : ''}/>
-                       {errors.education?.[index]?.start_date && <p className="text-sm text-destructive">{errors.education[index]?.start_date?.message}</p>}
-                    </div>
-                  </div>
-                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                     <div>
-                        <Label htmlFor={`education.${index}.end_date`}>End Date (or "Present")</Label>
-                        <Input {...register(`education.${index}.end_date`)} placeholder="YYYY-MM, YYYY, or Present"/>
+                        <Label htmlFor={`education.${index}.end_year`}>End Year (or Current)</Label>
+                        <Input type="number" {...register(`education.${index}.end_year`)} placeholder="YYYY or leave blank if current"/>
+                         {errors.education?.[index]?.end_year && <p className="text-sm text-destructive">{errors.education[index]?.end_year?.message}</p>}
                      </div>
                    </div>
-                  <div>
-                    <Label htmlFor={`education.${index}.description`}>Description (Optional)</Label>
-                    <Textarea {...register(`education.${index}.description`)} placeholder="Relevant coursework, activities, honors..." rows={3} className={errors.education?.[index]?.description ? 'border-destructive' : ''}/>
-                     {errors.education?.[index]?.description && <p className="text-sm text-destructive">{errors.education[index]?.description?.message}</p>}
-                  </div>
                   <Button type="button" variant="outline" size="sm" onClick={() => removeEdu(index)} className="text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/50">
                     <Trash2 className="mr-2 h-3.5 w-3.5" /> Remove Education
                   </Button>
                 </div>
               </Card>
             ))}
-            <Button type="button" variant="outline" onClick={() => appendEdu({ id: crypto.randomUUID(), institution_name: '', degree: '', start_date: '' })}>
+            <Button type="button" variant="outline" onClick={() => appendEdu({ id: crypto.randomUUID(), institution: '', degree: '', start_year: null, end_year: null })}>
               <PlusCircle className="mr-2 h-4 w-4" /> Add Education
             </Button>
           </CardContent>
@@ -800,33 +813,23 @@ export default function ProfilePage() {
                 <div className="space-y-3">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor={`certifications.${index}.certification_name`}>Certification Name</Label>
-                      <Input {...register(`certifications.${index}.certification_name`)} placeholder="e.g., AWS Certified Solutions Architect" className={errors.certifications?.[index]?.certification_name ? 'border-destructive' : ''}/>
-                       {errors.certifications?.[index]?.certification_name && <p className="text-sm text-destructive">{errors.certifications[index]?.certification_name?.message}</p>}
+                      <Label htmlFor={`certifications.${index}.title`}>Title</Label>
+                      <Input {...register(`certifications.${index}.title`)} placeholder="e.g., AWS Certified Solutions Architect" className={errors.certifications?.[index]?.title ? 'border-destructive' : ''}/>
+                       {errors.certifications?.[index]?.title && <p className="text-sm text-destructive">{errors.certifications[index]?.title?.message}</p>}
                     </div>
                     <div>
-                      <Label htmlFor={`certifications.${index}.issuing_organization`}>Issuing Organization</Label>
-                      <Input {...register(`certifications.${index}.issuing_organization`)} placeholder="e.g., Amazon Web Services" className={errors.certifications?.[index]?.issuing_organization ? 'border-destructive' : ''}/>
-                      {errors.certifications?.[index]?.issuing_organization && <p className="text-sm text-destructive">{errors.certifications[index]?.issuing_organization?.message}</p>}
+                      <Label htmlFor={`certifications.${index}.issued_by`}>Issued By (Optional)</Label>
+                      <Input {...register(`certifications.${index}.issued_by`)} placeholder="e.g., Amazon Web Services" className={errors.certifications?.[index]?.issued_by ? 'border-destructive' : ''}/>
+                      {errors.certifications?.[index]?.issued_by && <p className="text-sm text-destructive">{errors.certifications[index]?.issued_by?.message}</p>}
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor={`certifications.${index}.issue_date`}>Issue Date</Label>
+                      <Label htmlFor={`certifications.${index}.issue_date`}>Issue Date (Optional)</Label>
                       <Input {...register(`certifications.${index}.issue_date`)} placeholder="YYYY-MM" className={errors.certifications?.[index]?.issue_date ? 'border-destructive' : ''}/>
                       {errors.certifications?.[index]?.issue_date && <p className="text-sm text-destructive">{errors.certifications[index]?.issue_date?.message}</p>}
                     </div>
                     <div>
-                      <Label htmlFor={`certifications.${index}.expiration_date`}>Expiration Date (Optional)</Label>
-                      <Input {...register(`certifications.${index}.expiration_date`)} placeholder="YYYY-MM or N/A"/>
-                    </div>
-                  </div>
-                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <Label htmlFor={`certifications.${index}.credential_id`}>Credential ID (Optional)</Label>
-                        <Input {...register(`certifications.${index}.credential_id`)} placeholder="e.g., ABC-123-XYZ"/>
-                    </div>
-                     <div>
                         <Label htmlFor={`certifications.${index}.credential_url`}>Credential URL (Optional)</Label>
                         <Input {...register(`certifications.${index}.credential_url`)} placeholder="https://example.com/credential" className={errors.certifications?.[index]?.credential_url ? 'border-destructive' : ''}/>
                         {errors.certifications?.[index]?.credential_url && <p className="text-sm text-destructive">{errors.certifications[index]?.credential_url?.message}</p>}
@@ -838,7 +841,7 @@ export default function ProfilePage() {
                 </div>
               </Card>
             ))}
-            <Button type="button" variant="outline" onClick={() => appendCert({id: crypto.randomUUID(), certification_name: '', issuing_organization: '', issue_date: '' })}>
+            <Button type="button" variant="outline" onClick={() => appendCert({id: crypto.randomUUID(), title: '', issued_by: '', issue_date: '', credential_url: '' })}>
               <PlusCircle className="mr-2 h-4 w-4" /> Add Certification
             </Button>
           </CardContent>
@@ -951,3 +954,4 @@ export default function ProfilePage() {
     </div>
   );
 }
+

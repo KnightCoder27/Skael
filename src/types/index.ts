@@ -81,41 +81,41 @@ export interface BackendMatchScoreLogItem {
 export type SavedJob = BackendJobListingResponseItem;
 
 /**
- * Represents an item of work experience.
+ * Represents an item of work experience. Aligned with backend model.
  */
 export interface WorkExperienceItem {
-  id?: string; // Optional frontend ID for list management
+  id?: string; // Optional frontend ID for list management, backend uses Integer ID
   company_name: string;
   job_title: string;
-  start_date: string; // e.g., "YYYY-MM" or "YYYY-MM-DD"
-  end_date?: string | null; // e.g., "YYYY-MM", "YYYY-MM-DD", or "Present"
+  start_date: string; // Backend `Date`, frontend string e.g., "YYYY-MM-DD"
+  end_date?: string | null; // Backend `Date`, frontend string e.g., "YYYY-MM-DD", or "Present"
   description?: string | null;
 }
 
 /**
- * Represents an item of education.
+ * Represents an item of education. Aligned with backend model.
  */
 export interface EducationItem {
-  id?: string; // Optional frontend ID for list management
-  institution_name: string;
+  id?: string; // Optional frontend ID, backend uses Integer ID
+  institution: string; // Changed from institution_name
   degree: string;
-  field_of_study?: string | null;
-  start_date: string; // e.g., "YYYY-MM" or "YYYY"
-  end_date?: string | null; // e.g., "YYYY-MM", "YYYY", or "Present"
-  description?: string | null;
+  start_year?: number | null; // Changed from start_date (string)
+  end_year?: number | null;   // Changed from end_date (string)
+  // field_of_study removed
+  // description removed
 }
 
 /**
- * Represents a certification.
+ * Represents a certification. Aligned with backend model.
  */
 export interface CertificationItem {
-  id?: string; // Optional frontend ID for list management
-  certification_name: string;
-  issuing_organization: string;
-  issue_date: string; // e.g., "YYYY-MM"
-  expiration_date?: string | null; // e.g., "YYYY-MM" or "Does not expire"
-  credential_id?: string | null;
+  id?: string; // Optional frontend ID, backend uses Integer ID
+  title: string; // Changed from certification_name
+  issued_by?: string | null; // Changed from issuing_organization
+  issue_date?: string | null; // Backend `Date`, frontend string e.g., "YYYY-MM"
   credential_url?: string | null;
+  // expiration_date removed
+  // credential_id removed
 }
 
 
@@ -140,8 +140,8 @@ export interface User {
   joined_date?: string; // ISO datetime string
   match_scores?: BackendMatchScoreLogItem[];
   saved_jobs?: SavedJob[];
-  work_experience?: WorkExperienceItem[]; // This is used for form state, backend might expect `work_experiences`
-  education?: EducationItem[]; // This is used for form state, backend might expect `educations`
+  work_experience?: WorkExperienceItem[];
+  education?: EducationItem[];
   certifications?: CertificationItem[];
 }
 
@@ -185,9 +185,9 @@ export interface UserUpdateAPI {
   professional_summary?: string | null;
   expected_salary?: number | null;
   resume?: string | null; // File path or URL
-  work_experiences?: WorkExperienceItem[] | null; // Pluralized as per backend expectation
-  educations?: EducationItem[] | null; // Pluralized as per backend expectation
-  certifications?: CertificationItem[] | null;
+  work_experiences?: Omit<WorkExperienceItem, 'id'>[] | null;
+  educations?: Omit<EducationItem, 'id'>[] | null;
+  certifications?: Omit<CertificationItem, 'id'>[] | null;
 }
 
 // General success response for PUT /users/{id} and DELETE /users/{id}
