@@ -46,7 +46,7 @@ interface JobAnalysisCache {
 }
 
 type ActiveJobTab = "generate" | "relevant" | "all";
-const JOBS_PER_PAGE = 10; // Updated limit
+const JOBS_PER_PAGE = 10;
 const DEFAULT_JOB_FETCH_LIMIT = 10;
 const MAX_JOB_FETCH_LIMIT = 10;
 const DEFAULT_JOB_MAX_AGE_DAYS = 30;
@@ -296,11 +296,10 @@ export default function JobExplorerPage() {
     setErrorAllJobs(null);
     try {
       const skip = (page - 1) * JOBS_PER_PAGE;
-      const limit = JOBS_PER_PAGE; // Uses updated JOBS_PER_PAGE (10)
-      // Using GET /jobs/list_jobs/ as per user request
-      const response = await apiClient.get<{ jobs: BackendJobListingResponseItem[] }>('/jobs/list_jobs/', { params: { skip, limit } });
+      const limit = JOBS_PER_PAGE;
+      const response = await apiClient.get<BackendJobListingResponseItem[]>('/jobs/list_jobs/', { params: { skip, limit } });
 
-      const jobsToMap = response.data.jobs; // Expecting { jobs: [...] }
+      const jobsToMap = response.data;
       if (!jobsToMap || !Array.isArray(jobsToMap)) throw new Error("Invalid data structure from backend for all jobs (/jobs/list_jobs/).");
       
       const mappedJobs = jobsToMap.map(mapBackendJobToFrontend);
@@ -340,16 +339,15 @@ export default function JobExplorerPage() {
     setErrorAllJobs(null);
     try {
       const skip = (page - 1) * JOBS_PER_PAGE;
-      const limit = JOBS_PER_PAGE; // Uses updated JOBS_PER_PAGE (10)
+      const limit = JOBS_PER_PAGE;
       const params: Record<string, string | number> = { skip, limit };
       if (filterTechnology) params.tech = filterTechnology;
       if (filterLocation) params.location = filterLocation;
       if (filterExperience) params.experience = filterExperience;
 
-      // Using GET /jobs/list_jobs/ as per user request for "all jobs" context
-      const response = await apiClient.get<{ jobs: BackendJobListingResponseItem[] }>('/jobs/list_jobs/', { params });
+      const response = await apiClient.get<BackendJobListingResponseItem[]>('/jobs/list_jobs/', { params });
       
-      const jobsToMap = response.data.jobs; // Expecting { jobs: [...] }
+      const jobsToMap = response.data;
       if (!jobsToMap || !Array.isArray(jobsToMap)) throw new Error("Invalid data structure from backend for filtered jobs (/jobs/list_jobs/).");
       
       const mappedJobs = jobsToMap.map(mapBackendJobToFrontend);
