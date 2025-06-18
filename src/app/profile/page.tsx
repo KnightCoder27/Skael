@@ -31,7 +31,7 @@ import { Progress } from '@/components/ui/progress';
 const remotePreferenceOptions: RemotePreferenceAPI[] = ["Remote", "Hybrid", "Onsite"];
 
 const workExperienceSchema = z.object({
-  id: z.string().optional(), // For client-side keying, not sent to backend usually
+  id: z.string().optional(),
   company_name: z.string().min(1, "Company name is required."),
   job_title: z.string().min(1, "Job title is required."),
   start_date: z.string().min(1, "Start date is required."),
@@ -265,7 +265,7 @@ export default function ProfilePage() {
       if (backendUserId) {
         const updatePayload: Partial<UserUpdateAPI> = { resume: null };
         await apiClient.put(`/users/${backendUserId}`, updatePayload);
-        
+
         setValue('resume', null);
         setCurrentResumeUrl(null);
         setSelectedResumeFile(null);
@@ -404,7 +404,7 @@ export default function ProfilePage() {
       if (response.data.messages?.toLowerCase() !== 'success') {
           throw new Error(response.data.messages || "Backend reported an issue with account deletion.");
       }
-      
+
       await deleteFirebaseUser(firebaseUser);
 
       toast({
@@ -463,6 +463,7 @@ export default function ProfilePage() {
       </header>
 
       <form onSubmit={handleSubmit(onSubmit)}>
+        {/* Personal & Contact Information Section */}
         <Card className="shadow-lg">
             <CardHeader>
               <CardTitle className="font-headline text-xl">Personal & Contact Information</CardTitle>
@@ -471,12 +472,13 @@ export default function ProfilePage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              <div className="space-y-2">
+                <Label htmlFor="username">Full Name</Label>
+                <Input id="username" {...register('username')} placeholder="Your Full Name" className={`${errors.username ? 'border-destructive' : ''} md:max-w-sm`} />
+                {errors.username && <p className="text-sm text-destructive">{errors.username.message}</p>}
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label htmlFor="username">Full Name</Label>
-                  <Input id="username" {...register('username')} placeholder="Your Full Name" className={errors.username ? 'border-destructive' : ''} />
-                  {errors.username && <p className="text-sm text-destructive">{errors.username.message}</p>}
-                </div>
                 <div className="space-y-2">
                   <Label htmlFor="email_id">Email Address</Label>
                   <Input
@@ -489,8 +491,6 @@ export default function ProfilePage() {
                   />
                   {errors.email_id && <p className="text-sm text-destructive">{errors.email_id.message}</p>}
                 </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <Label htmlFor="phone_number">Phone Number</Label>
                   <div className="relative flex items-center">
@@ -500,6 +500,9 @@ export default function ProfilePage() {
                   <p className="text-xs text-muted-foreground">Optional.</p>
                   {errors.phone_number && <p className="text-sm text-destructive">{errors.phone_number.message}</p>}
                 </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <Label htmlFor="preferred_locations">Preferred Locations (comma-separated)</Label>
                   <div className="relative flex items-center">
@@ -509,21 +512,22 @@ export default function ProfilePage() {
                   <p className="text-xs text-muted-foreground">Optional. Enter cities or "Remote".</p>
                   {errors.preferred_locations && <p className="text-sm text-destructive">{errors.preferred_locations.message}</p>}
                 </div>
-              </div>
-              <div className="space-y-2">
+                <div className="space-y-2">
                   <Label htmlFor="countries">Target Countries (comma-separated)</Label>
                   <div className="relative flex items-center">
                       <Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                       <Input id="countries" {...register('countries')} placeholder="e.g., US, CA, GB, India" className={`pl-10 ${errors.countries ? 'border-destructive' : ''}`} />
                   </div>
-                  <p className="text-xs text-muted-foreground">Required. Enter country names or ISO alpha-2 codes (e.g., United States, CA). Helps in fetching relevant jobs.</p>
+                  <p className="text-xs text-muted-foreground">Required. Enter country names or ISO alpha-2 codes. Helps in fetching relevant jobs.</p>
                   {errors.countries && <p className="text-sm text-destructive">{errors.countries.message}</p>}
                 </div>
+              </div>
             </CardContent>
         </Card>
 
         <Separator className="my-6" />
 
+        {/* Professional Background Section */}
         <Card className="shadow-lg">
             <CardHeader>
               <CardTitle className="font-headline text-xl">Professional Background</CardTitle>
@@ -608,7 +612,72 @@ export default function ProfilePage() {
         </Card>
 
         <Separator className="my-6" />
-        
+
+        {/* Job Preferences Section */}
+        <Card className="shadow-lg">
+            <CardHeader>
+              <CardTitle className="font-headline text-xl">Job Preferences</CardTitle>
+              <CardDescription>
+                Help us tailor job suggestions to your ideal role and work environment.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-2">
+                <Label htmlFor="desired_job_role" className="text-base">Ideal Job Role</Label>
+                <Textarea
+                  id="desired_job_role"
+                  {...register('desired_job_role')}
+                  placeholder="e.g., Senior Frontend Developer specializing in e-commerce, interested in mid-size tech companies..."
+                  rows={5}
+                  className={errors.desired_job_role ? 'border-destructive' : ''}
+                />
+                {errors.desired_job_role && <p className="text-sm text-destructive">{errors.desired_job_role.message}</p>}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                      <Label htmlFor="remote_preference">Remote Work Preference</Label>
+                      <Controller
+                          name="remote_preference"
+                          control={control}
+                          render={({ field }) => {
+                              return (
+                                  <Select
+                                      onValueChange={field.onChange}
+                                      value={field.value ?? undefined}
+                                      disabled={overallSubmitting}
+                                  >
+                                      <SelectTrigger className={`relative w-full justify-start pl-10 pr-3 ${errors.remote_preference ? 'border-destructive' : ''}`}>
+                                          <CloudSun className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                                          <SelectValue placeholder="Select preference" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                          {remotePreferenceOptions.map(option => (
+                                              <SelectItem key={option} value={option}>{option}</SelectItem>
+                                          ))}
+                                      </SelectContent>
+                                  </Select>
+                              );
+                          }}
+                      />
+                      <p className="text-xs text-muted-foreground">Optional.</p>
+                      {errors.remote_preference && <p className="text-sm text-destructive">{errors.remote_preference.message}</p>}
+                  </div>
+                  <div className="space-y-2">
+                      <Label htmlFor="expected_salary">Expected Salary (Numeric)</Label>
+                      <div className="relative flex items-center">
+                          <DollarSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                          <Input id="expected_salary" type="number" {...register('expected_salary')} placeholder="e.g., 120000" className={`pl-10 ${errors.expected_salary ? 'border-destructive' : ''}`} disabled={overallSubmitting}/>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Optional. Enter as a number (e.g., 120000 for $120,000).</p>
+                      {errors.expected_salary && <p className="text-sm text-destructive">{errors.expected_salary.message}</p>}
+                  </div>
+              </div>
+            </CardContent>
+        </Card>
+
+        <Separator className="my-6" />
+
         {/* Work Experience Section */}
         <Card className="shadow-lg">
           <CardHeader>
@@ -722,7 +791,7 @@ export default function ProfilePage() {
         {/* Certifications Section */}
         <Card className="shadow-lg">
           <CardHeader>
-            <CardTitle className="font-headline text-xl flex items-center"><ScrollText className="mr-2 h-5 w-5 text-primary" />Certifications & Licenses</CardTitle>
+            <CardTitle className="font-headline text-xl flex items-center"><ScrollText className="mr-2 h-5 w-5 text-primary" />Certifications &amp; Licenses</CardTitle>
             <CardDescription>Include your professional certifications and licenses.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -774,77 +843,14 @@ export default function ProfilePage() {
             </Button>
           </CardContent>
         </Card>
-        
-        <Separator className="my-6" />
 
-        <Card className="shadow-lg">
-            <CardHeader>
-              <CardTitle className="font-headline text-xl">Job Preferences</CardTitle>
-              <CardDescription>
-                Help us tailor job suggestions to your ideal role and work environment.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="desired_job_role" className="text-base">Ideal Job Role</Label>
-                <Textarea
-                  id="desired_job_role"
-                  {...register('desired_job_role')}
-                  placeholder="e.g., Senior Frontend Developer specializing in e-commerce, interested in mid-size tech companies..."
-                  rows={5}
-                  className={errors.desired_job_role ? 'border-destructive' : ''}
-                />
-                {errors.desired_job_role && <p className="text-sm text-destructive">{errors.desired_job_role.message}</p>}
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                      <Label htmlFor="remote_preference">Remote Work Preference</Label>
-                      <Controller
-                          name="remote_preference"
-                          control={control}
-                          render={({ field }) => {
-                              return (
-                                  <Select
-                                      onValueChange={field.onChange}
-                                      value={field.value ?? undefined}
-                                      disabled={overallSubmitting}
-                                  >
-                                      <SelectTrigger className={`relative w-full justify-start pl-10 pr-3 ${errors.remote_preference ? 'border-destructive' : ''}`}>
-                                          <CloudSun className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                                          <SelectValue placeholder="Select preference" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                          {remotePreferenceOptions.map(option => (
-                                              <SelectItem key={option} value={option}>{option}</SelectItem>
-                                          ))}
-                                      </SelectContent>
-                                  </Select>
-                              );
-                          }}
-                      />
-                      <p className="text-xs text-muted-foreground">Optional.</p>
-                      {errors.remote_preference && <p className="text-sm text-destructive">{errors.remote_preference.message}</p>}
-                  </div>
-                  <div className="space-y-2">
-                      <Label htmlFor="expected_salary">Expected Salary (Numeric)</Label>
-                      <div className="relative flex items-center">
-                          <DollarSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                          <Input id="expected_salary" type="number" {...register('expected_salary')} placeholder="e.g., 120000" className={`pl-10 ${errors.expected_salary ? 'border-destructive' : ''}`} disabled={overallSubmitting}/>
-                      </div>
-                      <p className="text-xs text-muted-foreground">Optional. Enter as a number (e.g., 120000 for $120,000).</p>
-                      {errors.expected_salary && <p className="text-sm text-destructive">{errors.expected_salary.message}</p>}
-                  </div>
-              </div>
-            </CardContent>
-            <CardFooter className="flex-col items-start gap-4 sm:flex-row sm:justify-between sm:items-center pt-6 border-t">
-              <Button type="submit" disabled={overallSubmitting} size="lg" className="shadow-md hover:shadow-lg transition-shadow">
+        <div className="mt-8 flex justify-start">
+            <Button type="submit" disabled={overallSubmitting} size="lg" className="shadow-md hover:shadow-lg transition-shadow">
                 {isUploadingResume ? <UploadCloud className="mr-2 h-4 w-4 animate-pulse" /> : (isFormSubmitting ? <LoadingSpinner size={16} className="mr-2" /> : null)}
                 {isUploadingResume ? 'Uploading Resume...' : (isFormSubmitting ? 'Saving Profile...' : 'Save Profile')}
                 {!overallSubmitting && <Edit3 className="ml-2 h-4 w-4" />}
-              </Button>
-            </CardFooter>
-        </Card>
+            </Button>
+        </div>
       </form>
 
       <Separator className="my-10" />
@@ -945,5 +951,3 @@ export default function ProfilePage() {
     </div>
   );
 }
-
-  
