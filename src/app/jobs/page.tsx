@@ -58,6 +58,23 @@ const isValidDbId = (idInput: any): idInput is number | string => {
   return !isNaN(numId) && isFinite(numId);
 };
 
+const getErrorMessage = (error: any): string => {
+  if (error instanceof AxiosError && error.response) {
+    const detail = error.response.data?.detail;
+    const messages = error.response.data?.messages;
+    if (detail) {
+      return typeof detail === 'string' ? detail : JSON.stringify(detail);
+    }
+    if (messages) {
+      return typeof messages === 'string' ? messages : JSON.stringify(messages);
+    }
+    return `Request failed with status code ${error.response.status}`;
+  } else if (error instanceof Error) {
+    return error.message;
+  }
+  return "An unexpected error occurred.";
+};
+
 
 export default function JobExplorerPage() {
   const { currentUser, isLoadingAuth, isLoggingOut } = useAuth();
@@ -242,8 +259,6 @@ export default function JobExplorerPage() {
       };
       const cleanedPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== undefined)) as RelevantJobsRequestPayload;
 
-      // This endpoint (/jobs/relevant_jobs) is NOT in the new docs.
-      // Assuming it's a custom endpoint that might return { jobs: [...] } or direct array.
       const response = await apiClient.post<BackendJobListingResponseItem[] | { jobs: BackendJobListingResponseItem[] }>('/jobs/relevant_jobs', cleanedPayload);
       
       let jobsToMap: BackendJobListingResponseItem[] | undefined;
@@ -263,18 +278,13 @@ export default function JobExplorerPage() {
       }
     } catch (error) {
       console.error("Error in fetchRelevantJobs for page " + pageToFetch + ":", error);
+      const errorMessageString = getErrorMessage(error);
       if (pageToFetch === relevantJobsCurrentPage) {
         let specificErrorMessage: string | null = null;
-        if (error instanceof AxiosError && error.response) {
-            if (error.response.status === 204) {
-                specificErrorMessage = "No relevant jobs found matching your profile.";
-            } else {
-                specificErrorMessage = error.response.data?.detail || error.response.data?.messages || "Could not load relevant jobs.";
-            }
-        } else if (error instanceof Error) {
-            specificErrorMessage = error.message;
+        if (error instanceof AxiosError && error.response && error.response.status === 204) {
+            specificErrorMessage = "No relevant jobs found matching your profile.";
         }
-        const finalMessage = specificErrorMessage || "Could not load relevant jobs.";
+        const finalMessage = specificErrorMessage || errorMessageString;
         setErrorRelevantJobs(finalMessage);
         toast({ title: "Failed to Load Relevant Jobs", description: finalMessage, variant: error instanceof AxiosError && error.response?.status === 204 ? "default" : "destructive" });
         setRelevantJobsList([]);
@@ -299,9 +309,8 @@ export default function JobExplorerPage() {
     setErrorAllJobs(null);
     try {
       const skip = (page - 1) * JOBS_PER_PAGE;
-      const limit = JOBS_PER_PAGE; // Using the constant JOBS_PER_PAGE (now 10)
+      const limit = JOBS_PER_PAGE;
       
-      // Using /jobs/list_jobs/ as requested, expecting direct array
       const response = await apiClient.get<BackendJobListingResponseItem[]>('/jobs/list_jobs/', { params: { skip, limit } });
 
       const jobsToMap = response.data;
@@ -315,17 +324,12 @@ export default function JobExplorerPage() {
       }
     } catch (error) {
       console.error("Error in fetchAllJobs (/jobs/list_jobs/):", error);
+      const errorMessageString = getErrorMessage(error);
       let specificErrorMessage: string | null = null;
-      if (error instanceof AxiosError && error.response) {
-        if (error.response.status === 204) {
-            specificErrorMessage = "No jobs found in the database via /jobs/list_jobs/.";
-        } else {
-            specificErrorMessage = error.response.data?.detail || error.response.data?.messages || "Could not load all jobs from /jobs/list_jobs/.";
-        }
-      } else if (error instanceof Error) {
-        specificErrorMessage = error.message;
+      if (error instanceof AxiosError && error.response && error.response.status === 204) {
+        specificErrorMessage = "No jobs found in the database via /jobs/list_jobs/.";
       }
-      const finalMessage = specificErrorMessage || "Could not load all jobs from /jobs/list_jobs/.";
+      const finalMessage = specificErrorMessage || errorMessageString;
       setErrorAllJobs(finalMessage);
       toast({ title: "Failed to Load All Jobs", description: finalMessage, variant: error instanceof AxiosError && error.response?.status === 204 ? "default" : "destructive" });
     } finally {
@@ -344,13 +348,12 @@ export default function JobExplorerPage() {
     setErrorAllJobs(null);
     try {
       const skip = (page - 1) * JOBS_PER_PAGE;
-      const limit = JOBS_PER_PAGE; // Using the constant JOBS_PER_PAGE (now 10)
+      const limit = JOBS_PER_PAGE;
       const params: Record<string, string | number> = { skip, limit };
       if (filterTechnology) params.tech = filterTechnology;
       if (filterLocation) params.location = filterLocation;
       if (filterExperience) params.experience = filterExperience;
 
-      // Using /jobs/list_jobs/ as requested, expecting direct array
       const response = await apiClient.get<BackendJobListingResponseItem[]>('/jobs/list_jobs/', { params });
       
       const jobsToMap = response.data;
@@ -367,17 +370,12 @@ export default function JobExplorerPage() {
       }
     } catch (error) {
       console.error("Error in handleApplyFilters (/jobs/list_jobs/):", error);
+      const errorMessageString = getErrorMessage(error);
       let specificErrorMessage: string | null = null;
-      if (error instanceof AxiosError && error.response) {
-        if (error.response.status === 204) {
-            specificErrorMessage = "No jobs found matching your filter criteria from /jobs/list_jobs/.";
-        } else {
-            specificErrorMessage = error.response.data?.detail || error.response.data?.messages || "Could not load filtered jobs from /jobs/list_jobs/.";
-        }
-      } else if (error instanceof Error) {
-        specificErrorMessage = error.message;
+      if (error instanceof AxiosError && error.response && error.response.status === 204) {
+        specificErrorMessage = "No jobs found matching your filter criteria from /jobs/list_jobs/.";
       }
-      const finalMessage = specificErrorMessage || "Could not load filtered jobs from /jobs/list_jobs/.";
+      const finalMessage = specificErrorMessage || errorMessageString;
       setErrorAllJobs(finalMessage);
       toast({ title: "Failed to Load Filtered Jobs", description: finalMessage, variant: error instanceof AxiosError && error.response?.status === 204 ? "default" : "destructive" });
     } finally {
@@ -549,8 +547,6 @@ export default function JobExplorerPage() {
     if (!cleanedPayload.hasOwnProperty('posted_at_max_age_days')) cleanedPayload.posted_at_max_age_days = DEFAULT_JOB_MAX_AGE_DAYS;
 
     try {
-      // This endpoint (/jobs/fetch_jobs) is not in the new Backend Documentation.md
-      // Assuming it is still functional and has its own response structure.
       const response = await apiClient.post<{ messages: string; jobs_fetched: number; jobs: BackendJobListingResponseItem[] }>('/jobs/fetch_jobs', cleanedPayload);
       setLastFetchCount(response.data.jobs_fetched);
       if (response.data.jobs_fetched > 0 && response.data.jobs) {
@@ -561,9 +557,7 @@ export default function JobExplorerPage() {
         toast({ title: "Job Fetch Complete", description: "No new jobs were found from the external API matching your criteria." });
       }
     } catch (error) {
-      const message = error instanceof AxiosError && error.response?.data?.detail 
-                      ? (typeof error.response.data.detail === 'string' ? error.response.data.detail : JSON.stringify(error.response.data.detail)) 
-                      : "Failed to initiate job fetching.";
+      const message = getErrorMessage(error);
       setErrorGenerateJobs(message);
       setFetchedApiJobs([]);
       setLastFetchCount(0);
@@ -627,17 +621,18 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                 explanation: explanationResult.matchExplanation
             };
             try {
-                // Docs: POST /jobs/{id}/analyze
                 await apiClient.post<AnalyzeResultOut>(`/jobs/${jobToAnalyze.id}/analyze`, analyzePayload);
                 toast({ title: "AI Analysis Saved", description: "Match details saved to backend.", variant: "default" });
             } catch (analysisError) {
                 console.error("Error saving AI analysis to backend:", analysisError);
-                toast({ title: "Backend Sync Failed", description: "Could not save AI analysis details to backend.", variant: "destructive" });
+                const errorMessage = getErrorMessage(analysisError);
+                toast({ title: "Backend Sync Failed", description: `Could not save AI analysis: ${errorMessage}`, variant: "destructive" });
             }
         }
     } catch (error) {
         console.error("Error fetching AI match explanation:", error);
-        toast({ title: "AI Analysis Failed", description: "Could not get AI match explanation.", variant: "destructive" });
+        const errorMessage = getErrorMessage(error);
+        toast({ title: "AI Analysis Failed", description: `Could not get AI match explanation: ${errorMessage}`, variant: "destructive" });
     } finally {
         setIsLoadingExplanation(false);
         setJobPendingAnalysis(null);
@@ -659,7 +654,6 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
 
     if (currentUser && currentUser.id) {
         try {
-            // Docs: GET /jobs/{id}/match_score?user_id={user_id}
             const response = await apiClient.get<AnalyzeResultOut>(`/jobs/${job.id}/match_score?user_id=${currentUser.id}`);
             if (response.data && response.data.score !== undefined && response.data.explanation !== undefined) {
                 const backendAnalysis = { matchScore: response.data.score, matchExplanation: response.data.explanation };
@@ -674,7 +668,8 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                 // No existing score, proceed to generate
             } else {
                 console.error(`Error fetching existing match score for job ${job.id}:`, error);
-                toast({ title: "Error Fetching Score", description: "Could not fetch existing analysis. Will try generating.", variant: "destructive" });
+                const errorMessage = getErrorMessage(error);
+                toast({ title: "Error Fetching Score", description: `Could not fetch existing analysis. Will try generating. ${errorMessage}`, variant: "destructive" });
             }
         }
     }
@@ -714,7 +709,8 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
              if (axiosError.response && axiosError.response.status === 204) {
                 performAiAnalysis(jobPendingAnalysis);
             } else {
-                toast({ title: "Error", description: "Could not fetch existing AI analysis for pending job. Proceeding with generation.", variant: "destructive" });
+                const errorMessage = getErrorMessage(error);
+                toast({ title: "Error", description: `Could not fetch existing AI analysis for pending job. Proceeding with generation. ${errorMessage}`, variant: "destructive" });
                 performAiAnalysis(jobPendingAnalysis); 
             }
           });
@@ -742,29 +738,23 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
 
     if (isCurrentlySaved) { 
         try {
-            // Docs: DELETE /jobs/{id}/save?user_id={user_id}
             await apiClient.delete<DeleteSavedJobResponse>(`/jobs/${job.id}/save?user_id=${currentUser.id}`);
             toast({ title: "Job Unsaved", description: `${job.job_title} removed from saved jobs.` });
             setSavedJobIds(prev => { const next = new Set(prev); next.delete(job.id); return next; });
             addLocalActivity({ action_type: "JOB_UNSAVED", job_id: job.id, user_id: currentUser.id, activity_metadata: {...metadataForActivity, status: "Unsaved" }});
         } catch (error) {
             console.error(`Error unsaving job:`, error);
-            const axiosError = error as AxiosError;
-            let errorMsg = "Could not unsave job from backend.";
-            if (axiosError.response) {
-                if (axiosError.response.status === 204) errorMsg = "Saved job not found on server to remove.";
-                else errorMsg = axiosError.response.data?.detail || axiosError.response.data?.messages || errorMsg;
-            }
-            toast({ title: "Unsave Failed", description: errorMsg, variant: "destructive" });
+            const errorMessage = getErrorMessage(error);
+            toast({ title: "Unsave Failed", description: errorMessage, variant: "destructive" });
         }
     } else { 
         const payload: SaveJobPayload = {
             user_id: currentUser.id,
+            job_id: job.id, // job_id at top level
             action_type: "JOB_SAVED", 
-            activity_metadata: {...metadataForActivity, job_id: job.id, status: "Saved"} // Added job_id to activity_metadata
+            activity_metadata: {...metadataForActivity, status: "Saved"}
         };
         try {
-            // Docs: POST /jobs/{id}/save
             const response = await apiClient.post<SaveJobResponse>(`/jobs/${job.id}/save`, payload);
             if (response.data.messages?.toLowerCase() === 'success' && response.data.activity_id !== undefined) {
                 toast({ title: "Job Saved!", description: `${job.job_title} added to your saved jobs.` });
@@ -775,9 +765,8 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
             }
         } catch (error) {
             console.error(`Error saving job:`, error);
-            const axiosError = error as AxiosError;
-            const errorMsg = axiosError.response?.data?.detail || axiosError.response.data?.messages || "Could not save job to backend.";
-            toast({ title: "Save Failed", description: errorMsg, variant: "destructive" });
+            const errorMessage = getErrorMessage(error);
+            toast({ title: "Save Failed", description: errorMessage, variant: "destructive" });
         }
     }
   };
@@ -808,7 +797,8 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
       return pointsResult;
     } catch (error) {
       console.error("Error extracting job description points:", error);
-      toast({ title: "Point Extraction Failed", description: "Could not extract key points from job description.", variant: "destructive" });
+      const errorMessage = getErrorMessage(error);
+      toast({ title: "Point Extraction Failed", description: `Could not extract key points from job description: ${errorMessage}`, variant: "destructive" });
       return null;
     }
   };
@@ -833,7 +823,8 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
       if (resumeResult) setGeneratedResume(resumeResult.resume);
       addLocalActivity({ action_type: "RESUME_GENERATED_FOR_JOB", job_id: jobToGenerateFor.id, user_id: currentUser.id, activity_metadata: { jobTitle: jobToGenerateFor.job_title, success: !!resumeResult } });
     } catch (error) {
-      toast({ title: "Resume Generation Failed", variant: "destructive" });
+      const errorMessage = getErrorMessage(error);
+      toast({ title: "Resume Generation Failed", description: errorMessage, variant: "destructive" });
       addLocalActivity({ action_type: "RESUME_GENERATED_FOR_JOB", job_id: jobToGenerateFor.id, user_id: currentUser.id, activity_metadata: { jobTitle: jobToGenerateFor.job_title, success: false, error: error instanceof Error ? error.message : "Unknown" } });
     } finally {
       setIsLoadingResume(false);
@@ -859,7 +850,8 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
       if (coverLetterResult) setGeneratedCoverLetter(coverLetterResult.coverLetter);
       addLocalActivity({ action_type: "COVER_LETTER_GENERATED_FOR_JOB", job_id: jobToGenerateFor.id, user_id: currentUser.id, activity_metadata: { jobTitle: jobToGenerateFor.job_title, success: !!coverLetterResult } });
     } catch (error) {
-      toast({ title: "Cover Letter Generation Failed", variant: "destructive" });
+      const errorMessage = getErrorMessage(error);
+      toast({ title: "Cover Letter Generation Failed", description: errorMessage, variant: "destructive" });
       addLocalActivity({ action_type: "COVER_LETTER_GENERATED_FOR_JOB", job_id: jobToGenerateFor.id, user_id: currentUser.id, activity_metadata: { jobTitle: jobToGenerateFor.job_title, success: false, error: error instanceof Error ? error.message : "Unknown" } });
     } finally {
       setIsLoadingCoverLetter(false);
@@ -1183,3 +1175,4 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
   );
 }
 
+  

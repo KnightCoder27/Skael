@@ -44,6 +44,23 @@ const registerSchema = z.object({
 });
 type RegisterFormValues = z.infer<typeof registerSchema>;
 
+const getErrorMessage = (error: any): string => {
+  if (error instanceof AxiosError && error.response) {
+    const detail = error.response.data?.detail;
+    const messages = error.response.data?.messages;
+    if (detail) {
+      return typeof detail === 'string' ? detail : JSON.stringify(detail);
+    }
+    if (messages) {
+      return typeof messages === 'string' ? messages : JSON.stringify(messages);
+    }
+    return `Request failed with status code ${error.response.status}`;
+  } else if (error instanceof Error) {
+    return error.message;
+  }
+  return "An unexpected error occurred.";
+};
+
 
 export default function AuthPage() {
   const { toast } = useToast();
@@ -77,8 +94,6 @@ export default function AuthPage() {
     loginForm.clearErrors();
     toast({ title: "Processing Login...", description: "Verifying credentials..." });
     try {
-      // NOTE: Current frontend uses /users/login. New Backend Docs don't list this.
-      // Assuming /users/login is still functional for now.
       const backendLoginPayload: UserLoginType = { email: data.email, password: data.password };
       const backendResponse = await apiClient.post<UserLoginResponse>('/users/login', backendLoginPayload);
 
@@ -88,19 +103,14 @@ export default function AuthPage() {
       const backendUserId = backendResponse.data.user_id;
       setPendingBackendIdForFirebaseAuth(backendUserId);
       await signInWithEmailAndPassword(firebaseAuth, data.email, data.password);
-      // Success toast and redirect handled by useEffect
 
     } catch (error) {
       setPendingBackendIdForFirebaseAuth(null);
-      let errorMessage = "An unexpected error occurred during login.";
-      if (error instanceof AxiosError && error.response) {
-        // Standard backend error handling
-        errorMessage = error.response.data?.detail || error.response.data?.messages || "Login failed. Please check your credentials.";
-        if (error.response.status === 400 || error.response.status === 401) { // Common for bad creds
+      let errorMessage = getErrorMessage(error);
+      if (error instanceof AxiosError && (error.response?.status === 400 || error.response?.status === 401)) {
           loginForm.setError("password", { type: "manual", message: "Invalid email or password." });
-        }
+          errorMessage = "Invalid email or password."; // Prioritize this specific message
       } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
-        // Firebase auth errors
         const firebaseError = error as any;
         const firebaseErrorCode = firebaseError.code;
         if (firebaseErrorCode === 'auth/invalid-credential' || firebaseErrorCode === 'auth/user-not-found' || firebaseErrorCode === 'auth/wrong-password') {
@@ -111,8 +121,6 @@ export default function AuthPage() {
         } else {
           errorMessage = `Authentication failed: ${firebaseError.message}`;
         }
-      } else if (error instanceof Error) {
-        errorMessage = error.message;
       }
 
       if (!loginForm.formState.errors.password && !loginForm.formState.errors.email) {
@@ -141,25 +149,20 @@ export default function AuthPage() {
 
       const firebaseUserCredential = await createUserWithEmailAndPassword(firebaseAuth, data.email, data.password);
       await updateProfile(firebaseUserCredential.user, { displayName: data.name });
-      // Success toast and redirect handled by useEffect
 
     } catch (error) {
       setPendingBackendIdForFirebaseAuth(null);
-      let errorMessage = "An unexpected error occurred during registration.";
-      if (error instanceof AxiosError && error.response) {
-        errorMessage = error.response.data?.detail || error.response.data?.messages || "Registration failed.";
-        if (error.response.status === 400) {
-          // Specific backend 400 errors based on docs
-          const detail = (error.response.data?.detail || error.response.data?.messages || "").toLowerCase();
-          if (detail.includes("email already registered")) {
+      let errorMessage = getErrorMessage(error);
+      if (error instanceof AxiosError && error.response?.status === 400) {
+          const detail = (error.response.data?.detail || "").toString().toLowerCase();
+          const messages = (error.response.data?.messages || "").toString().toLowerCase();
+          if (detail.includes("email already registered") || messages.includes("email already registered")) {
             registerForm.setError("email", { type: "manual", message: "This email is already registered." });
             errorMessage = "This email is already registered.";
           } else {
-            errorMessage = "Invalid data provided for registration.";
+             errorMessage = "Invalid data for registration. " + (typeof detail === 'string' && detail.length < 100 ? detail : ''); // Add detail if it's a short string
           }
-        }
       } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
-        // Firebase auth errors
         const firebaseError = error as any;
         const firebaseErrorCode = firebaseError.code;
         if (firebaseErrorCode === 'auth/email-already-in-use') {
@@ -171,8 +174,6 @@ export default function AuthPage() {
         } else {
             errorMessage = `Registration failed: ${firebaseError.message}`;
         }
-      } else if (error instanceof Error) {
-        errorMessage = error.message;
       }
 
       if (!registerForm.formState.errors.email && !registerForm.formState.errors.password) {
@@ -430,3 +431,5 @@ export default function AuthPage() {
     </div>
   );
 }
+
+  

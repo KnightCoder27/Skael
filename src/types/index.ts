@@ -341,10 +341,11 @@ export interface ActivityLogResponse {
 }
 
 
-// Payload for POST /jobs/{id}/save - matches SaveJob from docs (though SaveJob schema not detailed in docs)
+// Payload for POST /jobs/{id}/save - matches SaveJob from docs
 export interface SaveJobPayload {
   user_id: number;
-  action_type: "JOB_SAVED";
+  job_id: number; // job_id is a top-level field
+  action_type: "JOB_SAVED"; // Action type should be specific for this payload
   activity_metadata?: { [key: string]: any } | null;
 }
 
@@ -422,3 +423,5 @@ export interface AnalyzeResultOut {
   score: number;
   explanation: string;
 }
+
+  

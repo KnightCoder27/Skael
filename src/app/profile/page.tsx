@@ -80,6 +80,23 @@ const profileSchema = z.object({
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
 
+const getErrorMessage = (error: any): string => {
+  if (error instanceof AxiosError && error.response) {
+    const detail = error.response.data?.detail;
+    const messages = error.response.data?.messages;
+    if (detail) {
+      return typeof detail === 'string' ? detail : JSON.stringify(detail);
+    }
+    if (messages) {
+      return typeof messages === 'string' ? messages : JSON.stringify(messages);
+    }
+    return `Request failed with status code ${error.response.status}`;
+  } else if (error instanceof Error) {
+    return error.message;
+  }
+  return "An unexpected error occurred.";
+};
+
 export default function ProfilePage() {
   const { currentUser, firebaseUser, isLoadingAuth, backendUserId, setBackendUser, refetchBackendUser, isLoggingOut, setIsLoggingOut } = useAuth();
   const { toast } = useToast();
@@ -251,10 +268,7 @@ export default function ProfilePage() {
       }
     } catch (error) {
       console.error("Error removing resume:", error);
-      let errorMessage = "Could not remove resume.";
-      if (error instanceof AxiosError && error.response) {
-         errorMessage = error.response.data?.detail || error.response.data?.messages || "Failed to update resume status on backend.";
-      }
+      const errorMessage = getErrorMessage(error);
       toast({ title: "Removal Failed", description: errorMessage, variant: "destructive" });
     } finally {
       setIsUploadingResume(false);
@@ -305,7 +319,8 @@ export default function ProfilePage() {
           );
         });
       } catch (error) {
-        toast({ title: "Resume Upload Failed", description: "Could not upload your new resume. Profile not updated with new resume.", variant: "destructive" });
+        const errorMsg = getErrorMessage(error);
+        toast({ title: "Resume Upload Failed", description: `Could not upload your new resume. Profile not updated with new resume. ${errorMsg}`, variant: "destructive" });
         setIsUploadingResume(false);
         setUploadResumeProgress(null);
         return;
@@ -349,18 +364,7 @@ export default function ProfilePage() {
       }
     } catch (error) {
       console.error("Error updating profile:", error);
-      let errorMessage = "Could not update profile. Please try again.";
-       if (error instanceof AxiosError && error.response) {
-        if (error.response.status === 400) {
-          errorMessage = error.response.data?.detail || error.response.data?.messages || "Invalid data submitted. Please check your inputs.";
-        } else if (error.response.status === 204) {
-          errorMessage = "User profile not found on server. Cannot update.";
-        } else {
-          errorMessage = error.response.data?.detail || error.response.data?.messages || errorMessage;
-        }
-      } else if (error instanceof Error) {
-        errorMessage = error.message;
-      }
+      const errorMessage = getErrorMessage(error);
       toast({ title: "Update Failed", description: errorMessage, variant: "destructive" });
     }
   };
@@ -403,9 +407,8 @@ export default function ProfilePage() {
       });
     } catch (error) {
       console.error("Error deleting account:", error);
-      let errorMessage = "Could not delete account. Please try again.";
-       if (error instanceof AxiosError && error.response) {
-        if (error.response.status === 204) {
+      let errorMessage = getErrorMessage(error);
+       if (error instanceof AxiosError && error.response?.status === 204) {
              errorMessage = "User account not found on the server, but attempting to delete Firebase user.";
             try {
                 if (firebaseUser) await deleteFirebaseUser(firebaseUser);
@@ -413,13 +416,8 @@ export default function ProfilePage() {
             } catch (fbDeleteError) {
                  errorMessage = "Backend account not found, and failed to delete Firebase user.";
             }
-        } else {
-            errorMessage = error.response.data?.detail || error.response.data?.messages || "Failed to delete account from backend.";
-        }
-      } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
+        } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
         errorMessage = "Failed to delete Firebase account. You might need to re-authenticate.";
-      } else if (error instanceof Error) {
-        errorMessage = error.message;
       }
       toast({ title: "Deletion Failed", description: errorMessage, variant: "destructive" });
       setIsLoggingOut(false);
@@ -941,3 +939,5 @@ export default function ProfilePage() {
     </div>
   );
 }
+
+  
