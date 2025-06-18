@@ -84,11 +84,17 @@ const getErrorMessage = (error: any): string => {
   if (error instanceof AxiosError && error.response) {
     const detail = error.response.data?.detail;
     const messages = error.response.data?.messages;
+    if (typeof detail === 'object' && detail !== null) {
+      return JSON.stringify(detail);
+    }
     if (detail) {
-      return typeof detail === 'string' ? detail : JSON.stringify(detail);
+      return typeof detail === 'string' ? detail : String(detail);
+    }
+    if (typeof messages === 'object' && messages !== null) {
+      return JSON.stringify(messages);
     }
     if (messages) {
-      return typeof messages === 'string' ? messages : JSON.stringify(messages);
+      return typeof messages === 'string' ? messages : String(messages);
     }
     return `Request failed with status code ${error.response.status}`;
   } else if (error instanceof Error) {
@@ -342,8 +348,8 @@ export default function ProfilePage() {
       professional_summary: data.professional_summary || null,
       expected_salary: data.expected_salary ?? null,
       resume: newResumeUrl,
-      work_experience: data.work_experience?.map(({id, ...rest}) => rest) || [], // Remove client-side ID
-      education: data.education?.map(({id, ...rest}) => rest) || [],
+      work_experiences: data.work_experience?.map(({id, ...rest}) => rest) || [],
+      educations: data.education?.map(({id, ...rest}) => rest) || [],
       certifications: data.certifications?.map(({id, ...rest}) => rest) || [],
     };
 

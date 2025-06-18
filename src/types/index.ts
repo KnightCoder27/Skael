@@ -140,8 +140,8 @@ export interface User {
   joined_date?: string; // ISO datetime string
   match_scores?: BackendMatchScoreLogItem[];
   saved_jobs?: SavedJob[];
-  work_experience?: WorkExperienceItem[];
-  education?: EducationItem[];
+  work_experience?: WorkExperienceItem[]; // This is used for form state, backend might expect `work_experiences`
+  education?: EducationItem[]; // This is used for form state, backend might expect `educations`
   certifications?: CertificationItem[];
 }
 
@@ -185,8 +185,8 @@ export interface UserUpdateAPI {
   professional_summary?: string | null;
   expected_salary?: number | null;
   resume?: string | null; // File path or URL
-  work_experience?: WorkExperienceItem[] | null;
-  education?: EducationItem[] | null;
+  work_experiences?: WorkExperienceItem[] | null; // Pluralized as per backend expectation
+  educations?: EducationItem[] | null; // Pluralized as per backend expectation
   certifications?: CertificationItem[] | null;
 }
 
