@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Compass, Info, FileWarning, ServerCrash, Search, ListChecks, Bot, DatabaseZap, Filter, XCircle, Settings2, Briefcase, MapPin, Users, Wifi, ListFilter, CalendarDays, Tag, BookText, MapPinned, Star, CheckSquare, Globe, Activity as ActivityIcon } from 'lucide-react'; // Renamed Activity to ActivityIcon
+import { Compass, Info, FileWarning, ServerCrash, Search, ListChecks, Bot, DatabaseZap, Filter, XCircle, Settings2, Briefcase, MapPin, Users, Wifi, ListFilter, CalendarDays, Tag, BookText, MapPinned, Star, CheckSquare, Globe, Activity as ActivityIcon } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -242,6 +242,8 @@ export default function JobExplorerPage() {
       };
       const cleanedPayload = Object.fromEntries(Object.entries(payload).filter(([_, v]) => v !== undefined)) as RelevantJobsRequestPayload;
 
+      // This endpoint (/jobs/relevant_jobs) is NOT in the new docs.
+      // Assuming it's a custom endpoint that might return { jobs: [...] } or direct array.
       const response = await apiClient.post<BackendJobListingResponseItem[] | { jobs: BackendJobListingResponseItem[] }>('/jobs/relevant_jobs', cleanedPayload);
       
       let jobsToMap: BackendJobListingResponseItem[] | undefined;
@@ -250,6 +252,7 @@ export default function JobExplorerPage() {
       } else if (response.data && Array.isArray((response.data as any).jobs)) {
           jobsToMap = (response.data as any).jobs;
       }
+
 
       if (!jobsToMap || !Array.isArray(jobsToMap)) throw new Error("Invalid data structure from backend for relevant jobs.");
       
@@ -296,7 +299,9 @@ export default function JobExplorerPage() {
     setErrorAllJobs(null);
     try {
       const skip = (page - 1) * JOBS_PER_PAGE;
-      const limit = JOBS_PER_PAGE;
+      const limit = JOBS_PER_PAGE; // Using the constant JOBS_PER_PAGE (now 10)
+      
+      // Using /jobs/list_jobs/ as requested, expecting direct array
       const response = await apiClient.get<BackendJobListingResponseItem[]>('/jobs/list_jobs/', { params: { skip, limit } });
 
       const jobsToMap = response.data;
@@ -339,12 +344,13 @@ export default function JobExplorerPage() {
     setErrorAllJobs(null);
     try {
       const skip = (page - 1) * JOBS_PER_PAGE;
-      const limit = JOBS_PER_PAGE;
+      const limit = JOBS_PER_PAGE; // Using the constant JOBS_PER_PAGE (now 10)
       const params: Record<string, string | number> = { skip, limit };
       if (filterTechnology) params.tech = filterTechnology;
       if (filterLocation) params.location = filterLocation;
       if (filterExperience) params.experience = filterExperience;
 
+      // Using /jobs/list_jobs/ as requested, expecting direct array
       const response = await apiClient.get<BackendJobListingResponseItem[]>('/jobs/list_jobs/', { params });
       
       const jobsToMap = response.data;
@@ -755,7 +761,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
         const payload: SaveJobPayload = {
             user_id: currentUser.id,
             action_type: "JOB_SAVED", 
-            activity_metadata: {...metadataForActivity, status: "Saved"}
+            activity_metadata: {...metadataForActivity, job_id: job.id, status: "Saved"} // Added job_id to activity_metadata
         };
         try {
             // Docs: POST /jobs/{id}/save
