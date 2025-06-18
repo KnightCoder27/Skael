@@ -82,40 +82,40 @@ export type SavedJob = BackendJobListingResponseItem;
 
 /**
  * Represents an item of work experience. Aligned with backend model.
+ * Dates are stored as "yyyy-MM-dd" strings.
  */
 export interface WorkExperienceItem {
-  id?: string; // Optional frontend ID for list management, backend uses Integer ID
+  id?: string; // Optional frontend ID for list management
   company_name: string;
   job_title: string;
-  start_date: string; // Backend `Date`, frontend string e.g., "YYYY-MM-DD"
-  end_date?: string | null; // Backend `Date`, frontend string e.g., "YYYY-MM-DD", or "Present"
+  start_date: string; // "yyyy-MM-dd"
+  end_date?: string | null; // "yyyy-MM-dd" or null if current
   description?: string | null;
+  currently_working?: boolean; // Frontend helper
 }
 
 /**
  * Represents an item of education. Aligned with backend model.
+ * Years are numbers.
  */
 export interface EducationItem {
-  id?: string; // Optional frontend ID, backend uses Integer ID
-  institution: string; // Changed from institution_name
+  id?: string; // Optional frontend ID
+  institution: string;
   degree: string;
-  start_year?: number | null; // Changed from start_date (string)
-  end_year?: number | null;   // Changed from end_date (string)
-  // field_of_study removed
-  // description removed
+  start_year?: number | null;
+  end_year?: number | null;
 }
 
 /**
  * Represents a certification. Aligned with backend model.
+ * Issue date is stored as "yyyy-MM-dd" string.
  */
 export interface CertificationItem {
-  id?: string; // Optional frontend ID, backend uses Integer ID
-  title: string; // Changed from certification_name
-  issued_by?: string | null; // Changed from issuing_organization
-  issue_date?: string | null; // Backend `Date`, frontend string e.g., "YYYY-MM"
+  id?: string; // Optional frontend ID
+  title: string;
+  issued_by?: string | null;
+  issue_date?: string | null; // "yyyy-MM-dd"
   credential_url?: string | null;
-  // expiration_date removed
-  // credential_id removed
 }
 
 
@@ -155,12 +155,12 @@ export interface UserIn {
   password: string;
 }
 
-export interface UserLogin { // For POST /users/login (current frontend, not in new docs)
+export interface UserLogin { // For POST /users/login
   email: string;
   password: string;
 }
 
-// For POST /users/login (current frontend, not in new docs)
+// For POST /users/login
 export interface UserLoginResponse {
   messages: string; // "success" or error message
   user_id: number; // Backend User ID
@@ -175,7 +175,7 @@ export interface UserRegistrationResponse {
 // For PUT /users/{id} - Matches Backend Documentation.md UserUpdate
 export interface UserUpdateAPI {
   username?: string;
-  number?: string | null; // Keep as number, can be null
+  number?: string | null;
   desired_job_role?: string | null;
   skills?: string; // Comma-separated string of skill names
   experience?: number | null;
@@ -185,7 +185,7 @@ export interface UserUpdateAPI {
   professional_summary?: string | null;
   expected_salary?: number | null;
   resume?: string | null; // File path or URL
-  work_experiences?: Omit<WorkExperienceItem, 'id'>[] | null;
+  work_experiences?: Omit<WorkExperienceItem, 'id' | 'currently_working'>[] | null;
   educations?: Omit<EducationItem, 'id'>[] | null;
   certifications?: Omit<CertificationItem, 'id'>[] | null;
 }
@@ -198,7 +198,7 @@ export interface UserModifyResponse {
 
 
 // --- Job Fetching Payloads ---
-export interface UserProfileForJobFetching { // For POST /jobs/fetch_jobs (current frontend, not in new docs)
+export interface UserProfileForJobFetching {
   job_titles?: string[];
   skills?: string[];
   experience?: number | null;
@@ -209,7 +209,7 @@ export interface UserProfileForJobFetching { // For POST /jobs/fetch_jobs (curre
   posted_at_max_age_days?: number; // Max age of job postings in days
 }
 
-// Payload for POST /jobs/relevant_jobs (current frontend, not in new docs)
+// Payload for POST /jobs/relevant_jobs
 export interface RelevantJobsRequestPayload {
   job_title?: string;
   technology?: string;
@@ -268,7 +268,6 @@ export interface JobListing {
 }
 
 // Type for the raw backend job listing item, before mapping
-// This aligns with JobListingResponse from the docs, assuming it has these fields.
 export interface BackendJobListingResponseItem {
   id?: number | string | null | undefined;
   api_id?: string | null | undefined;
@@ -326,7 +325,6 @@ export interface TrackedApplication {
 }
 
 // Activity Logging Types for backend
-// This is for POST /activity/log (current FE, not in new docs)
 export interface ActivityIn {
   user_id: number;
   job_id?: number | null;
@@ -334,7 +332,7 @@ export interface ActivityIn {
   metadata?: { [key: string]: any } | null;
 }
 
-// Response for POST /activity/log (current FE, not in new docs)
+// Response for POST /activity/log
 export interface ActivityLogResponse {
   messages: string;
   activity_id: string;
@@ -344,8 +342,8 @@ export interface ActivityLogResponse {
 // Payload for POST /jobs/{id}/save - matches SaveJob from docs
 export interface SaveJobPayload {
   user_id: number;
-  job_id: number; // job_id is a top-level field
-  action_type: "JOB_SAVED"; // Action type should be specific for this payload
+  job_id: number;
+  action_type: "JOB_SAVED";
   activity_metadata?: { [key: string]: any } | null;
 }
 
