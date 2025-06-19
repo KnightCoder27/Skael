@@ -20,7 +20,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
-import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon, MessageSquare, UploadCloud, Paperclip, XCircle, GraduationCap, Award, PlusCircle, Building, School, ScrollText, CalendarIcon } from 'lucide-react';
+import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon, MessageSquare, UploadCloud, Paperclip, XCircle, GraduationCap, Award, PlusCircle, Building, School, ScrollText, CalendarIcon, Edit, Check, X } from 'lucide-react';
 import { FullPageLoading, LoadingSpinner } from '@/components/app/loading-spinner';
 import apiClient from '@/lib/apiClient';
 import { auth as firebaseAuth, storage } from '@/lib/firebase';
@@ -37,12 +37,12 @@ const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 const dateErrorMessage = "Date must be in YYYY-MM-DD format.";
 
 const workExperienceSchema = z.object({
-  id: z.string().optional(), // Frontend ID for list management
+  id: z.string().optional(),
   company_name: z.string().min(1, "Company name is required."),
   job_title: z.string().min(1, "Job title is required."),
   start_date: z.string().min(1, "Start date is required.").regex(dateRegex, dateErrorMessage),
   end_date: z.string().regex(dateRegex, dateErrorMessage).optional().nullable(),
-  description: z.string().max(1000, "Description cannot exceed 1000 characters.").optional().nullable().transform(val => (val === "" ? null : val)),
+  description: z.string().max(1000, "Description max 1000 chars.").optional().nullable().transform(val => (val === "" ? null : val)),
   currently_working: z.boolean().optional(),
 }).refine(data => {
   if (data.currently_working) return true;
@@ -52,13 +52,10 @@ const workExperienceSchema = z.object({
   path: ["end_date"],
 }).refine(data => {
   if (data.start_date && data.end_date && !data.currently_working) {
-    // Only proceed if both dates are valid strings matching the regex
     if (dateRegex.test(data.start_date) && dateRegex.test(data.end_date)) {
-      try {
-        return parseISO(data.end_date) >= parseISO(data.start_date);
-      } catch (e) { return false; }
+      try { return parseISO(data.end_date) >= parseISO(data.start_date); } catch (e) { return false; }
     }
-    return true; 
+    return true;
   }
   return true;
 }, {
@@ -75,8 +72,7 @@ const educationSchema = z.object({
   currently_studying: z.boolean().optional(),
 }).refine(data => {
   if (data.currently_studying) return true;
-  // If not currently studying, end_year might be required or validated against start_year
-  // For now, this basic refine passes if not currently studying, other rules apply
+  // if not currently studying, end_year could be required based on specific business logic, not enforced here.
   return true; 
 }).refine(data => {
   if (data.start_year && data.end_year && !data.currently_studying) {
@@ -94,7 +90,7 @@ const certificationSchema = z.object({
   issued_by: z.string().optional().nullable().transform(val => (val === "" ? null : val)),
   issue_date: z.string().regex(dateRegex, dateErrorMessage).optional().nullable(),
   credential_url: z.string().url("Must be a valid URL.")
-    .or(z.literal("").transform(() => null)) 
+    .or(z.literal("").transform(() => null))
     .optional()
     .nullable(),
 });
@@ -118,6 +114,7 @@ const profileSchema = z.object({
 });
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
+type EditableSection = 'work_experiences' | 'educations' | 'certifications' | null;
 
 const getErrorMessage = (error: any): string => {
   if (error instanceof AxiosError && error.response) {
@@ -126,15 +123,11 @@ const getErrorMessage = (error: any): string => {
     if (typeof detail === 'object' && detail !== null) {
       return JSON.stringify(detail);
     }
-    if (detail) {
-      return typeof detail === 'string' ? detail : String(detail);
-    }
+    if (detail) { return typeof detail === 'string' ? detail : String(detail); }
     if (typeof messages === 'object' && messages !== null) {
       return JSON.stringify(messages);
     }
-    if (messages) {
-      return typeof messages === 'string' ? messages : String(messages);
-    }
+    if (messages) { return typeof messages === 'string' ? messages : String(messages); }
     return `Request failed with status code ${error.response.status}`;
   } else if (error instanceof Error) {
     return error.message;
@@ -142,6 +135,9 @@ const getErrorMessage = (error: any): string => {
   return "An unexpected error occurred.";
 };
 
+const currentYear = new Date().getFullYear();
+const calendarFromYear = currentYear - 100;
+const calendarToYear = currentYear + 10;
 
 export default function ProfilePage() {
   const { currentUser, firebaseUser, isLoadingAuth, backendUserId, setBackendUser, refetchBackendUser, isLoggingOut, setIsLoggingOut } = useAuth();
@@ -153,171 +149,106 @@ export default function ProfilePage() {
   const [uploadResumeProgress, setUploadResumeProgress] = useState<number | null>(null);
   const [currentResumeUrl, setCurrentResumeUrl] = useState<string | null>(null);
   const [hasPopulatedFromCurrentUser, setHasPopulatedFromCurrentUser] = useState(false);
-
+  const [editingSection, setEditingSection] = useState<EditableSection>(null);
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
-    defaultValues: {
-      username: '',
-      email_id: '',
-      phone_number: null,
-      professional_summary: null,
-      desired_job_role: null,
-      skills: null,
-      experience: null,
-      preferred_locations: null,
-      countries: '',
-      remote_preference: undefined,
-      expected_salary: null,
-      resume: null,
-      work_experiences: [],
-      educations: [],
-      certifications: [],
-    }
+    defaultValues: { /* Defaults set in useEffect */ }
   });
   const { register, handleSubmit, formState: { errors, isSubmitting: isFormSubmitting }, reset, control, setValue, watch, clearErrors } = form;
 
-  const { fields: workFields, append: appendWork, remove: removeWork } = useFieldArray({ control, name: "work_experiences" });
-  const { fields: eduFields, append: appendEdu, remove: removeEdu } = useFieldArray({ control, name: "educations" });
-  const { fields: certFields, append: appendCert, remove: removeCert } = useFieldArray({ control, name: "certifications" });
-
+  const { fields: workFields, append: appendWork, remove: removeWork, update: updateWork } = useFieldArray({ control, name: "work_experiences" });
+  const { fields: eduFields, append: appendEdu, remove: removeEdu, update: updateEdu } = useFieldArray({ control, name: "educations" });
+  const { fields: certFields, append: appendCert, remove: removeCert, update: updateCert } = useFieldArray({ control, name: "certifications" });
 
   const watchedResumeUrl = watch("resume");
 
-  useEffect(() => {
-    setCurrentResumeUrl(watchedResumeUrl ?? null);
-  }, [watchedResumeUrl]);
-
+  useEffect(() => { setCurrentResumeUrl(watchedResumeUrl ?? null); }, [watchedResumeUrl]);
 
   useEffect(() => {
     if (isLoggingOut) return;
     if (!isLoadingAuth && !currentUser && !firebaseUser) {
-        toast({ title: "Not Authenticated", description: "Please log in to view your profile.", variant: "destructive" });
-        router.push('/auth');
+      toast({ title: "Not Authenticated", description: "Please log in to view your profile.", variant: "destructive" });
+      router.push('/auth');
     }
   }, [isLoadingAuth, currentUser, firebaseUser, router, toast, isLoggingOut]);
 
+  const mapUserToFormValues = (user: User | null, fbUser: FirebaseUser | null): ProfileFormValues => {
+    const currentRPFromDBRaw: string | null | undefined = user?.remote_preference;
+    let formRPValue: RemotePreferenceAPI | undefined = undefined;
+    if (typeof currentRPFromDBRaw === 'string' && currentRPFromDBRaw.trim() !== '') {
+      const normalizedRP = currentRPFromDBRaw.toLowerCase().trim();
+      if (remotePreferenceOptions.includes(normalizedRP as RemotePreferenceAPI)) {
+        formRPValue = normalizedRP as RemotePreferenceAPI;
+      }
+    }
+
+    return {
+      username: user?.username || fbUser?.displayName || '',
+      email_id: user?.email_id || fbUser?.email || '',
+      phone_number: user?.phone_number || null,
+      professional_summary: user?.professional_summary || null,
+      desired_job_role: user?.desired_job_role || null,
+      skills: user?.skills?.join(', ') || null,
+      experience: user?.experience ?? null,
+      preferred_locations: user?.preferred_locations?.join(', ') || null,
+      countries: user?.countries?.join(', ') || '',
+      remote_preference: formRPValue,
+      expected_salary: user?.expected_salary ?? null,
+      resume: user?.resume || null,
+      work_experiences: user?.work_experiences?.map(w => ({
+        id: w.id || crypto.randomUUID(),
+        company_name: w.company_name || '',
+        job_title: w.job_title || '',
+        start_date: w.start_date && isValid(parseISO(w.start_date)) ? format(parseISO(w.start_date), 'yyyy-MM-dd') : '',
+        end_date: w.currently_working ? null : (w.end_date && isValid(parseISO(w.end_date)) ? format(parseISO(w.end_date), 'yyyy-MM-dd') : null),
+        description: w.description || null,
+        currently_working: w.currently_working ?? !w.end_date,
+      })) || [],
+      educations: user?.educations?.map(e => ({
+        id: e.id || crypto.randomUUID(),
+        institution: e.institution || '',
+        degree: e.degree || '',
+        start_year: typeof e.start_year === 'number' ? e.start_year : null,
+        end_year: e.currently_studying ? null : (typeof e.end_year === 'number' ? e.end_year : null),
+        currently_studying: e.currently_studying ?? !e.end_year,
+      })) || [],
+      certifications: user?.certifications?.map(c => ({
+        id: c.id || crypto.randomUUID(),
+        title: c.title || '',
+        issued_by: c.issued_by || null,
+        issue_date: c.issue_date && isValid(parseISO(c.issue_date)) ? format(parseISO(c.issue_date), 'yyyy-MM-dd') : null,
+        credential_url: c.credential_url || null,
+      })) || [],
+    };
+  };
 
   useEffect(() => {
-    if (isLoadingAuth) return;
+    if (isLoadingAuth || isLoggingOut) return;
 
-    if (isLoggingOut) {
-        setHasPopulatedFromCurrentUser(false);
-        return;
-    }
+    const formValues = mapUserToFormValues(currentUser, firebaseUser);
+    reset(formValues);
+    setCurrentResumeUrl(formValues.resume);
+    setHasPopulatedFromCurrentUser(true);
+  }, [currentUser, firebaseUser, reset, isLoadingAuth, isLoggingOut]);
 
-    let formValuesToReset: Partial<ProfileFormValues> = {};
-    let newResumeUrlToSet: string | null = null;
-
-    if (currentUser && currentUser.id) {
-        const currentRPFromDBRaw: string | null | undefined = currentUser.remote_preference;
-        let formRPValue: RemotePreferenceAPI | undefined = undefined;
-
-        if (typeof currentRPFromDBRaw === 'string' && currentRPFromDBRaw.trim() !== '') {
-            const normalizedRP = currentRPFromDBRaw.toLowerCase().trim();
-            switch (normalizedRP) {
-                case "remote": formRPValue = "Remote"; break;
-                case "hybrid": formRPValue = "Hybrid"; break;
-                case "onsite": formRPValue = "Onsite"; break;
-                default: break;
-            }
-        }
-        const countriesString = currentUser.countries?.join(', ') || '';
-
-        formValuesToReset = {
-            username: currentUser.username || firebaseUser?.displayName || '',
-            email_id: currentUser.email_id || firebaseUser?.email || '',
-            phone_number: currentUser.phone_number || null,
-            professional_summary: currentUser.professional_summary || null,
-            desired_job_role: currentUser.desired_job_role || null,
-            skills: currentUser.skills?.join(', ') || null,
-            experience: currentUser.experience ?? null,
-            preferred_locations: currentUser.preferred_locations?.join(', ') || null,
-            countries: countriesString,
-            remote_preference: formRPValue,
-            expected_salary: currentUser.expected_salary ?? null,
-            resume: currentUser.resume || null,
-            work_experiences: currentUser.work_experiences?.map(w => {
-              const startDate = w.start_date && isValid(parseISO(w.start_date)) ? format(parseISO(w.start_date), 'yyyy-MM-dd') : '';
-              let endDate = w.end_date && isValid(parseISO(w.end_date)) ? format(parseISO(w.end_date), 'yyyy-MM-dd') : null;
-              const isCurrentlyWorking = w.currently_working ?? !w.end_date;
-              if (isCurrentlyWorking) endDate = null;
-
-              return {
-                ...w,
-                id: w.id || crypto.randomUUID(), // Use backend ID if available, else generate frontend ID
-                company_name: w.company_name || '',
-                job_title: w.job_title || '',
-                start_date: startDate,
-                end_date: endDate,
-                description: w.description || null,
-                currently_working: isCurrentlyWorking,
-              };
-            }) || [],
-            educations: currentUser.educations?.map(e => {
-              const isCurrentlyStudying = e.currently_studying ?? !e.end_year;
-              return {
-                id: e.id || crypto.randomUUID(),
-                institution: e.institution || '',
-                degree: e.degree || '',
-                start_year: typeof e.start_year === 'number' ? e.start_year : null,
-                end_year: isCurrentlyStudying ? null : (typeof e.end_year === 'number' ? e.end_year : null),
-                currently_studying: isCurrentlyStudying,
-            }}) || [],
-            certifications: currentUser.certifications?.map(c => ({
-                 id: c.id || crypto.randomUUID(),
-                 title: c.title || '',
-                 issued_by: c.issued_by || null,
-                 issue_date: c.issue_date && isValid(parseISO(c.issue_date)) ? format(parseISO(c.issue_date), 'yyyy-MM-dd') : null,
-                 credential_url: c.credential_url || null,
-            })) || [],
-        };
-        newResumeUrlToSet = currentUser.resume || null;
-        setHasPopulatedFromCurrentUser(true);
-
-    } else if (firebaseUser && !currentUser && !hasPopulatedFromCurrentUser) {
-        formValuesToReset = {
-            username: firebaseUser.displayName || '',
-            email_id: firebaseUser.email || '',
-            phone_number: null, professional_summary: null, desired_job_role: null,
-            skills: null, experience: null, preferred_locations: null, countries: '',
-            remote_preference: undefined,
-            expected_salary: null, resume: null,
-            work_experiences: [], educations: [], certifications: [],
-        };
-        newResumeUrlToSet = null;
-    } else if (!firebaseUser && !currentUser) {
-       setHasPopulatedFromCurrentUser(false);
-       formValuesToReset = {
-            username: '', email_id: '', phone_number: null, professional_summary: null, desired_job_role: null,
-            skills: null, experience: null, preferred_locations: null, countries: '',
-            remote_preference: undefined,
-            expected_salary: null, resume: null,
-            work_experiences: [], educations: [], certifications: [],
-       };
-       newResumeUrlToSet = null;
-    }
-
-    if (Object.keys(formValuesToReset).length > 0 || newResumeUrlToSet !== currentResumeUrl) {
-        reset(formValuesToReset);
-        setCurrentResumeUrl(newResumeUrlToSet);
-    }
-  }, [currentUser, firebaseUser, reset, isLoadingAuth, isLoggingOut, hasPopulatedFromCurrentUser, currentResumeUrl]);
-
+  const handleCancelSectionEdit = (sectionName: 'work_experiences' | 'educations' | 'certifications') => {
+    const originalSectionData = mapUserToFormValues(currentUser, firebaseUser)[sectionName];
+    setValue(sectionName, originalSectionData as any, { shouldValidate: false, shouldDirty: false });
+    setEditingSection(null);
+  };
 
   const handleResumeFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
       if (file.size > 5 * 1024 * 1024) {
         toast({ title: "File Too Large", description: "Resume file should be less than 5MB.", variant: "destructive" });
-        event.target.value = '';
-        return;
+        event.target.value = ''; return;
       }
       const allowedTypes = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
       if (!allowedTypes.includes(file.type)) {
         toast({ title: "Invalid File Type", description: "Please upload a PDF or Word document.", variant: "destructive" });
-        event.target.value = '';
-        return;
+        event.target.value = ''; return;
       }
       setSelectedResumeFile(file);
     } else {
@@ -327,43 +258,34 @@ export default function ProfilePage() {
 
   const handleRemoveResume = async () => {
     if (!currentResumeUrl || !firebaseUser) return;
-
-    setIsUploadingResume(true); // Visually indicate processing
+    setIsUploadingResume(true);
     try {
       const fileRef = storageRef(storage, currentResumeUrl);
       await deleteObject(fileRef);
-
       if (backendUserId) {
-        const updatePayload: Partial<UserUpdateAPI> = { resume: null };
-        await apiClient.put(`/users/${backendUserId}`, updatePayload);
-
+        await apiClient.put(`/users/${backendUserId}`, { resume: null });
         setValue('resume', null, { shouldValidate: true, shouldDirty: true });
-        setCurrentResumeUrl(null);
-        setSelectedResumeFile(null);
+        setCurrentResumeUrl(null); setSelectedResumeFile(null);
         await refetchBackendUser();
-        toast({ title: "Resume Removed", description: "Your resume has been removed." });
+        toast({ title: "Resume Removed" });
       }
-    } catch (error) {
-      console.error("Error removing resume:", error);
-      const errorMessage = getErrorMessage(error);
-      toast({ title: "Removal Failed", description: errorMessage, variant: "destructive" });
-    } finally {
-      setIsUploadingResume(false);
-    }
+    } catch (error) { toast({ title: "Removal Failed", description: getErrorMessage(error), variant: "destructive" });
+    } finally { setIsUploadingResume(false); }
   };
-
 
   const onSubmit: SubmitHandler<ProfileFormValues> = async (data) => {
     if (!backendUserId || !firebaseUser) {
-      toast({ title: "Error", description: "User session not found. Cannot update profile.", variant: "destructive" });
+      toast({ title: "Error", description: "User session not found.", variant: "destructive" }); return;
+    }
+    if (editingSection) {
+      toast({ title: "Action Required", description: `Please "Done" or "Cancel" editing the ${editingSection.replace('_', ' ')} section before saving.`, variant: "destructive" });
       return;
     }
 
-    let newResumeUrl: string | null | undefined = data.resume;
+    let newResumeUrlFromUpload: string | undefined = undefined;
 
     if (selectedResumeFile && firebaseUser) {
-      setIsUploadingResume(true);
-      setUploadResumeProgress(0);
+      setIsUploadingResume(true); setUploadResumeProgress(0);
       const filePath = `users/${firebaseUser.uid}/uploaded_resumes/${Date.now()}_${selectedResumeFile.name}`;
       const fileStorageRef = storageRef(storage, filePath);
       const uploadTask = uploadBytesResumable(fileStorageRef, selectedResumeFile);
@@ -371,808 +293,311 @@ export default function ProfilePage() {
 
       try {
         if (currentResumeUrl) {
-            try {
-                const oldResumeRef = storageRef(storage, currentResumeUrl);
-                await deleteObject(oldResumeRef);
-            } catch (deleteError: any) {
-                 if (deleteError.code !== 'storage/object-not-found') {
-                    console.warn("Could not delete old resume during update:", deleteError);
-                 }
-            }
+          try { await deleteObject(storageRef(storage, currentResumeUrl)); }
+          catch (deleteError: any) { if (deleteError.code !== 'storage/object-not-found') console.warn("Could not delete old resume during update:", deleteError); }
         }
-
         await new Promise<void>((resolve, reject) => {
-          uploadTask.on('state_changed',
-            (snapshot) => {
-              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-              setUploadResumeProgress(progress);
-            },
-            (error) => reject(error),
-            async () => {
-              try {
-                const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-                newResumeUrl = downloadURL;
-                setValue('resume', newResumeUrl, { shouldValidate: true, shouldDirty: true });
-                setCurrentResumeUrl(newResumeUrl);
-                setSelectedResumeFile(null);
-                uploadSucceeded = true;
-                resolve();
-              } catch (getUrlError){
-                reject(getUrlError);
-              }
-            }
+          uploadTask.on('state_changed', (snapshot) => setUploadResumeProgress((snapshot.bytesTransferred / snapshot.totalBytes) * 100),
+            reject,
+            async () => { try { newResumeUrlFromUpload = await getDownloadURL(uploadTask.snapshot.ref); uploadSucceeded = true; resolve(); } catch (getUrlError){ reject(getUrlError); } }
           );
         });
-      } catch (error) {
-        const errorMsg = getErrorMessage(error);
-        toast({ title: "Resume Upload Failed", description: `Your new resume could not be uploaded. Profile changes will not be saved. ${errorMsg}`, variant: "destructive" });
-        // uploadSucceeded remains false
-      } finally {
-        setIsUploadingResume(false);
-        setUploadResumeProgress(null);
-      }
-
-      if (!uploadSucceeded) {
-        return; // Stop profile update if resume upload was attempted and failed
-      }
+      } catch (error) { toast({ title: "Resume Upload Failed", description: `Profile not saved. ${getErrorMessage(error)}`, variant: "destructive" });
+      } finally { setIsUploadingResume(false); setUploadResumeProgress(null); }
+      if (!uploadSucceeded) return;
     }
 
+    const finalResumeUrl = newResumeUrlFromUpload !== undefined ? newResumeUrlFromUpload : data.resume;
 
     const updatePayload: UserUpdateAPI = {
       username: data.username,
       number: data.phone_number || null,
       desired_job_role: data.desired_job_role || null,
-      skills: data.skills || undefined, // Backend might prefer undefined over null for string array
+      skills: data.skills || undefined,
       experience: data.experience ?? null,
       preferred_locations: data.preferred_locations || undefined,
-      country: data.countries, // This should be 'countries' in form data, and 'country' in API
+      country: data.countries,
       remote_preference: data.remote_preference || null,
       professional_summary: data.professional_summary || null,
       expected_salary: data.expected_salary ?? null,
-      resume: newResumeUrl, // This will be the new URL or existing if no new upload
+      resume: finalResumeUrl,
       work_experiences: data.work_experiences?.map(({id, currently_working, ...rest}) => ({
-        company_name: rest.company_name,
-        job_title: rest.job_title,
-        start_date: rest.start_date,
-        end_date: currently_working ? null : (rest.end_date || null),
-        description: rest.description || null,
+        ...rest, end_date: currently_working ? null : (rest.end_date || null),
       })) || [],
       educations: data.educations?.map(({id, currently_studying, ...rest}) => ({
-        institution: rest.institution,
-        degree: rest.degree,
-        start_year: rest.start_year ? Number(rest.start_year) : null,
-        end_year: currently_studying ? null : (rest.end_year ? Number(rest.end_year) : null),
+        ...rest, end_year: currently_studying ? null : (rest.end_year ? Number(rest.end_year) : null),
       })) || [],
-      certifications: data.certifications?.map(({id, ...rest}) => ({
-        title: rest.title,
-        issued_by: rest.issued_by || null,
-        issue_date: rest.issue_date || null,
-        credential_url: rest.credential_url || null,
-      })) || [],
+      certifications: data.certifications?.map(({id, ...rest}) => ({ ...rest })) || [],
     };
-
-    const filteredUpdatePayload = Object.fromEntries(
-        Object.entries(updatePayload).filter(([key, v]) => {
-          if (key === 'skills' || key === 'preferred_locations') return v !== undefined; // Keep if undefined for these specific string fields that backend might treat as "not provided"
-          return v !== undefined;
-        })
-    ) as Partial<UserUpdateAPI>;
-
+    const filteredPayload = Object.fromEntries( Object.entries(updatePayload).filter(([_, v]) => v !== undefined) ) as Partial<UserUpdateAPI>;
 
     try {
-      const response = await apiClient.put<UserModifyResponse>(`/users/${backendUserId}`, filteredUpdatePayload);
+      const response = await apiClient.put<UserModifyResponse>(`/users/${backendUserId}`, filteredPayload);
       if (response.data.messages?.toLowerCase() === 'success') {
-        await refetchBackendUser();
-        toast({
-          title: 'Profile Updated',
-          description: 'Your profile information has been saved successfully.',
-        });
-      } else {
-        throw new Error(response.data.messages || "Backend reported an issue with the update.");
-      }
-    } catch (error) {
-      console.error("Error updating profile:", error);
-      const errorMessage = getErrorMessage(error);
-      toast({ title: "Update Failed", description: errorMessage, variant: "destructive" });
-    }
+        await refetchBackendUser(); // This will re-trigger useEffect to reset form with new currentUser data
+        setEditingSection(null); // Ensure all sections are out of edit mode
+        setSelectedResumeFile(null); // Clear selected file after successful upload and save
+        toast({ title: 'Profile Updated Successfully' });
+      } else { throw new Error(response.data.messages || "Backend issue."); }
+    } catch (error) { toast({ title: "Update Failed", description: getErrorMessage(error), variant: "destructive" }); }
   };
 
-  const handleGenerateGeneralResume = () => {
-    toast({ title: "Coming Soon!", description: "General resume generation will be available soon." });
-  };
-
-  const handleGenerateCustomCoverLetter = () => {
-    toast({ title: "Coming Soon!", description: "Custom cover letter generation will be available soon." });
-  };
-
-  const handleDeleteAccountConfirm = async () => {
-    if (!backendUserId || !firebaseUser) {
-      toast({ title: "Error", description: "User session not found. Cannot delete account.", variant: "destructive" });
-      return;
-    }
-    setIsLoggingOut(true);
-    try {
-      if (currentUser?.resume) {
-        try {
-            const oldResumeRef = storageRef(storage, currentUser.resume);
-            await deleteObject(oldResumeRef);
-        } catch (storageError: any) {
-            if (storageError.code !== 'storage/object-not-found') {
-                console.warn("Could not delete resume from storage during account deletion:", storageError);
-            }
-        }
-      }
-      const response = await apiClient.delete<UserModifyResponse>(`/users/${backendUserId}`);
-      if (response.data.messages?.toLowerCase() !== 'success') {
-          throw new Error(response.data.messages || "Backend reported an issue with account deletion.");
-      }
-
-      await deleteFirebaseUser(firebaseUser);
-
-      toast({
-        title: "Account Deleted",
-        description: "Your account has been permanently deleted.",
-      });
-      // AuthContext will handle redirect via onAuthStateChanged
-    } catch (error) {
-      console.error("Error deleting account:", error);
-      let errorMessage = getErrorMessage(error);
-       if (error instanceof AxiosError && error.response?.status === 204) { // User not found in backend
-            errorMessage = "User account not found on the server, attempting to finalize Firebase cleanup.";
-            try {
-                if (firebaseUser) await deleteFirebaseUser(firebaseUser); // Attempt to delete firebase user if exists
-                toast({ title: "Account Deletion Information", description: "Backend account was not found. Firebase session cleaned up." });
-            } catch (fbDeleteError) {
-                 errorMessage = "Backend account not found, and failed to fully clean Firebase session.";
-                 toast({ title: "Account Deletion Complicated", description: errorMessage, variant: "destructive" });
-            }
-        } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) { // Firebase specific errors
-            errorMessage = "Failed to delete Firebase account. You might need to re-authenticate. " + (error as any).message;
-             toast({ title: "Firebase Deletion Failed", description: errorMessage, variant: "destructive" });
-        } else { // General backend or other errors
-            toast({ title: "Deletion Failed", description: errorMessage, variant: "destructive" });
-        }
-      setIsLoggingOut(false); // Ensure this is reset if the process doesn't complete with a redirect
-    }
-  };
-
-  if (isLoggingOut) {
-    return (
-      <div className="flex min-h-[calc(100vh-12rem)] flex-col items-center justify-center p-4 text-center">
-        <LogOutIcon className="w-12 h-12 text-primary mb-4 animate-pulse" />
-        <h2 className="text-2xl font-semibold mb-2">Processing Account Deletion</h2>
-        <p className="text-muted-foreground">Please wait...</p>
-      </div>
-    );
-  }
-
-  if (isLoadingAuth) {
-    return <FullPageLoading message="Loading profile..." />;
-  }
-
-  if (!currentUser && !isLoadingAuth && !isLoggingOut && !firebaseUser) {
-     return <FullPageLoading message="Verifying session..." />;
-  }
+  if (isLoggingOut) return <FullPageLoading message="Processing Account Deletion..." />;
+  if (isLoadingAuth || !hasPopulatedFromCurrentUser) return <FullPageLoading message="Loading profile..." />;
+  if (!currentUser && !isLoadingAuth && !isLoggingOut && !firebaseUser) return <FullPageLoading message="Verifying session..." />;
 
   const overallSubmitting = isFormSubmitting || isUploadingResume;
+
+  const renderWorkExperiences = () => {
+    if (editingSection === 'work_experiences') {
+      return (
+        <>
+          {workFields.map((item, index) => {
+            const currentlyWorking = watch(`work_experiences.${index}.currently_working`);
+            return (
+              <Card key={item.id} className="p-4 bg-muted/30 border-dashed mb-4">
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div><Label htmlFor={`work_experiences.${index}.company_name`}>Company Name</Label><Input {...register(`work_experiences.${index}.company_name`)} placeholder="e.g., Acme Corp" className={errors.work_experiences?.[index]?.company_name ? 'border-destructive' : ''}/>{errors.work_experiences?.[index]?.company_name && <p className="text-sm text-destructive">{errors.work_experiences[index]?.company_name?.message}</p>}</div>
+                    <div><Label htmlFor={`work_experiences.${index}.job_title`}>Job Title</Label><Input {...register(`work_experiences.${index}.job_title`)} placeholder="e.g., Software Engineer" className={errors.work_experiences?.[index]?.job_title ? 'border-destructive' : ''}/>{errors.work_experiences?.[index]?.job_title && <p className="text-sm text-destructive">{errors.work_experiences[index]?.job_title?.message}</p>}</div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                    <div><Label htmlFor={`work_experiences.${index}.start_date`}>Start Date</Label>
+                      <Controller control={control} name={`work_experiences.${index}.start_date`} render={({ field }) => (
+                        <Popover><PopoverTrigger asChild><Button variant={"outline"} className={cn("w-full justify-start text-left font-normal", !field.value && "text-muted-foreground", errors.work_experiences?.[index]?.start_date && "border-destructive")}><CalendarIcon className="mr-2 h-4 w-4" />{field.value && isValid(parseISO(field.value)) ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger>
+                          <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined} onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : "")} captionLayout="dropdown-buttons" fromYear={calendarFromYear} toYear={calendarToYear} initialFocus /></PopoverContent></Popover>)}/>
+                      {errors.work_experiences?.[index]?.start_date && <p className="text-sm text-destructive">{errors.work_experiences[index]?.start_date?.message}</p>}</div>
+                    <div><Label htmlFor={`work_experiences.${index}.end_date`}>End Date</Label>
+                      <Controller control={control} name={`work_experiences.${index}.end_date`} render={({ field }) => (
+                        <Popover><PopoverTrigger asChild><Button variant={"outline"} disabled={currentlyWorking} className={cn("w-full justify-start text-left font-normal", !field.value && !currentlyWorking && "text-muted-foreground", errors.work_experiences?.[index]?.end_date && !currentlyWorking && "border-destructive")}><CalendarIcon className="mr-2 h-4 w-4" />{field.value && !currentlyWorking && isValid(parseISO(field.value)) ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger>
+                          <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined} onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : null)} captionLayout="dropdown-buttons" fromYear={calendarFromYear} toYear={calendarToYear} /></PopoverContent></Popover>)}/>
+                      {errors.work_experiences?.[index]?.end_date && !currentlyWorking && <p className="text-sm text-destructive">{errors.work_experiences[index]?.end_date?.message}</p>}</div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Controller name={`work_experiences.${index}.currently_working`} control={control} render={({ field }) => (<Checkbox id={`work_exp_current_${index}`} checked={field.value} onCheckedChange={(checked) => { field.onChange(checked); if (checked) { setValue(`work_experiences.${index}.end_date`, null); clearErrors(`work_experiences.${index}.end_date`); } }}/>)}/>
+                    <Label htmlFor={`work_exp_current_${index}`} className="text-sm font-normal">I currently work here</Label></div>
+                  <div><Label htmlFor={`work_experiences.${index}.description`}>Description</Label><Textarea {...register(`work_experiences.${index}.description`)} placeholder="Key responsibilities..." rows={3} className={errors.work_experiences?.[index]?.description ? 'border-destructive' : ''}/>{errors.work_experiences?.[index]?.description && <p className="text-sm text-destructive">{errors.work_experiences[index]?.description?.message}</p>}</div>
+                  <Button type="button" variant="outline" size="sm" onClick={() => removeWork(index)} className="text-destructive hover:bg-destructive/10"><Trash2 className="mr-2 h-3.5 w-3.5" /> Remove</Button>
+                </div>
+              </Card>
+            );
+          })}
+          <Button type="button" variant="outline" onClick={() => appendWork({ id: crypto.randomUUID(), company_name: '', job_title: '', start_date: '', end_date: null, description: '', currently_working: false })}><PlusCircle className="mr-2 h-4 w-4" /> Add Work Experience</Button>
+          <div className="flex gap-2 mt-4">
+            <Button type="button" variant="default" onClick={() => setEditingSection(null)}><Check className="mr-2 h-4 w-4" /> Done</Button>
+            <Button type="button" variant="ghost" onClick={() => handleCancelSectionEdit('work_experiences')}><X className="mr-2 h-4 w-4" /> Cancel</Button>
+          </div>
+        </>
+      );
+    }
+    return (
+      <div className="space-y-3">
+        {currentUser?.work_experiences && currentUser.work_experiences.length > 0 ? (
+          currentUser.work_experiences.map(exp => (
+            <div key={exp.id || exp.company_name} className="p-3 border rounded-md bg-muted/20">
+              <h4 className="font-semibold">{exp.job_title} at {exp.company_name}</h4>
+              <p className="text-sm text-muted-foreground">
+                {exp.start_date ? format(parseISO(exp.start_date), 'MMM yyyy') : 'N/A'} - {exp.currently_working ? 'Present' : (exp.end_date ? format(parseISO(exp.end_date), 'MMM yyyy') : 'N/A')}
+              </p>
+              {exp.description && <p className="text-sm mt-1 whitespace-pre-line">{exp.description}</p>}
+            </div>
+          ))
+        ) : <p className="text-sm text-muted-foreground">No work experience added yet.</p>}
+        <Button type="button" variant="outline" onClick={() => setEditingSection('work_experiences')}><Edit className="mr-2 h-4 w-4" /> Edit Work Experience</Button>
+      </div>
+    );
+  };
+
+  const renderEducations = () => {
+    if (editingSection === 'educations') {
+      return (
+        <>
+          {eduFields.map((item, index) => {
+            const currentlyStudying = watch(`educations.${index}.currently_studying`);
+            return (
+              <Card key={item.id} className="p-4 bg-muted/30 border-dashed mb-4">
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div><Label htmlFor={`educations.${index}.institution`}>Institution</Label><Input {...register(`educations.${index}.institution`)} placeholder="e.g., University of Example" className={errors.educations?.[index]?.institution ? 'border-destructive' : ''}/>{errors.educations?.[index]?.institution && <p className="text-sm text-destructive">{errors.educations[index]?.institution?.message}</p>}</div>
+                    <div><Label htmlFor={`educations.${index}.degree`}>Degree</Label><Input {...register(`educations.${index}.degree`)} placeholder="e.g., B.S. in Computer Science" className={errors.educations?.[index]?.degree ? 'border-destructive' : ''}/>{errors.educations?.[index]?.degree && <p className="text-sm text-destructive">{errors.educations[index]?.degree?.message}</p>}</div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                    <div><Label htmlFor={`educations.${index}.start_year`}>Start Year</Label><Input type="number" {...register(`educations.${index}.start_year`)} placeholder="YYYY" className={`hide-number-spinners ${errors.educations?.[index]?.start_year ? 'border-destructive' : ''}`}/>{errors.educations?.[index]?.start_year && <p className="text-sm text-destructive">{errors.educations[index]?.start_year?.message}</p>}</div>
+                    <div><Label htmlFor={`educations.${index}.end_year`}>End Year</Label><Input type="number" {...register(`educations.${index}.end_year`)} placeholder="YYYY" disabled={currentlyStudying} className={`hide-number-spinners ${errors.educations?.[index]?.end_year && !currentlyStudying ? 'border-destructive' : ''}`}/>{errors.educations?.[index]?.end_year && !currentlyStudying && <p className="text-sm text-destructive">{errors.educations[index]?.end_year?.message}</p>}</div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Controller name={`educations.${index}.currently_studying`} control={control} render={({ field }) => (<Checkbox id={`edu_current_${index}`} checked={field.value} onCheckedChange={(checked) => { field.onChange(checked); if (checked) { setValue(`educations.${index}.end_year`, null); clearErrors(`educations.${index}.end_year`); } }}/>)}/>
+                    <Label htmlFor={`edu_current_${index}`} className="text-sm font-normal">I am currently studying here</Label></div>
+                  <Button type="button" variant="outline" size="sm" onClick={() => removeEdu(index)} className="text-destructive hover:bg-destructive/10"><Trash2 className="mr-2 h-3.5 w-3.5" /> Remove</Button>
+                </div>
+              </Card>
+            );
+          })}
+          <Button type="button" variant="outline" onClick={() => appendEdu({ id: crypto.randomUUID(), institution: '', degree: '', start_year: null, end_year: null, currently_studying: false })}><PlusCircle className="mr-2 h-4 w-4" /> Add Education</Button>
+          <div className="flex gap-2 mt-4">
+            <Button type="button" variant="default" onClick={() => setEditingSection(null)}><Check className="mr-2 h-4 w-4" /> Done</Button>
+            <Button type="button" variant="ghost" onClick={() => handleCancelSectionEdit('educations')}><X className="mr-2 h-4 w-4" /> Cancel</Button>
+          </div>
+        </>
+      );
+    }
+    return (
+      <div className="space-y-3">
+        {currentUser?.educations && currentUser.educations.length > 0 ? (
+          currentUser.educations.map(edu => (
+            <div key={edu.id || edu.institution} className="p-3 border rounded-md bg-muted/20">
+              <h4 className="font-semibold">{edu.degree} from {edu.institution}</h4>
+              <p className="text-sm text-muted-foreground">
+                {edu.start_year || 'N/A'} - {edu.currently_studying ? 'Present' : (edu.end_year || 'N/A')}
+              </p>
+            </div>
+          ))
+        ) : <p className="text-sm text-muted-foreground">No education added yet.</p>}
+        <Button type="button" variant="outline" onClick={() => setEditingSection('educations')}><Edit className="mr-2 h-4 w-4" /> Edit Education</Button>
+      </div>
+    );
+  };
+
+  const renderCertifications = () => {
+    if (editingSection === 'certifications') {
+      return (
+        <>
+          {certFields.map((item, index) => (
+            <Card key={item.id} className="p-4 bg-muted/30 border-dashed mb-4">
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div><Label htmlFor={`certifications.${index}.title`}>Title</Label><Input {...register(`certifications.${index}.title`)} placeholder="e.g., AWS Certified" className={errors.certifications?.[index]?.title ? 'border-destructive' : ''}/>{errors.certifications?.[index]?.title && <p className="text-sm text-destructive">{errors.certifications[index]?.title?.message}</p>}</div>
+                  <div><Label htmlFor={`certifications.${index}.issued_by`}>Issued By</Label><Input {...register(`certifications.${index}.issued_by`)} placeholder="e.g., Amazon Web Services" className={errors.certifications?.[index]?.issued_by ? 'border-destructive' : ''}/>{errors.certifications?.[index]?.issued_by && <p className="text-sm text-destructive">{errors.certifications[index]?.issued_by?.message}</p>}</div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div><Label htmlFor={`certifications.${index}.issue_date`}>Issue Date</Label>
+                    <Controller control={control} name={`certifications.${index}.issue_date`} render={({ field }) => (
+                      <Popover><PopoverTrigger asChild><Button variant={"outline"} className={cn("w-full justify-start text-left font-normal", !field.value && "text-muted-foreground", errors.certifications?.[index]?.issue_date && "border-destructive")}><CalendarIcon className="mr-2 h-4 w-4" />{field.value && isValid(parseISO(field.value)) ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger>
+                        <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined} onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : null)} captionLayout="dropdown-buttons" fromYear={calendarFromYear} toYear={calendarToYear} /></PopoverContent></Popover>)}/>
+                    {errors.certifications?.[index]?.issue_date && <p className="text-sm text-destructive">{errors.certifications[index]?.issue_date?.message}</p>}</div>
+                  <div><Label htmlFor={`certifications.${index}.credential_url`}>Credential URL</Label><Input {...register(`certifications.${index}.credential_url`)} placeholder="https://example.com/credential" className={errors.certifications?.[index]?.credential_url ? 'border-destructive' : ''}/>{errors.certifications?.[index]?.credential_url && <p className="text-sm text-destructive">{errors.certifications[index]?.credential_url?.message}</p>}</div>
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={() => removeCert(index)} className="text-destructive hover:bg-destructive/10"><Trash2 className="mr-2 h-3.5 w-3.5" /> Remove</Button>
+              </div>
+            </Card>
+          ))}
+          <Button type="button" variant="outline" onClick={() => appendCert({id: crypto.randomUUID(), title: '', issued_by: '', issue_date: null, credential_url: '' })}><PlusCircle className="mr-2 h-4 w-4" /> Add Certification</Button>
+          <div className="flex gap-2 mt-4">
+            <Button type="button" variant="default" onClick={() => setEditingSection(null)}><Check className="mr-2 h-4 w-4" /> Done</Button>
+            <Button type="button" variant="ghost" onClick={() => handleCancelSectionEdit('certifications')}><X className="mr-2 h-4 w-4" /> Cancel</Button>
+          </div>
+        </>
+      );
+    }
+    return (
+      <div className="space-y-3">
+        {currentUser?.certifications && currentUser.certifications.length > 0 ? (
+          currentUser.certifications.map(cert => (
+            <div key={cert.id || cert.title} className="p-3 border rounded-md bg-muted/20">
+              <h4 className="font-semibold">{cert.title}</h4>
+              {cert.issued_by && <p className="text-sm text-muted-foreground">Issued by: {cert.issued_by}</p>}
+              {cert.issue_date && <p className="text-sm text-muted-foreground">Issued: {format(parseISO(cert.issue_date), 'MMM yyyy')}</p>}
+              {cert.credential_url && <a href={cert.credential_url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline">View Credential</a>}
+            </div>
+          ))
+        ) : <p className="text-sm text-muted-foreground">No certifications added yet.</p>}
+        <Button type="button" variant="outline" onClick={() => setEditingSection('certifications')}><Edit className="mr-2 h-4 w-4" /> Edit Certifications</Button>
+      </div>
+    );
+  };
+
 
   return (
     <div className="space-y-8">
       <header className="mb-8">
-        <h1 className="text-3xl font-bold font-headline flex items-center">
-          <UserIcon className="mr-3 h-8 w-8 text-primary" />
-          My Profile
-        </h1>
-        <p className="text-muted-foreground">
-          Keep your profile and job preferences up-to-date for the best job matches.
-        </p>
+        <h1 className="text-3xl font-bold font-headline flex items-center"><UserIcon className="mr-3 h-8 w-8 text-primary" />My Profile</h1>
+        <p className="text-muted-foreground">Keep your profile and job preferences up-to-date for the best job matches.</p>
       </header>
 
       <form onSubmit={handleSubmit(onSubmit)}>
-        {/* Personal & Contact Information Section */}
         <Card className="shadow-lg">
-            <CardHeader>
-              <CardTitle className="font-headline text-xl">Personal & Contact Information</CardTitle>
-              <CardDescription>
-                Basic information about you. Your email is used for account identity.
-              </CardDescription>
-            </CardHeader>
+            <CardHeader><CardTitle className="font-headline text-xl">Personal & Contact Information</CardTitle><CardDescription>Basic information about you. Your email is used for account identity.</CardDescription></CardHeader>
             <CardContent className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="username">Full Name</Label>
-                <Input id="username" {...register('username')} placeholder="Your Full Name" className={`${errors.username ? 'border-destructive' : ''} md:max-w-md`} />
-                {errors.username && <p className="text-sm text-destructive">{errors.username.message}</p>}
-              </div>
-
+              <div className="space-y-2 md:max-w-md"><Label htmlFor="username">Full Name</Label><Input id="username" {...register('username')} placeholder="Your Full Name" className={`${errors.username ? 'border-destructive' : ''}`} />{errors.username && <p className="text-sm text-destructive">{errors.username.message}</p>}</div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label htmlFor="email_id">Email Address</Label>
-                  <Input
-                    id="email_id"
-                    type="email"
-                    {...register('email_id')}
-                    placeholder="you@example.com"
-                    className={errors.email_id ? 'border-destructive' : ''}
-                    readOnly
-                  />
-                  {errors.email_id && <p className="text-sm text-destructive">{errors.email_id.message}</p>}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="phone_number">Phone Number</Label>
-                  <div className="relative flex items-center">
-                      <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input id="phone_number" type="tel" {...register('phone_number')} placeholder="(123) 456-7890" className={`pl-10 ${errors.phone_number ? 'border-destructive' : ''}`} />
-                  </div>
-                  <p className="text-xs text-muted-foreground">Optional.</p>
-                  {errors.phone_number && <p className="text-sm text-destructive">{errors.phone_number.message}</p>}
-                </div>
+                <div className="space-y-2"><Label htmlFor="email_id">Email Address</Label><Input id="email_id" type="email" {...register('email_id')} placeholder="you@example.com" className={errors.email_id ? 'border-destructive' : ''} readOnly />{errors.email_id && <p className="text-sm text-destructive">{errors.email_id.message}</p>}</div>
+                <div className="space-y-2"><Label htmlFor="phone_number">Phone Number</Label><div className="relative flex items-center"><Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="phone_number" type="tel" {...register('phone_number')} placeholder="(123) 456-7890" className={`pl-10 ${errors.phone_number ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Optional.</p>{errors.phone_number && <p className="text-sm text-destructive">{errors.phone_number.message}</p>}</div>
               </div>
-
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label htmlFor="preferred_locations">Preferred Locations (comma-separated)</Label>
-                  <div className="relative flex items-center">
-                      <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input id="preferred_locations" {...register('preferred_locations')} placeholder="e.g., New York, Remote, London" className={`pl-10 ${errors.preferred_locations ? 'border-destructive' : ''}`} />
-                  </div>
-                  <p className="text-xs text-muted-foreground">Optional. Enter cities or "Remote".</p>
-                  {errors.preferred_locations && <p className="text-sm text-destructive">{errors.preferred_locations.message}</p>}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="countries">Target Countries (comma-separated)</Label>
-                  <div className="relative flex items-center">
-                      <Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input id="countries" {...register('countries')} placeholder="e.g., US, CA, GB, India" className={`pl-10 ${errors.countries ? 'border-destructive' : ''}`} />
-                  </div>
-                  <p className="text-xs text-muted-foreground">Required. Enter country names or ISO alpha-2 codes. Helps in fetching relevant jobs.</p>
-                  {errors.countries && <p className="text-sm text-destructive">{errors.countries.message}</p>}
-                </div>
+                <div className="space-y-2"><Label htmlFor="preferred_locations">Preferred Locations (comma-separated)</Label><div className="relative flex items-center"><MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="preferred_locations" {...register('preferred_locations')} placeholder="e.g., New York, Remote, London" className={`pl-10 ${errors.preferred_locations ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Optional. Enter cities or "Remote".</p>{errors.preferred_locations && <p className="text-sm text-destructive">{errors.preferred_locations.message}</p>}</div>
+                <div className="space-y-2"><Label htmlFor="countries">Target Countries (comma-separated)</Label><div className="relative flex items-center"><Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="countries" {...register('countries')} placeholder="e.g., US, CA, GB, India" className={`pl-10 ${errors.countries ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Required. Helps in fetching relevant jobs.</p>{errors.countries && <p className="text-sm text-destructive">{errors.countries.message}</p>}</div>
               </div>
             </CardContent>
         </Card>
-
         <Separator className="my-6" />
-        
-        {/* Professional Background Section */}
         <Card className="shadow-lg">
-            <CardHeader>
-              <CardTitle className="font-headline text-xl">Professional Background</CardTitle>
-              <CardDescription>
-                Your experience, skills, and resume summary are crucial for AI matching.
-              </CardDescription>
-            </CardHeader>
+            <CardHeader><CardTitle className="font-headline text-xl">Professional Background</CardTitle><CardDescription>Your experience, skills, and resume summary are crucial for AI matching.</CardDescription></CardHeader>
             <CardContent className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="professional_summary" className="text-base flex items-center"><BookUser className="mr-2 h-5 w-5 text-primary/80"/>Professional Summary</Label>
-                <Textarea
-                  id="professional_summary"
-                  {...register('professional_summary')}
-                  placeholder="A detailed summary of your professional background, achievements, and career goals."
-                  rows={8}
-                  className={errors.professional_summary ? 'border-destructive' : ''}
-                />
-                 <p className="text-xs text-muted-foreground">Optional. Min 50 characters if provided.</p>
-                {errors.professional_summary && <p className="text-sm text-destructive">{errors.professional_summary.message}</p>}
-              </div>
-
+              <div className="space-y-2"><Label htmlFor="professional_summary" className="text-base flex items-center"><BookUser className="mr-2 h-5 w-5 text-primary/80"/>Professional Summary</Label><Textarea id="professional_summary" {...register('professional_summary')} placeholder="A detailed summary..." rows={8} className={errors.professional_summary ? 'border-destructive' : ''} /><p className="text-xs text-muted-foreground">Optional. Min 50 chars if provided.</p>{errors.professional_summary && <p className="text-sm text-destructive">{errors.professional_summary.message}</p>}</div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                      <Label htmlFor="experience">Years of Professional Experience</Label>
-                      <div className="relative flex items-center">
-                          <Briefcase className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                          <Input id="experience" type="number" {...register('experience')} placeholder="e.g., 5" className={`pl-10 ${errors.experience ? 'border-destructive' : ''}`} />
-                      </div>
-                      <p className="text-xs text-muted-foreground">Optional.</p>
-                      {errors.experience && <p className="text-sm text-destructive">{errors.experience.message}</p>}
-                  </div>
-
-                  <div className="space-y-2">
-                      <Label htmlFor="resume-upload">Your Resume</Label>
-                      <Input
-                          id="resume-upload"
-                          type="file"
-                          onChange={handleResumeFileChange}
-                          accept=".pdf,.doc,.docx"
-                          className="mb-1 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
-                          disabled={isUploadingResume || overallSubmitting}
-                      />
-                      <p className="text-xs text-muted-foreground mt-1">Optional. PDF or Word doc, max 5MB.</p>
-                      {selectedResumeFile && !isUploadingResume && (
-                          <p className="text-xs text-muted-foreground mt-1">Selected: {selectedResumeFile.name}. Ready to upload on save.</p>
-                      )}
-                      {currentResumeUrl && !selectedResumeFile && !isUploadingResume && (
-                          <div className="mt-2 mb-2 flex items-center justify-between p-2 border rounded-md bg-muted/50">
-                              <a href={currentResumeUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center truncate">
-                                  <Paperclip className="w-4 h-4 mr-2 shrink-0" />
-                                  <span className="truncate">{currentResumeUrl.split('/').pop()?.split('?')[0].substring(currentResumeUrl.lastIndexOf('_') + 1) || "View Current Resume"}</span>
-                              </a>
-                              <Button type="button" variant="ghost" size="icon" onClick={handleRemoveResume} className="h-7 w-7 text-destructive hover:bg-destructive/10" disabled={overallSubmitting || isUploadingResume}>
-                                  <XCircle className="w-4 h-4" />
-                                  <span className="sr-only">Remove resume</span>
-                              </Button>
-                          </div>
-                      )}
-                      {isUploadingResume && uploadResumeProgress !== null && (
-                          <div className="mt-2">
-                              <Progress value={uploadResumeProgress} className="w-full h-2" />
-                              <p className="text-xs text-muted-foreground text-center mt-1">Uploading: {Math.round(uploadResumeProgress)}%</p>
-                          </div>
-                      )}
-                      {errors.resume && <p className="text-sm text-destructive">{errors.resume.message}</p>}
-                      <input type="hidden" {...register('resume')} />
-                  </div>
+                  <div className="space-y-2"><Label htmlFor="experience">Years of Professional Experience</Label><div className="relative flex items-center"><Briefcase className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="experience" type="number" {...register('experience')} placeholder="e.g., 5" className={`pl-10 ${errors.experience ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Optional.</p>{errors.experience && <p className="text-sm text-destructive">{errors.experience.message}</p>}</div>
+                  <div className="space-y-2"><Label htmlFor="resume-upload">Your Resume</Label><Input id="resume-upload" type="file" onChange={handleResumeFileChange} accept=".pdf,.doc,.docx" className="mb-1 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" disabled={isUploadingResume || overallSubmitting}/><p className="text-xs text-muted-foreground mt-1">Optional. PDF or Word, max 5MB.</p>{selectedResumeFile && !isUploadingResume && (<p className="text-xs text-muted-foreground mt-1">Selected: {selectedResumeFile.name}</p>)}{currentResumeUrl && !selectedResumeFile && !isUploadingResume && (<div className="mt-2 mb-2 flex items-center justify-between p-2 border rounded-md bg-muted/50"><a href={currentResumeUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center truncate"><Paperclip className="w-4 h-4 mr-2 shrink-0" /><span className="truncate">{currentResumeUrl.split('/').pop()?.split('?')[0].substring(currentResumeUrl.lastIndexOf('_') + 1) || "View Current"}</span></a><Button type="button" variant="ghost" size="icon" onClick={handleRemoveResume} className="h-7 w-7 text-destructive hover:bg-destructive/10" disabled={overallSubmitting || isUploadingResume}><XCircle className="w-4 h-4" /></Button></div>)}{isUploadingResume && uploadResumeProgress !== null && (<div className="mt-2"><Progress value={uploadResumeProgress} className="w-full h-2" /><p className="text-xs text-muted-foreground text-center mt-1">Uploading: {Math.round(uploadResumeProgress)}%</p></div>)}{errors.resume && <p className="text-sm text-destructive">{errors.resume.message}</p>}<input type="hidden" {...register('resume')} /></div>
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="skills" className="text-base flex items-center"><ListChecks className="mr-2 h-5 w-5 text-primary/80"/>Key Skills (comma-separated)</Label>
-                <Textarea
-                  id="skills"
-                  {...register('skills')}
-                  placeholder="e.g., React, Node.js, Python, Project Management, UI/UX Design"
-                  rows={3}
-                  className={errors.skills ? 'border-destructive' : ''}
-                />
-                <p className="text-xs text-muted-foreground">Optional. This helps AI find relevant jobs.</p>
-                {errors.skills && <p className="text-sm text-destructive">{errors.skills.message}</p>}
+              <div className="space-y-2"><Label htmlFor="skills" className="text-base flex items-center"><ListChecks className="mr-2 h-5 w-5 text-primary/80"/>Key Skills (comma-separated)</Label><Textarea id="skills" {...register('skills')} placeholder="e.g., React, Node.js, Python" rows={3} className={errors.skills ? 'border-destructive' : ''} /><p className="text-xs text-muted-foreground">Optional. Helps AI find relevant jobs.</p>{errors.skills && <p className="text-sm text-destructive">{errors.skills.message}</p>}</div>
+            </CardContent>
+        </Card>
+        <Separator className="my-6" />
+        <Card className="shadow-lg">
+            <CardHeader><CardTitle className="font-headline text-xl">Job Preferences</CardTitle><CardDescription>Tailor job suggestions to your ideal role.</CardDescription></CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-2"><Label htmlFor="desired_job_role" className="text-base">Ideal Job Role</Label><Textarea id="desired_job_role" {...register('desired_job_role')} placeholder="e.g., Senior Frontend Developer..." rows={5} className={errors.desired_job_role ? 'border-destructive' : ''} /><p className="text-xs text-muted-foreground">Optional. Min 10 chars if provided.</p>{errors.desired_job_role && <p className="text-sm text-destructive">{errors.desired_job_role.message}</p>}</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2"><Label htmlFor="remote_preference">Remote Work Preference</Label><Controller name="remote_preference" control={control} render={({ field }) => (<Select onValueChange={field.onChange} value={field.value ?? undefined} disabled={overallSubmitting}><SelectTrigger className={`relative w-full justify-start pl-10 pr-3 ${errors.remote_preference ? 'border-destructive' : ''}`}><CloudSun className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><SelectValue placeholder="Select preference" /></SelectTrigger><SelectContent>{remotePreferenceOptions.map(option => (<SelectItem key={option} value={option}>{option}</SelectItem>))}</SelectContent></Select>)}/><p className="text-xs text-muted-foreground">Optional.</p>{errors.remote_preference && <p className="text-sm text-destructive">{errors.remote_preference.message}</p>}</div>
+                  <div className="space-y-2"><Label htmlFor="expected_salary">Expected Salary (Numeric)</Label><div className="relative flex items-center"><DollarSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="expected_salary" type="number" {...register('expected_salary')} placeholder="e.g., 120000" className={`pl-10 ${errors.expected_salary ? 'border-destructive' : ''}`} disabled={overallSubmitting}/></div><p className="text-xs text-muted-foreground">Optional. Enter as a number.</p>{errors.expected_salary && <p className="text-sm text-destructive">{errors.expected_salary.message}</p>}</div>
               </div>
             </CardContent>
+        </Card>
+        <Separator className="my-6" />
+
+        <Card className="shadow-lg">
+          <CardHeader><CardTitle className="font-headline text-xl flex items-center"><Building className="mr-2 h-5 w-5 text-primary" />Work Experience</CardTitle><CardDescription>Detail your professional roles.</CardDescription></CardHeader>
+          <CardContent>{renderWorkExperiences()}</CardContent>
+        </Card>
+        <Separator className="my-6" />
+        <Card className="shadow-lg">
+          <CardHeader><CardTitle className="font-headline text-xl flex items-center"><School className="mr-2 h-5 w-5 text-primary" />Education</CardTitle><CardDescription>List your academic qualifications.</CardDescription></CardHeader>
+          <CardContent>{renderEducations()}</CardContent>
+        </Card>
+        <Separator className="my-6" />
+        <Card className="shadow-lg">
+          <CardHeader><CardTitle className="font-headline text-xl flex items-center"><Award className="mr-2 h-5 w-5 text-primary" />Certifications & Licenses</CardTitle><CardDescription>Include professional certifications.</CardDescription></CardHeader>
+          <CardContent>{renderCertifications()}</CardContent>
         </Card>
         
-        <Separator className="my-6" />
-
-        {/* Job Preferences Section */}
-        <Card className="shadow-lg">
-            <CardHeader>
-              <CardTitle className="font-headline text-xl">Job Preferences</CardTitle>
-              <CardDescription>
-                Help us tailor job suggestions to your ideal role and work environment.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="desired_job_role" className="text-base">Ideal Job Role</Label>
-                <Textarea
-                  id="desired_job_role"
-                  {...register('desired_job_role')}
-                  placeholder="e.g., Senior Frontend Developer specializing in e-commerce, interested in mid-size tech companies..."
-                  rows={5}
-                  className={errors.desired_job_role ? 'border-destructive' : ''}
-                />
-                 <p className="text-xs text-muted-foreground">Optional. Min 10 characters if provided.</p>
-                {errors.desired_job_role && <p className="text-sm text-destructive">{errors.desired_job_role.message}</p>}
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                      <Label htmlFor="remote_preference">Remote Work Preference</Label>
-                      <Controller
-                          name="remote_preference"
-                          control={control}
-                          render={({ field }) => {
-                              return (
-                                  <Select
-                                      onValueChange={field.onChange}
-                                      value={field.value ?? undefined}
-                                      disabled={overallSubmitting}
-                                  >
-                                      <SelectTrigger className={`relative w-full justify-start pl-10 pr-3 ${errors.remote_preference ? 'border-destructive' : ''}`}>
-                                          <CloudSun className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                                          <SelectValue placeholder="Select preference" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                          {remotePreferenceOptions.map(option => (
-                                              <SelectItem key={option} value={option}>{option}</SelectItem>
-                                          ))}
-                                      </SelectContent>
-                                  </Select>
-                              );
-                          }}
-                      />
-                      <p className="text-xs text-muted-foreground">Optional.</p>
-                      {errors.remote_preference && <p className="text-sm text-destructive">{errors.remote_preference.message}</p>}
-                  </div>
-                  <div className="space-y-2">
-                      <Label htmlFor="expected_salary">Expected Salary (Numeric)</Label>
-                      <div className="relative flex items-center">
-                          <DollarSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                          <Input id="expected_salary" type="number" {...register('expected_salary')} placeholder="e.g., 120000" className={`pl-10 ${errors.expected_salary ? 'border-destructive' : ''}`} disabled={overallSubmitting}/>
-                      </div>
-                      <p className="text-xs text-muted-foreground">Optional. Enter as a number (e.g., 120000 for $120,000).</p>
-                      {errors.expected_salary && <p className="text-sm text-destructive">{errors.expected_salary.message}</p>}
-                  </div>
-              </div>
-            </CardContent>
-        </Card>
-
-        <Separator className="my-6" />
-
-        {/* Work Experience Section */}
-        <Card className="shadow-lg">
-          <CardHeader>
-            <CardTitle className="font-headline text-xl flex items-center"><Building className="mr-2 h-5 w-5 text-primary" />Work Experience</CardTitle>
-            <CardDescription>Detail your professional roles and responsibilities.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {workFields.map((item, index) => {
-              const currentlyWorking = watch(`work_experiences.${index}.currently_working`);
-              return (
-                <Card key={item.id} className="p-4 bg-muted/30 border-dashed">
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor={`work_experiences.${index}.company_name`}>Company Name</Label>
-                        <Input {...register(`work_experiences.${index}.company_name`)} placeholder="e.g., Acme Corp" className={errors.work_experiences?.[index]?.company_name ? 'border-destructive' : ''}/>
-                        {errors.work_experiences?.[index]?.company_name && <p className="text-sm text-destructive">{errors.work_experiences[index]?.company_name?.message}</p>}
-                      </div>
-                      <div>
-                        <Label htmlFor={`work_experiences.${index}.job_title`}>Job Title</Label>
-                        <Input {...register(`work_experiences.${index}.job_title`)} placeholder="e.g., Software Engineer" className={errors.work_experiences?.[index]?.job_title ? 'border-destructive' : ''}/>
-                        {errors.work_experiences?.[index]?.job_title && <p className="text-sm text-destructive">{errors.work_experiences[index]?.job_title?.message}</p>}
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
-                      <div>
-                        <Label htmlFor={`work_experiences.${index}.start_date`}>Start Date</Label>
-                        <Controller
-                          control={control}
-                          name={`work_experiences.${index}.start_date`}
-                          render={({ field }) => (
-                            <Popover>
-                              <PopoverTrigger asChild>
-                                <Button
-                                  variant={"outline"}
-                                  className={cn(
-                                    "w-full justify-start text-left font-normal",
-                                    !field.value && "text-muted-foreground",
-                                    errors.work_experiences?.[index]?.start_date && "border-destructive"
-                                  )}
-                                >
-                                  <CalendarIcon className="mr-2 h-4 w-4" />
-                                  {field.value && isValid(parseISO(field.value)) ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}
-                                </Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-auto p-0">
-                                <Calendar
-                                  mode="single"
-                                  selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined}
-                                  onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : "")} // Empty string for required validation
-                                  initialFocus
-                                />
-                              </PopoverContent>
-                            </Popover>
-                          )}
-                        />
-                        {errors.work_experiences?.[index]?.start_date && <p className="text-sm text-destructive">{errors.work_experiences[index]?.start_date?.message}</p>}
-                      </div>
-                      <div>
-                        <Label htmlFor={`work_experiences.${index}.end_date`}>End Date</Label>
-                         <Controller
-                          control={control}
-                          name={`work_experiences.${index}.end_date`}
-                          render={({ field }) => (
-                            <Popover>
-                              <PopoverTrigger asChild>
-                                <Button
-                                  variant={"outline"}
-                                  disabled={currentlyWorking}
-                                  className={cn(
-                                    "w-full justify-start text-left font-normal",
-                                    !field.value && !currentlyWorking && "text-muted-foreground",
-                                    errors.work_experiences?.[index]?.end_date && !currentlyWorking && "border-destructive"
-                                  )}
-                                >
-                                  <CalendarIcon className="mr-2 h-4 w-4" />
-                                  {field.value && !currentlyWorking && isValid(parseISO(field.value)) ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}
-                                </Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-auto p-0">
-                                <Calendar
-                                  mode="single"
-                                  selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined}
-                                  onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : null)} // null for optional
-                                />
-                              </PopoverContent>
-                            </Popover>
-                          )}
-                        />
-                        {errors.work_experiences?.[index]?.end_date && !currentlyWorking && <p className="text-sm text-destructive">{errors.work_experiences[index]?.end_date?.message}</p>}
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Controller
-                        name={`work_experiences.${index}.currently_working`}
-                        control={control}
-                        render={({ field }) => (
-                          <Checkbox
-                            id={`work_experiences.${index}.currently_working_checkbox`}
-                            checked={field.value}
-                            onCheckedChange={(checked) => {
-                              field.onChange(checked);
-                              if (checked) {
-                                setValue(`work_experiences.${index}.end_date`, null);
-                                clearErrors(`work_experiences.${index}.end_date`);
-                              }
-                            }}
-                          />
-                        )}
-                      />
-                      <Label htmlFor={`work_experiences.${index}.currently_working_checkbox`} className="text-sm font-normal">I currently work here</Label>
-                    </div>
-                    <div>
-                      <Label htmlFor={`work_experiences.${index}.description`}>Description</Label>
-                      <Textarea {...register(`work_experiences.${index}.description`)} placeholder="Key responsibilities and achievements..." rows={3} className={errors.work_experiences?.[index]?.description ? 'border-destructive' : ''}/>
-                       <p className="text-xs text-muted-foreground">Optional.</p>
-                      {errors.work_experiences?.[index]?.description && <p className="text-sm text-destructive">{errors.work_experiences[index]?.description?.message}</p>}
-                    </div>
-                    <Button type="button" variant="outline" size="sm" onClick={() => removeWork(index)} className="text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/50">
-                      <Trash2 className="mr-2 h-3.5 w-3.5" /> Remove Experience
-                    </Button>
-                  </div>
-                </Card>
-              );
-            })}
-            <Button type="button" variant="outline" onClick={() => appendWork({ id: crypto.randomUUID(), company_name: '', job_title: '', start_date: '', end_date: null, description: '', currently_working: false })}>
-              <PlusCircle className="mr-2 h-4 w-4" /> Add Work Experience
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Separator className="my-6" />
-
-        {/* Education Section */}
-        <Card className="shadow-lg">
-          <CardHeader>
-            <CardTitle className="font-headline text-xl flex items-center"><School className="mr-2 h-5 w-5 text-primary" />Education</CardTitle>
-            <CardDescription>List your academic qualifications.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {eduFields.map((item, index) => {
-              const currentlyStudying = watch(`educations.${index}.currently_studying`);
-              return (
-                <Card key={item.id} className="p-4 bg-muted/30 border-dashed">
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor={`educations.${index}.institution`}>Institution</Label>
-                        <Input {...register(`educations.${index}.institution`)} placeholder="e.g., University of Example" className={errors.educations?.[index]?.institution ? 'border-destructive' : ''}/>
-                         {errors.educations?.[index]?.institution && <p className="text-sm text-destructive">{errors.educations[index]?.institution?.message}</p>}
-                      </div>
-                      <div>
-                        <Label htmlFor={`educations.${index}.degree`}>Degree</Label>
-                        <Input {...register(`educations.${index}.degree`)} placeholder="e.g., B.S. in Computer Science" className={errors.educations?.[index]?.degree ? 'border-destructive' : ''}/>
-                         {errors.educations?.[index]?.degree && <p className="text-sm text-destructive">{errors.educations[index]?.degree?.message}</p>}
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
-                       <div>
-                        <Label htmlFor={`educations.${index}.start_year`}>Start Year</Label>
-                        <Input type="number" {...register(`educations.${index}.start_year`)} placeholder="YYYY" className={`hide-number-spinners ${errors.educations?.[index]?.start_year ? 'border-destructive' : ''}`}/>
-                         <p className="text-xs text-muted-foreground">Optional.</p>
-                         {errors.educations?.[index]?.start_year && <p className="text-sm text-destructive">{errors.educations[index]?.start_year?.message}</p>}
-                      </div>
-                       <div>
-                          <Label htmlFor={`educations.${index}.end_year`}>End Year</Label>
-                          <Input type="number" {...register(`educations.${index}.end_year`)} placeholder="YYYY" disabled={currentlyStudying} className={`hide-number-spinners ${errors.educations?.[index]?.end_year && !currentlyStudying ? 'border-destructive' : ''}`}/>
-                           <p className="text-xs text-muted-foreground">Optional, unless not currently studying.</p>
-                           {errors.educations?.[index]?.end_year && !currentlyStudying && <p className="text-sm text-destructive">{errors.educations[index]?.end_year?.message}</p>}
-                       </div>
-                     </div>
-                     <div className="flex items-center space-x-2">
-                        <Controller
-                          name={`educations.${index}.currently_studying`}
-                          control={control}
-                          render={({ field }) => (
-                            <Checkbox
-                              id={`educations.${index}.currently_studying_checkbox`}
-                              checked={field.value}
-                              onCheckedChange={(checked) => {
-                                field.onChange(checked);
-                                if (checked) {
-                                  setValue(`educations.${index}.end_year`, null);
-                                  clearErrors(`educations.${index}.end_year`);
-                                }
-                              }}
-                            />
-                          )}
-                        />
-                        <Label htmlFor={`educations.${index}.currently_studying_checkbox`} className="text-sm font-normal">I am currently studying here</Label>
-                      </div>
-                    <Button type="button" variant="outline" size="sm" onClick={() => removeEdu(index)} className="text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/50">
-                      <Trash2 className="mr-2 h-3.5 w-3.5" /> Remove Education
-                    </Button>
-                  </div>
-                </Card>
-              );
-            })}
-            <Button type="button" variant="outline" onClick={() => appendEdu({ id: crypto.randomUUID(), institution: '', degree: '', start_year: null, end_year: null, currently_studying: false })}>
-              <PlusCircle className="mr-2 h-4 w-4" /> Add Education
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Separator className="my-6" />
-
-        {/* Certifications Section */}
-        <Card className="shadow-lg">
-          <CardHeader>
-            <CardTitle className="font-headline text-xl flex items-center"><Award className="mr-2 h-5 w-5 text-primary" />Certifications &amp; Licenses</CardTitle>
-            <CardDescription>Include your professional certifications and licenses.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {certFields.map((item, index) => (
-              <Card key={item.id} className="p-4 bg-muted/30 border-dashed">
-                <div className="space-y-3">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor={`certifications.${index}.title`}>Title</Label>
-                      <Input {...register(`certifications.${index}.title`)} placeholder="e.g., AWS Certified Solutions Architect" className={errors.certifications?.[index]?.title ? 'border-destructive' : ''}/>
-                       {errors.certifications?.[index]?.title && <p className="text-sm text-destructive">{errors.certifications[index]?.title?.message}</p>}
-                    </div>
-                    <div>
-                      <Label htmlFor={`certifications.${index}.issued_by`}>Issued By</Label>
-                      <Input {...register(`certifications.${index}.issued_by`)} placeholder="e.g., Amazon Web Services" className={errors.certifications?.[index]?.issued_by ? 'border-destructive' : ''}/>
-                      <p className="text-xs text-muted-foreground">Optional.</p>
-                      {errors.certifications?.[index]?.issued_by && <p className="text-sm text-destructive">{errors.certifications[index]?.issued_by?.message}</p>}
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor={`certifications.${index}.issue_date`}>Issue Date</Label>
-                      <Controller
-                          control={control}
-                          name={`certifications.${index}.issue_date`}
-                          render={({ field }) => (
-                            <Popover>
-                              <PopoverTrigger asChild>
-                                <Button
-                                  variant={"outline"}
-                                  className={cn(
-                                    "w-full justify-start text-left font-normal",
-                                    !field.value && "text-muted-foreground",
-                                     errors.certifications?.[index]?.issue_date && "border-destructive"
-                                  )}
-                                >
-                                  <CalendarIcon className="mr-2 h-4 w-4" />
-                                  {field.value && isValid(parseISO(field.value)) ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}
-                                </Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-auto p-0">
-                                <Calendar
-                                  mode="single"
-                                  selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined}
-                                  onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : null)}
-                                  initialFocus
-                                />
-                              </PopoverContent>
-                            </Popover>
-                          )}
-                        />
-                      <p className="text-xs text-muted-foreground">Optional.</p>
-                      {errors.certifications?.[index]?.issue_date && <p className="text-sm text-destructive">{errors.certifications[index]?.issue_date?.message}</p>}
-                    </div>
-                    <div>
-                        <Label htmlFor={`certifications.${index}.credential_url`}>Credential URL</Label>
-                        <Input {...register(`certifications.${index}.credential_url`)} placeholder="https://example.com/credential" className={errors.certifications?.[index]?.credential_url ? 'border-destructive' : ''}/>
-                        <p className="text-xs text-muted-foreground">Optional.</p>
-                        {errors.certifications?.[index]?.credential_url && <p className="text-sm text-destructive">{errors.certifications[index]?.credential_url?.message}</p>}
-                    </div>
-                   </div>
-                  <Button type="button" variant="outline" size="sm" onClick={() => removeCert(index)} className="text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/50">
-                     <Trash2 className="mr-2 h-3.5 w-3.5" /> Remove Certification
-                  </Button>
-                </div>
-              </Card>
-            ))}
-            <Button type="button" variant="outline" onClick={() => appendCert({id: crypto.randomUUID(), title: '', issued_by: '', issue_date: null, credential_url: '' })}>
-              <PlusCircle className="mr-2 h-4 w-4" /> Add Certification
-            </Button>
-          </CardContent>
-        </Card>
-
         <div className="mt-8 flex justify-start">
-            <Button type="submit" disabled={overallSubmitting} size="lg" className="shadow-md hover:shadow-lg transition-shadow">
+            <Button type="submit" disabled={overallSubmitting || !!editingSection} size="lg" className="shadow-md hover:shadow-lg transition-shadow">
                 {isUploadingResume ? <UploadCloud className="mr-2 h-4 w-4 animate-pulse" /> : (isFormSubmitting ? <LoadingSpinner size={16} className="mr-2" /> : null)}
                 {isUploadingResume ? 'Uploading Resume...' : (isFormSubmitting ? 'Saving Profile...' : 'Save Profile')}
                 {!overallSubmitting && <Edit3 className="ml-2 h-4 w-4" />}
             </Button>
         </div>
+        {editingSection && <p className="text-sm text-destructive mt-2">Please click "Done" or "Cancel" in the section you are currently editing before saving the entire profile.</p>}
       </form>
 
       <Separator className="my-10" />
-
       <Card className="shadow-lg">
-        <CardHeader>
-          <CardTitle className="font-headline text-xl flex items-center">
-            <Wand2 className="mr-2 h-6 w-6 text-primary" /> Global AI Document Tools
-          </CardTitle>
-          <CardDescription>
-            Generate general application materials based on your saved profile or for any job description. (Functionality to be connected to backend API)
-          </CardDescription>
-        </CardHeader>
+        <CardHeader><CardTitle className="font-headline text-xl flex items-center"><Wand2 className="mr-2 h-6 w-6 text-primary" /> Global AI Document Tools</CardTitle><CardDescription>Generate general application materials. (Functionality to be connected)</CardDescription></CardHeader>
         <CardContent className="space-y-4 sm:space-y-0 sm:flex sm:gap-4">
-          <Button onClick={handleGenerateGeneralResume} variant="outline" size="lg" className="w-full sm:w-auto" disabled>
-            <FileText className="mr-2 h-5 w-5" /> Generate General Resume
-          </Button>
-          <Button onClick={handleGenerateCustomCoverLetter} variant="outline" size="lg" className="w-full sm:w-auto" disabled>
-            <FileText className="mr-2 h-5 w-5" /> Generate Cover Letter for any JD
-          </Button>
+          <Button onClick={() => toast({ title: "Coming Soon!"})} variant="outline" size="lg" className="w-full sm:w-auto" disabled><FileText className="mr-2 h-5 w-5" /> Generate General Resume</Button>
+          <Button onClick={() => toast({ title: "Coming Soon!"})} variant="outline" size="lg" className="w-full sm:w-auto" disabled><FileText className="mr-2 h-5 w-5" /> Generate Cover Letter for any JD</Button>
         </CardContent>
-         <CardFooter className="text-xs text-muted-foreground pt-4">
-          These tools will use your saved profile information. Ensure your profile is up-to-date for best results.
-        </CardFooter>
       </Card>
-
-      {currentUser && (
-        <>
-            <Separator className="my-10" />
-            <Card className="shadow-lg">
-                <CardHeader>
-                    <CardTitle className="font-headline text-xl flex items-center">
-                        <MessageSquare className="mr-2 h-6 w-6 text-primary" /> Site Feedback
-                    </CardTitle>
-                    <CardDescription>
-                        Encountered an issue or have a suggestion for the profile page or the site in general?
-                    </CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <FeedbackDialog
-                        source="profile-page"
-                        triggerButton={
-                            <Button variant="outline" size="lg">
-                                <MessageSquare className="mr-2 h-5 w-5" /> Share Your Feedback
-                            </Button>
-                        }
-                    />
-                </CardContent>
-                 <CardFooter className="text-xs text-muted-foreground pt-4">
-                    Your feedback helps us improve the platform.
-                </CardFooter>
-            </Card>
-        </>
-      )}
-
-
+      {currentUser && (<><Separator className="my-10" /><Card className="shadow-lg"><CardHeader><CardTitle className="font-headline text-xl flex items-center"><MessageSquare className="mr-2 h-6 w-6 text-primary" /> Site Feedback</CardTitle><CardDescription>Encountered an issue or have a suggestion?</CardDescription></CardHeader><CardContent><FeedbackDialog source="profile-page" triggerButton={<Button variant="outline" size="lg"><MessageSquare className="mr-2 h-5 w-5" /> Share Your Feedback</Button>} /></CardContent></Card></>)}
       <Separator className="my-10" />
-
       <Card className="shadow-lg border-destructive">
-        <CardHeader>
-          <CardTitle className="font-headline text-xl flex items-center text-destructive">
-            <AlertTriangle className="mr-2 h-6 w-6" /> Danger Zone
-          </CardTitle>
-          <CardDescription>
-            Proceed with caution. These actions are irreversible.
-          </CardDescription>
-        </CardHeader>
+        <CardHeader><CardTitle className="font-headline text-xl flex items-center text-destructive"><AlertTriangle className="mr-2 h-6 w-6" /> Danger Zone</CardTitle><CardDescription>Proceed with caution. These actions are irreversible.</CardDescription></CardHeader>
         <CardContent>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="destructive" className="w-full sm:w-auto">
-                <Trash2 className="mr-2 h-4 w-4" /> Delete Account
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle className="flex items-center">
-                   <AlertTriangle className="mr-2 h-5 w-5 text-destructive" /> Are you absolutely sure?
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                  This action cannot be undone. This will permanently delete your account from our backend, Firebase Authentication, and attempt to remove your uploaded resume from Firebase Storage.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleDeleteAccountConfirm} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
-                  Yes, delete account
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          <AlertDialog><AlertDialogTrigger asChild><Button variant="destructive" className="w-full sm:w-auto"><Trash2 className="mr-2 h-4 w-4" /> Delete Account</Button></AlertDialogTrigger>
+            <AlertDialogContent><AlertDialogHeader><AlertDialogTitle className="flex items-center"><AlertTriangle className="mr-2 h-5 w-5 text-destructive" /> Are you absolutely sure?</AlertDialogTitle><AlertDialogDescription>This will permanently delete your account and all associated data.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={async () => { if (!backendUserId || !firebaseUser) { toast({ title: "Error", variant: "destructive" }); return; } setIsLoggingOut(true); try { if (currentUser?.resume) { try { await deleteObject(storageRef(storage, currentUser.resume)); } catch (storageError: any) { if (storageError.code !== 'storage/object-not-found') console.warn("Could not delete resume:", storageError); } } await apiClient.delete<UserModifyResponse>(`/users/${backendUserId}`); await deleteFirebaseUser(firebaseUser); toast({ title: "Account Deleted"}); } catch (error) { toast({ title: "Deletion Failed", description: getErrorMessage(error), variant: "destructive" }); setIsLoggingOut(false); } }} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">Yes, delete account</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
         </CardContent>
-        <CardFooter className="text-xs text-muted-foreground pt-4">
-          Deleting your account will remove all your saved information and uploaded files.
-        </CardFooter>
       </Card>
-
     </div>
   );
 }
+
+    
