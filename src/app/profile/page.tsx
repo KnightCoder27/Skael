@@ -60,14 +60,15 @@ const workExperienceSchema = z.object({
   description: z.string().max(1000, "Description max 1000 chars.").optional().nullable().transform(val => (val === "" || val === undefined) ? null : val),
   currently_working: z.boolean().optional(),
 });
-// .refine(data => { // Temporarily commented out for debugging
+// Temporarily commented out for debugging
+// .refine(data => { 
 //     if (data.currently_working) return true;
 //     if (!data.end_date) return false; // If not currently working, end_date is required
 //     try {
-//       if (!data.start_date || !isValid(parseISO(data.start_date))) return true; // Let individual field validation catch this
-//       if (!data.end_date || !isValid(parseISO(data.end_date))) return true; // Let individual field validation catch this
+//       if (!data.start_date || !isValid(parseISO(data.start_date))) return true; 
+//       if (!data.end_date || !isValid(parseISO(data.end_date))) return true;
 //       return parseISO(data.end_date) >= parseISO(data.start_date);
-//     } catch (e) { return true; } // Let Zod handle format errors
+//     } catch (e) { return true; } 
 //   }, { message: "End date must be after start date.", path: ["end_date"] });
 
 
@@ -79,7 +80,8 @@ const educationSchema = z.object({
   end_year: educationYearSchema,
   currently_studying: z.boolean().optional(),
 });
-// .refine(data => { // Temporarily commented out for debugging
+// Temporarily commented out for debugging
+// .refine(data => { 
 //   if (data.currently_studying) return true;
 //   if (data.start_year && data.end_year) {
 //     return data.end_year >= data.start_year;
@@ -132,13 +134,11 @@ const changePasswordSchema = z.object({
 });
 type ChangePasswordFormValues = z.infer<typeof changePasswordSchema>;
 
-
-// Schemas for sectional payload validation
 const personalContactSectionPayloadSchema = z.object({
   username: profileSchema.shape.username.optional(),
   number: profileSchema.shape.phone_number.optional(),
   preferred_locations: profileSchema.shape.preferred_locations.optional(),
-  country: profileSchema.shape.countries, // This must be the string version for backend
+  country: profileSchema.shape.countries,
 });
 
 const professionalBackgroundSectionPayloadSchema = z.object({
@@ -158,10 +158,10 @@ const jobPreferencesSectionPayloadSchema = z.object({
 
 const workExperiencesSectionPayloadSchema = z.object({
   work_experiences: z.array(
-    workExperienceSchema.omit({ id: true, currently_working: true }) // Omit frontend 'id' and 'currently_working'
+    workExperienceSchema.omit({ id: true, currently_working: true }) 
       .extend({
-        start_date: z.string().min(1, "Start date is required.").regex(dateRegex, dateErrorMessage), // Dates are strings
-        end_date: z.string().regex(dateRegex, dateErrorMessage).nullable(), // Dates are strings or null
+        start_date: z.string().min(1, "Start date is required.").regex(dateRegex, dateErrorMessage),
+        end_date: z.string().regex(dateRegex, dateErrorMessage).nullable(),
       })
   ).optional().nullable(),
   country: profileSchema.shape.countries,
@@ -169,10 +169,10 @@ const workExperiencesSectionPayloadSchema = z.object({
 
 const educationsSectionPayloadSchema = z.object({
   educations: z.array(
-    educationSchema.omit({ id: true, currently_studying: true }) // Omit frontend 'id' and 'currently_studying'
+    educationSchema.omit({ id: true, currently_studying: true })
      .extend({
-        start_year: educationYearSchema.nullable(), // Years are numbers or null
-        end_year: educationYearSchema.nullable(), // Years are numbers or null
+        start_year: educationYearSchema.nullable(),
+        end_year: educationYearSchema.nullable(),
       })
   ).optional().nullable(),
   country: profileSchema.shape.countries,
@@ -180,9 +180,9 @@ const educationsSectionPayloadSchema = z.object({
 
 const certificationsSectionPayloadSchema = z.object({
   certifications: z.array(
-    certificationSchema.omit({ id: true }) // Omit frontend 'id'
+    certificationSchema.omit({ id: true })
     .extend({
-      issue_date: z.string().regex(dateRegex, dateErrorMessage).nullable(), // Date is string or null
+      issue_date: z.string().regex(dateRegex, dateErrorMessage).nullable(),
     })
   ).optional().nullable(),
   country: profileSchema.shape.countries,
@@ -339,7 +339,7 @@ export default function ProfilePage() {
     let formCountries = '';
     if (user?.countries && Array.isArray(user.countries)) {
         formCountries = user.countries.join(', ');
-    } else if (user && typeof (user as any).country === 'string') { // Handle singular 'country' if backend sends it
+    } else if (user && typeof (user as any).country === 'string') {
         formCountries = (user as any).country;
     }
     
@@ -411,7 +411,7 @@ export default function ProfilePage() {
 
       const payload: Partial<UserUpdateAPI> = {
         resume: null,
-        country: getValues().countries, // Always pass country
+        country: getValues().countries, 
       };
       await apiClient.put(`/users/${backendUserId}`, payload);
       setValue('resume', null, { shouldValidate: true, shouldDirty: true });
@@ -461,10 +461,10 @@ export default function ProfilePage() {
           replaceCert(freshFormValues.certifications || []);
           break;
         case 'password':
-          changePasswordForm.reset(); // Reset password form specifically
+          changePasswordForm.reset(); 
           break;
       }
-      clearErrors(); // Clear main form errors
+      clearErrors(); 
       if (sectionName !== 'password') form.clearErrors();
       setEditingSection(sectionName);
     }
@@ -525,7 +525,6 @@ export default function ProfilePage() {
     setIsSubmittingSection(sectionKey);
 
     const currentFormValues = getValues();
-    // Ensure 'countries' (string from form) is always passed as 'country' (string to backend)
     const countriesString = currentFormValues.countries || currentUser?.countries?.join(', ') || '';
     if (!countriesString) {
        toast({ title: "Missing Country", description: "Target countries are required to save any section.", variant: "destructive" });
@@ -567,9 +566,9 @@ export default function ProfilePage() {
     try {
       const response = await apiClient.put<UserModifyResponse>(`/users/${backendUserId}`, validationResult.data);
       if (response.data.messages?.toLowerCase() === 'success') {
-        await refetchBackendUser(); // This will re-trigger the useEffect to reset the form with new currentUser
+        await refetchBackendUser(); 
         setEditingSection(null);
-        clearErrors(); // Clear any lingering specific field errors
+        clearErrors(); 
         toast({ title: `${sectionKey?.replace(/_/g, ' ')} Updated Successfully` });
       } else {
         throw new Error(response.data.messages || `Backend issue during ${sectionKey} update.`);
@@ -611,7 +610,9 @@ export default function ProfilePage() {
           <div className="flex gap-2 mt-6">
             <Button type="button" variant="default" onClick={onSave} disabled={isSubmittingSection === sectionKey || overallSubmitting || (isPasswordSection && changePasswordForm.formState.isSubmitting) }>
              {(isSubmittingSection === sectionKey || (isPasswordSection && changePasswordForm.formState.isSubmitting)) ? <LoadingSpinner size={16} className="mr-2" /> : <Save className="mr-2 h-4 w-4" />}
-              {(isSubmittingSection === sectionKey || (isPasswordSection && changePasswordForm.formState.isSubmitting)) ? 'Saving...' : 'Save Section'}
+              {(isSubmittingSection === sectionKey || (isPasswordSection && changePasswordForm.formState.isSubmitting)) 
+                ? (isPasswordSection ? 'Updating Password...' : 'Saving...') 
+                : (isPasswordSection ? 'Update Password' : 'Save Section')}
             </Button>
             <Button type="button" variant="ghost" onClick={() => handleCancelSectionEdit(sectionKey)} disabled={isSubmittingSection === sectionKey || overallSubmitting || (isPasswordSection && changePasswordForm.formState.isSubmitting)}><X className="mr-2 h-4 w-4" /> Cancel</Button>
           </div>
@@ -647,7 +648,6 @@ export default function ProfilePage() {
       username: values.username,
       number: values.phone_number || null,
       preferred_locations: values.preferred_locations || undefined,
-      // 'country' will be added by handleSaveSection
     }), personalContactSectionPayloadSchema);
   };
 
@@ -688,7 +688,6 @@ export default function ProfilePage() {
       experience: values.experience ?? null,
       skills: values.skills || undefined,
       resume: newResumeUrlFromUpload !== undefined ? newResumeUrlFromUpload : values.resume,
-      // 'country' will be added by handleSaveSection
     }), professionalBackgroundSectionPayloadSchema);
     if (uploadSucceeded && newResumeUrlFromUpload) setSelectedResumeFile(null);
   };
@@ -698,7 +697,6 @@ export default function ProfilePage() {
       desired_job_role: values.desired_job_role || null,
       remote_preference: values.remote_preference || null,
       expected_salary: values.expected_salary ?? null,
-      // 'country' will be added by handleSaveSection
     }), jobPreferencesSectionPayloadSchema);
   };
 
@@ -711,7 +709,6 @@ export default function ProfilePage() {
         end_date: currently_working ? null : (rest.end_date || null),
         description: rest.description || null,
       })) || [],
-      // 'country' will be added by handleSaveSection
     }), workExperiencesSectionPayloadSchema);
   };
 
@@ -723,7 +720,6 @@ export default function ProfilePage() {
         start_year: rest.start_year ?? null,
         end_year: currently_studying ? null : (rest.end_year ?? null),
       })) || [],
-      // 'country' will be added by handleSaveSection
     }), educationsSectionPayloadSchema);
   };
 
@@ -735,7 +731,6 @@ export default function ProfilePage() {
         issue_date: rest.issue_date || null,
         credential_url: rest.credential_url || null,
       })) || [],
-      // 'country' will be added by handleSaveSection
     }), certificationsSectionPayloadSchema);
   };
 
@@ -1052,7 +1047,6 @@ export default function ProfilePage() {
           </div>
           {changePasswordForm.formState.errors.confirmPassword && <p className="text-sm text-destructive">{changePasswordForm.formState.errors.confirmPassword.message}</p>}
         </div>
-        {/* Save/Cancel buttons are rendered by SectionCard */}
       </form>
     );
     return (
@@ -1112,3 +1106,4 @@ export default function ProfilePage() {
     </div>
   );
 }
+
