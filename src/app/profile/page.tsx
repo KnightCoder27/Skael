@@ -20,7 +20,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
-import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon, MessageSquare, UploadCloud, Paperclip, XCircle, GraduationCap, Award, PlusCircle, Building, School, ScrollText, CalendarIcon, Edit, Check, X, Save } from 'lucide-react';
+import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon, MessageSquare, UploadCloud, Paperclip, XCircle, GraduationCap, Award, PlusCircle, Building, School, ScrollText, CalendarIcon, Edit, Check, X, Save, Mail, Target } from 'lucide-react';
 import { FullPageLoading, LoadingSpinner } from '@/components/app/loading-spinner';
 import apiClient from '@/lib/apiClient';
 import { auth as firebaseAuth, storage } from '@/lib/firebase';
@@ -60,7 +60,7 @@ const workExperienceSchema = z.object({
   description: z.string().max(1000, "Description max 1000 chars.").optional().nullable().transform(val => (val === "" || val === undefined) ? null : val),
   currently_working: z.boolean().optional(),
 });
-// .refine(data => !data.end_date || !data.start_date || isValid(parseISO(data.start_date)) && isValid(parseISO(data.end_date)) && parseISO(data.end_date) >= parseISO(data.start_date), { message: "End date cannot be before start date.", path: ["end_date"], })
+// .refine(data => !data.end_date || !data.start_date || !isValid(parseISO(data.start_date)) || !isValid(parseISO(data.end_date)) || parseISO(data.end_date) >= parseISO(data.start_date), { message: "End date cannot be before start date.", path: ["end_date"], });
 
 
 const educationSchema = z.object({
@@ -109,7 +109,7 @@ const personalContactSectionPayloadSchema = z.object({
   username: profileSchema.shape.username.optional(),
   number: profileSchema.shape.phone_number,
   preferred_locations: profileSchema.shape.preferred_locations,
-  country: profileSchema.shape.countries,
+  country: profileSchema.shape.countries, // Backend expects 'country' as string
 });
 
 const professionalBackgroundSectionPayloadSchema = z.object({
@@ -132,7 +132,7 @@ const workExperiencesSectionPayloadSchema = z.object({
     workExperienceSchema.omit({ id: true, currently_working: true })
       .extend({
         start_date: z.string().min(1, "Start date is required.").regex(dateRegex, dateErrorMessage),
-        end_date: z.string().regex(dateRegex, dateErrorMessage).nullable(), // Make explicitly nullable for backend
+        end_date: z.string().regex(dateRegex, dateErrorMessage).nullable(),
       })
   ).optional().nullable(),
   country: profileSchema.shape.countries,
@@ -153,7 +153,7 @@ const certificationsSectionPayloadSchema = z.object({
   certifications: z.array(
     certificationSchema.omit({ id: true })
     .extend({
-      issue_date: z.string().regex(dateRegex, dateErrorMessage).nullable(), // Make explicitly nullable
+      issue_date: z.string().regex(dateRegex, dateErrorMessage).nullable(),
     })
   ).optional().nullable(),
   country: profileSchema.shape.countries,
@@ -180,7 +180,6 @@ const currentYear = new Date().getFullYear();
 const calendarFromYear = currentYear - 100;
 const calendarToYear = currentYear + 10;
 
-// New helper to parse incoming dates (possibly "DD-MM-YYYY") to "YYYY-MM-DD"
 const mapIncomingDateToFormValue = (dateStr: string | undefined | null): string | null => {
   if (!dateStr || typeof dateStr !== 'string' || dateStr.trim() === '') return null;
 
@@ -189,29 +188,24 @@ const mapIncomingDateToFormValue = (dateStr: string | undefined | null): string 
     const parts = dateStr.split('-');
     if (parts.length === 3) {
       const [day, month, year] = parts;
-      // Ensure day, month, year are reasonable before forming ISO string
       const d = parseInt(day, 10);
       const m = parseInt(month, 10);
       const y = parseInt(year, 10);
       if (d > 0 && d <= 31 && m > 0 && m <= 12 && y > 1800 && y < 2200) {
         const isoAttempt = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
         if (isValid(parseISO(isoAttempt))) {
-          return isoAttempt; // Successfully converted to YYYY-MM-DD
+          return isoAttempt;
         }
       }
     }
   }
-
   // Attempt 2: Check if it's already YYYY-MM-DD (or close enough for parseISO)
-  // parseISO is quite flexible with YYYY-MM-DD variations
   try {
     const parsed = parseISO(dateStr);
     if (isValid(parsed)) {
-      return format(parsed, 'yyyy-MM-dd'); // Normalize to strict YYYY-MM-DD
+      return format(parsed, 'yyyy-MM-dd');
     }
-  } catch (e) {
-    // Ignore parsing errors here, proceed to warn
-  }
+  } catch (e) { /* Ignore parsing errors here */ }
   
   console.warn(`mapIncomingDateToFormValue: Could not parse date "${dateStr}" into YYYY-MM-DD format. Returning null.`);
   return null;
@@ -235,7 +229,7 @@ export default function ProfilePage() {
     resolver: zodResolver(profileSchema),
     defaultValues: { /* Defaults set in useEffect */ }
   });
-  const { register, handleSubmit, formState: { errors, isSubmitting: isFormSubmitting }, reset, control, setValue, watch, clearErrors, getValues, trigger } = form;
+  const { register, handleSubmit, formState: { errors }, reset, control, setValue, watch, clearErrors, getValues, trigger } = form;
 
   const { fields: workFields, append: appendWork, remove: removeWork, replace: replaceWork } = useFieldArray({ control, name: "work_experiences" });
   const { fields: eduFields, append: appendEdu, remove: removeEdu, replace: replaceEdu } = useFieldArray({ control, name: "educations" });
@@ -257,7 +251,6 @@ export default function ProfilePage() {
     if (typeof dateInput !== 'string' || !dateInput.trim()) return 'N/A';
     let dateToParse = dateInput;
 
-    // Attempt to convert DD-MM-YYYY to YYYY-MM-DD for robust parsing by parseISO
     if (/^\d{2}-\d{2}-\d{4}$/.test(dateInput)) {
         const parts = dateInput.split('-');
         if (parts.length === 3) {
@@ -269,17 +262,15 @@ export default function ProfilePage() {
              dateToParse = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
           } else {
             console.warn(`formatDateForDisplay: Invalid DD-MM-YYYY components: ${dateInput}`);
-            return dateInput; // Return original problematic string
+            return dateInput;
           }
         } else {
            console.warn(`formatDateForDisplay: Could not split DD-MM-YYYY string: ${dateInput}`);
            return dateInput;
         }
     }
-    // If it's already YYYY-MM-DD or some other ISO-like format, parseISO should handle it.
-
     try {
-        const dateObj = parseISO(dateToParse); // parseISO expects YYYY-MM-DD or ISO 8601
+        const dateObj = parseISO(dateToParse);
         if (isValid(dateObj)) {
             return format(dateObj, displayFormat);
         }
@@ -288,7 +279,7 @@ export default function ProfilePage() {
         return "Invalid Date";
     }
     console.warn(`formatDateForDisplay: Could not parse date: "${dateInput}" (tried as "${dateToParse}"). Returning original.`);
-    return dateInput; // Fallback for unparseable or invalid dates
+    return dateInput;
   }, []);
 
 
@@ -310,10 +301,10 @@ export default function ProfilePage() {
     let formCountries = '';
     if (user?.countries && Array.isArray(user.countries)) {
         formCountries = user.countries.join(', ');
-    } else if (user && typeof (user as any).country === 'string') {
+    } else if (user && typeof (user as any).country === 'string') { // Fallback for singular 'country' if present
         formCountries = (user as any).country;
     }
-
+    
     return {
       username: user?.username || fbUser?.displayName || '',
       email_id: user?.email_id || fbUser?.email || '',
@@ -489,7 +480,7 @@ export default function ProfilePage() {
     const currentFormValues = getValues();
     let payloadForValidation: Partial<UserUpdateAPI> = {
       ...sectionPayloadBuilder(currentFormValues),
-      country: currentFormValues.countries, // Always include country
+      country: currentFormValues.countries, 
     };
 
     const validationResult = sectionSchema.safeParse(payloadForValidation);
@@ -501,7 +492,7 @@ export default function ProfilePage() {
       
       const fieldErrors = validationResult.error.flatten().fieldErrors;
       Object.entries(fieldErrors).forEach(([path, messages]) => {
-        const fieldName = path as keyof ProfileFormValues; // Adjust type as needed
+        const fieldName = path as keyof ProfileFormValues;
         form.setError(fieldName, { type: 'manual', message: (messages as string[])?.[0] || 'Invalid value' });
       });
       
@@ -565,7 +556,7 @@ export default function ProfilePage() {
     </Card>
   );
 
-  const DisplayField: React.FC<{label: string; value?: string | number | null | string[]; icon?: React.ElementType }> = ({ label, value, icon: Icon }) => {
+  const DisplayField: React.FC<{label: string; value?: string | number | null | string[]; icon?: React.ElementType; className?: string }> = ({ label, value, icon: Icon, className }) => {
     let displayValue = 'N/A';
     if (Array.isArray(value)) {
       displayValue = value.length > 0 ? value.join(', ') : 'N/A';
@@ -577,12 +568,12 @@ export default function ProfilePage() {
       }
     }
     return (
-      <div className="mb-3">
+      <div className={cn("mb-2", className)}>
         <Label className="text-sm text-muted-foreground flex items-center">
           {Icon && <Icon className="mr-2 h-4 w-4 text-muted-foreground" />}
           {label}
         </Label>
-        <p className="text-base text-foreground whitespace-pre-line">{displayValue}</p>
+        <p className="text-base text-foreground whitespace-pre-line break-words">{displayValue}</p>
       </div>
     );
   };
@@ -592,6 +583,7 @@ export default function ProfilePage() {
       username: values.username,
       number: values.phone_number || null,
       preferred_locations: values.preferred_locations || undefined,
+      // 'country' will be added by handleSaveSection from values.countries
     }), personalContactSectionPayloadSchema);
   };
 
@@ -622,7 +614,7 @@ export default function ProfilePage() {
           setUploadResumeProgress(null);
       }
       if (!uploadSucceeded) {
-        setIsSubmittingSection(null);
+        setIsSubmittingSection(null); // Ensure this is reset if upload fails before API call
         return;
       }
     }
@@ -682,16 +674,12 @@ export default function ProfilePage() {
   const renderPersonalContactInfo = () => {
     const currentData = getValues();
     const displayContent = (
-      <div className="space-y-3">
-        <DisplayField label="Full Name" value={currentData.username} />
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
-          <DisplayField label="Email Address" value={currentData.email_id} />
-          <DisplayField label="Phone Number" value={currentData.phone_number} icon={Phone} />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
-          <DisplayField label="Preferred Locations" value={currentData.preferred_locations} icon={MapPin} />
-          <DisplayField label="Target Countries" value={currentData.countries} icon={Globe} />
-        </div>
+      <div className="space-y-3 md:space-y-0 md:grid md:grid-cols-2 md:gap-x-6 md:gap-y-4">
+        <DisplayField label="Full Name" value={currentData.username} icon={UserIcon} />
+        <DisplayField label="Email Address" value={currentData.email_id} icon={Mail} />
+        <DisplayField label="Phone Number" value={currentData.phone_number} icon={Phone} />
+        <DisplayField label="Preferred Locations" value={currentData.preferred_locations} icon={MapPin} />
+        <DisplayField label="Target Countries" value={currentData.countries} icon={Globe} className="md:col-span-2" />
       </div>
     );
     const editContent = (
@@ -714,24 +702,25 @@ export default function ProfilePage() {
     const currentData = getValues();
     const displayContent = (
       <div className="space-y-4">
-        <DisplayField label="Professional Summary" value={currentData.professional_summary} icon={BookUser} />
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+        <DisplayField label="Professional Summary" value={currentData.professional_summary} icon={BookText} className="md:col-span-2" />
+        <div className="grid grid-cols-1 md:grid-cols-2 md:gap-x-6 md:gap-y-4">
           <DisplayField label="Years of Professional Experience" value={currentData.experience} icon={Briefcase} />
-          <div>
+          <DisplayField label="Key Skills" value={currentData.skills} icon={ListChecks}/>
+        </div>
+        <div>
             <Label className="text-sm text-muted-foreground flex items-center">
               <Paperclip className="mr-2 h-4 w-4 text-muted-foreground" />
               Your Resume
             </Label>
             {currentResumeUrl ? (
-              <div className="mt-1 flex items-center justify-between p-2 border rounded-md bg-muted/30">
+              <div className="mt-1 flex items-center justify-between p-2 border rounded-md bg-muted/20 hover:bg-muted/30 transition-colors">
                 <a href={currentResumeUrl} target="_blank" rel="noopener noreferrer" className="text-base text-primary hover:underline flex items-center truncate">
+                  <FileText className="w-4 h-4 mr-2 shrink-0" />
                   <span className="truncate">{currentResumeUrl.split('/').pop()?.split('?')[0].substring(currentResumeUrl.lastIndexOf('_') + 1) || "View Current Resume"}</span>
                 </a>
               </div>
-            ) : <p className="text-base text-foreground">N/A</p>}
+            ) : <p className="text-base text-foreground mt-1">N/A</p>}
           </div>
-        </div>
-        <DisplayField label="Key Skills" value={currentData.skills} icon={ListChecks}/>
       </div>
     );
     const editContent = (
@@ -750,12 +739,10 @@ export default function ProfilePage() {
   const renderJobPreferences = () => {
     const currentData = getValues();
     const displayContent = (
-      <div className="space-y-3">
-        <DisplayField label="Ideal Job Role" value={currentData.desired_job_role}/>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
-          <DisplayField label="Remote Work Preference" value={currentData.remote_preference} icon={CloudSun}/>
-          <DisplayField label="Expected Salary" value={currentData.expected_salary} icon={DollarSign}/>
-        </div>
+      <div className="space-y-3 md:space-y-0 md:grid md:grid-cols-2 md:gap-x-6 md:gap-y-4">
+        <DisplayField label="Ideal Job Role" value={currentData.desired_job_role} icon={Target} className="md:col-span-2"/>
+        <DisplayField label="Remote Work Preference" value={currentData.remote_preference} icon={CloudSun}/>
+        <DisplayField label="Expected Salary" value={currentData.expected_salary} icon={DollarSign}/>
       </div>
     );
     const editContent = (
