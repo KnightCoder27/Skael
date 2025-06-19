@@ -46,7 +46,7 @@ interface JobAnalysisCache {
 }
 
 type ActiveJobTab = "generate" | "relevant" | "all";
-const JOBS_PER_PAGE = 10;
+const JOBS_PER_PAGE = 12;
 const DEFAULT_JOB_FETCH_LIMIT = 10;
 const MAX_JOB_FETCH_LIMIT = 10;
 const DEFAULT_JOB_MAX_AGE_DAYS = 30;
