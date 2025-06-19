@@ -20,7 +20,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
-import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon, MessageSquare, UploadCloud, Paperclip, XCircle, GraduationCap, Award, PlusCircle, Building, School, ScrollText, CalendarIcon, Edit, Check, X, Save, Mail, Target, LockKeyhole, Eye, EyeOff } from 'lucide-react';
+import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon, MessageSquare, UploadCloud, Paperclip, XCircle, GraduationCap, Award, PlusCircle, Building, School, ScrollText, CalendarIcon, Edit, Check, X, Save, Mail, Target, LockKeyhole, Eye, EyeOff, BookText as BookTextIcon } from 'lucide-react';
 import { FullPageLoading, LoadingSpinner } from '@/components/app/loading-spinner';
 import apiClient from '@/lib/apiClient';
 import { auth as firebaseAuth, storage } from '@/lib/firebase';
@@ -60,6 +60,15 @@ const workExperienceSchema = z.object({
   description: z.string().max(1000, "Description max 1000 chars.").optional().nullable().transform(val => (val === "" || val === undefined) ? null : val),
   currently_working: z.boolean().optional(),
 });
+// .refine(data => { // Temporarily commented out for debugging
+//     if (data.currently_working) return true;
+//     if (!data.end_date) return false; // If not currently working, end_date is required
+//     try {
+//       if (!data.start_date || !isValid(parseISO(data.start_date))) return true; // Let individual field validation catch this
+//       if (!data.end_date || !isValid(parseISO(data.end_date))) return true; // Let individual field validation catch this
+//       return parseISO(data.end_date) >= parseISO(data.start_date);
+//     } catch (e) { return true; } // Let Zod handle format errors
+//   }, { message: "End date must be after start date.", path: ["end_date"] });
 
 
 const educationSchema = z.object({
@@ -70,6 +79,13 @@ const educationSchema = z.object({
   end_year: educationYearSchema,
   currently_studying: z.boolean().optional(),
 });
+// .refine(data => { // Temporarily commented out for debugging
+//   if (data.currently_studying) return true;
+//   if (data.start_year && data.end_year) {
+//     return data.end_year >= data.start_year;
+//   }
+//   return true;
+// }, { message: "End year must be after or same as start year.", path: ["end_year"] });
 
 
 const certificationSchema = z.object({
@@ -117,34 +133,35 @@ const changePasswordSchema = z.object({
 type ChangePasswordFormValues = z.infer<typeof changePasswordSchema>;
 
 
+// Schemas for sectional payload validation
 const personalContactSectionPayloadSchema = z.object({
   username: profileSchema.shape.username.optional(),
-  number: profileSchema.shape.phone_number,
-  preferred_locations: profileSchema.shape.preferred_locations,
-  country: profileSchema.shape.countries,
+  number: profileSchema.shape.phone_number.optional(),
+  preferred_locations: profileSchema.shape.preferred_locations.optional(),
+  country: profileSchema.shape.countries, // This must be the string version for backend
 });
 
 const professionalBackgroundSectionPayloadSchema = z.object({
-  professional_summary: profileSchema.shape.professional_summary,
-  experience: profileSchema.shape.experience,
-  resume: profileSchema.shape.resume,
-  skills: profileSchema.shape.skills,
+  professional_summary: profileSchema.shape.professional_summary.optional(),
+  experience: profileSchema.shape.experience.optional(),
+  resume: profileSchema.shape.resume.optional(),
+  skills: profileSchema.shape.skills.optional(),
   country: profileSchema.shape.countries,
 });
 
 const jobPreferencesSectionPayloadSchema = z.object({
-  desired_job_role: profileSchema.shape.desired_job_role,
-  remote_preference: profileSchema.shape.remote_preference,
-  expected_salary: profileSchema.shape.expected_salary,
+  desired_job_role: profileSchema.shape.desired_job_role.optional(),
+  remote_preference: profileSchema.shape.remote_preference.optional(),
+  expected_salary: profileSchema.shape.expected_salary.optional(),
   country: profileSchema.shape.countries,
 });
 
 const workExperiencesSectionPayloadSchema = z.object({
   work_experiences: z.array(
-    workExperienceSchema.omit({ id: true, currently_working: true })
+    workExperienceSchema.omit({ id: true, currently_working: true }) // Omit frontend 'id' and 'currently_working'
       .extend({
-        start_date: z.string().min(1, "Start date is required.").regex(dateRegex, dateErrorMessage),
-        end_date: z.string().regex(dateRegex, dateErrorMessage).nullable(),
+        start_date: z.string().min(1, "Start date is required.").regex(dateRegex, dateErrorMessage), // Dates are strings
+        end_date: z.string().regex(dateRegex, dateErrorMessage).nullable(), // Dates are strings or null
       })
   ).optional().nullable(),
   country: profileSchema.shape.countries,
@@ -152,10 +169,10 @@ const workExperiencesSectionPayloadSchema = z.object({
 
 const educationsSectionPayloadSchema = z.object({
   educations: z.array(
-    educationSchema.omit({ id: true, currently_studying: true })
+    educationSchema.omit({ id: true, currently_studying: true }) // Omit frontend 'id' and 'currently_studying'
      .extend({
-        start_year: educationYearSchema.nullable(),
-        end_year: educationYearSchema.nullable(),
+        start_year: educationYearSchema.nullable(), // Years are numbers or null
+        end_year: educationYearSchema.nullable(), // Years are numbers or null
       })
   ).optional().nullable(),
   country: profileSchema.shape.countries,
@@ -163,9 +180,9 @@ const educationsSectionPayloadSchema = z.object({
 
 const certificationsSectionPayloadSchema = z.object({
   certifications: z.array(
-    certificationSchema.omit({ id: true })
+    certificationSchema.omit({ id: true }) // Omit frontend 'id'
     .extend({
-      issue_date: z.string().regex(dateRegex, dateErrorMessage).nullable(),
+      issue_date: z.string().regex(dateRegex, dateErrorMessage).nullable(), // Date is string or null
     })
   ).optional().nullable(),
   country: profileSchema.shape.countries,
@@ -195,7 +212,7 @@ const calendarToYear = currentYear + 10;
 const mapIncomingDateToFormValue = (dateStr: string | undefined | null): string | null => {
   if (!dateStr || typeof dateStr !== 'string' || dateStr.trim() === '') return null;
 
-  // Attempt 1: Check if it's DD-MM-YYYY
+  // Attempt 1: Check if it's DD-MM-YYYY (common from some backends)
   if (/^\d{2}-\d{2}-\d{4}$/.test(dateStr)) {
     const parts = dateStr.split('-');
     if (parts.length === 3) {
@@ -219,7 +236,7 @@ const mapIncomingDateToFormValue = (dateStr: string | undefined | null): string 
     }
   } catch (e) { /* Ignore parsing errors here */ }
   
-  // console.warn(`mapIncomingDateToFormValue: Could not parse date "${dateStr}" into YYYY-MM-DD format. Returning null.`);
+  console.warn(`mapIncomingDateToFormValue: Could not parse date "${dateStr}" into YYYY-MM-DD format. Returning null.`);
   return null;
 };
 
@@ -282,9 +299,11 @@ export default function ProfilePage() {
           if (d > 0 && d <= 31 && m > 0 && m <= 12 && y > 1800 && y < 2200) {
              dateToParse = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
           } else {
+            console.warn(`formatDateForDisplay: Malformed DD-MM-YYYY string "${dateInput}". Returning as is.`);
             return dateInput; 
           }
         } else {
+           console.warn(`formatDateForDisplay: Could not split DD-MM-YYYY string "${dateInput}". Returning as is.`);
            return dateInput; 
         }
     }
@@ -294,8 +313,10 @@ export default function ProfilePage() {
             return format(dateObj, displayFormat);
         }
     } catch (e) {
+        console.warn(`formatDateForDisplay: Error parsing date "${dateToParse}" (original: "${dateInput}"):`, e);
         return "Invalid Date";
     }
+    console.warn(`formatDateForDisplay: Date "${dateToParse}" (original: "${dateInput}") was not valid after parsing. Returning as is.`);
     return dateInput; 
   }, []);
 
@@ -318,7 +339,7 @@ export default function ProfilePage() {
     let formCountries = '';
     if (user?.countries && Array.isArray(user.countries)) {
         formCountries = user.countries.join(', ');
-    } else if (user && typeof (user as any).country === 'string') {
+    } else if (user && typeof (user as any).country === 'string') { // Handle singular 'country' if backend sends it
         formCountries = (user as any).country;
     }
     
@@ -390,7 +411,7 @@ export default function ProfilePage() {
 
       const payload: Partial<UserUpdateAPI> = {
         resume: null,
-        country: getValues().countries, 
+        country: getValues().countries, // Always pass country
       };
       await apiClient.put(`/users/${backendUserId}`, payload);
       setValue('resume', null, { shouldValidate: true, shouldDirty: true });
@@ -504,21 +525,20 @@ export default function ProfilePage() {
     setIsSubmittingSection(sectionKey);
 
     const currentFormValues = getValues();
-    let payloadForValidation: Partial<UserUpdateAPI> = {
-      ...sectionPayloadBuilder(currentFormValues),
-      country: currentFormValues.countries || currentUser?.countries?.join(', ') || '', 
-    };
-    
-    if (!payloadForValidation.country && currentUser?.countries && currentUser.countries.length > 0) {
-      payloadForValidation.country = currentUser.countries.join(', ');
-    } else if (!payloadForValidation.country) {
-       toast({ title: "Missing Country", description: "Target countries are required to save this section.", variant: "destructive" });
+    // Ensure 'countries' (string from form) is always passed as 'country' (string to backend)
+    const countriesString = currentFormValues.countries || currentUser?.countries?.join(', ') || '';
+    if (!countriesString) {
+       toast({ title: "Missing Country", description: "Target countries are required to save any section.", variant: "destructive" });
        setIsSubmittingSection(null);
        form.setError("countries", { type: "manual", message: "Target countries are required." });
        return;
     }
 
-
+    let payloadForValidation: Partial<UserUpdateAPI> = {
+      ...sectionPayloadBuilder(currentFormValues),
+      country: countriesString, 
+    };
+    
     const validationResult = sectionSchema.safeParse(payloadForValidation);
 
     if (!validationResult.success) {
@@ -547,9 +567,9 @@ export default function ProfilePage() {
     try {
       const response = await apiClient.put<UserModifyResponse>(`/users/${backendUserId}`, validationResult.data);
       if (response.data.messages?.toLowerCase() === 'success') {
-        await refetchBackendUser(); 
+        await refetchBackendUser(); // This will re-trigger the useEffect to reset the form with new currentUser
         setEditingSection(null);
-        clearErrors();
+        clearErrors(); // Clear any lingering specific field errors
         toast({ title: `${sectionKey?.replace(/_/g, ' ')} Updated Successfully` });
       } else {
         throw new Error(response.data.messages || `Backend issue during ${sectionKey} update.`);
@@ -627,6 +647,7 @@ export default function ProfilePage() {
       username: values.username,
       number: values.phone_number || null,
       preferred_locations: values.preferred_locations || undefined,
+      // 'country' will be added by handleSaveSection
     }), personalContactSectionPayloadSchema);
   };
 
@@ -667,6 +688,7 @@ export default function ProfilePage() {
       experience: values.experience ?? null,
       skills: values.skills || undefined,
       resume: newResumeUrlFromUpload !== undefined ? newResumeUrlFromUpload : values.resume,
+      // 'country' will be added by handleSaveSection
     }), professionalBackgroundSectionPayloadSchema);
     if (uploadSucceeded && newResumeUrlFromUpload) setSelectedResumeFile(null);
   };
@@ -676,6 +698,7 @@ export default function ProfilePage() {
       desired_job_role: values.desired_job_role || null,
       remote_preference: values.remote_preference || null,
       expected_salary: values.expected_salary ?? null,
+      // 'country' will be added by handleSaveSection
     }), jobPreferencesSectionPayloadSchema);
   };
 
@@ -688,6 +711,7 @@ export default function ProfilePage() {
         end_date: currently_working ? null : (rest.end_date || null),
         description: rest.description || null,
       })) || [],
+      // 'country' will be added by handleSaveSection
     }), workExperiencesSectionPayloadSchema);
   };
 
@@ -699,6 +723,7 @@ export default function ProfilePage() {
         start_year: rest.start_year ?? null,
         end_year: currently_studying ? null : (rest.end_year ?? null),
       })) || [],
+      // 'country' will be added by handleSaveSection
     }), educationsSectionPayloadSchema);
   };
 
@@ -710,6 +735,7 @@ export default function ProfilePage() {
         issue_date: rest.issue_date || null,
         credential_url: rest.credential_url || null,
       })) || [],
+      // 'country' will be added by handleSaveSection
     }), certificationsSectionPayloadSchema);
   };
 
@@ -718,7 +744,7 @@ export default function ProfilePage() {
       toast({ title: "Error", description: "User not authenticated.", variant: "destructive" });
       return;
     }
-    setIsSubmittingSection('password'); // Use general section submitting state
+    setIsSubmittingSection('password'); 
     try {
       const credential = EmailAuthProvider.credential(firebaseUser.email!, data.oldPassword);
       await reauthenticateWithCredential(firebaseUser, credential);
@@ -788,7 +814,7 @@ export default function ProfilePage() {
     const currentData = getValues();
     const displayContent = (
       <div className="space-y-4">
-        <DisplayField label="Professional Summary" value={currentData.professional_summary} icon={BookUser} className="md:col-span-2" />
+        <DisplayField label="Professional Summary" value={currentData.professional_summary} icon={BookTextIcon} className="md:col-span-2" />
         <div className="grid grid-cols-1 md:grid-cols-2 md:gap-x-6 md:gap-y-4">
           <DisplayField label="Years of Professional Experience" value={currentData.experience} icon={Briefcase} />
           <DisplayField label="Key Skills" value={currentData.skills} icon={ListChecks}/>
