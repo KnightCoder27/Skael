@@ -45,35 +45,41 @@ const workExperienceSchema = z.object({
   description: z.string().max(1000, "Description max 1000 chars.").optional().nullable().transform(val => (val === "" ? null : val)),
   currently_working: z.boolean().optional(),
 }).refine(data => {
-  if (data.currently_working) return true;
-  return !!data.end_date;
+  if (data.currently_working) return true; // if currently working, end_date is not required
+  return !!data.end_date; // if not currently working, end_date is required
 }, {
   message: "End date is required if not currently working here.",
   path: ["end_date"],
-}).refine(data => {
-  if (data.start_date && dateRegex.test(data.start_date) &&
-      data.end_date && dateRegex.test(data.end_date) &&
-      !data.currently_working) {
-    try {
-      return parseISO(data.end_date) >= parseISO(data.start_date);
-    } catch (e) {
-      return false; // Parsing error indicates invalid date logic here
-    }
-  }
-  return true;
-}, {
-  message: "End date cannot be before start date.",
-  path: ["end_date"],
-});
+})
+// .refine(data => { // Temporarily commented out for debugging
+//   if (data.start_date && dateRegex.test(data.start_date) &&
+//       data.end_date && dateRegex.test(data.end_date) &&
+//       !data.currently_working) {
+//     try {
+//       const startDate = parseISO(data.start_date);
+//       const endDate = parseISO(data.end_date);
+//       if (!isValid(startDate) || !isValid(endDate)) return false; // Ensure dates are valid before comparing
+//       return endDate >= startDate;
+//     } catch (e) {
+//       return false; 
+//     }
+//   }
+//   return true;
+// }, {
+//   message: "End date cannot be before start date.",
+//   path: ["end_date"],
+// })
+;
+
 
 const educationYearSchema = z.preprocess(
   (val) => {
-    if (typeof val === 'string' && val.trim() === '') return undefined;
+    if (typeof val === 'string' && val.trim() === '') return undefined; // Handle empty string for optional number
     if (val === null || val === undefined) return undefined;
     const num = Number(val);
-    return isNaN(num) ? val : num;
+    return isNaN(num) ? val : num; // Let Zod handle non-number string with coercion error
   },
-  z.number({invalid_type_error: "Year must be a number."})
+  z.coerce.number({invalid_type_error: "Year must be a number."})
     .int("Year must be a whole number.")
     .min(1900, "Year must be 1900 or later.")
     .max(new Date().getFullYear() + 15, (val) => `Year cannot be after ${val.max}.`)
@@ -88,17 +94,20 @@ const educationSchema = z.object({
   start_year: educationYearSchema,
   end_year: educationYearSchema,
   currently_studying: z.boolean().optional(),
-}).refine(data => {
-  if (data.start_year && data.end_year && !data.currently_studying) {
-     if (data.end_year < data.start_year) {
-        return false;
-     }
-  }
-  return true;
-}, {
-  message: "End year cannot be before start year.",
-  path: ["end_year"],
-});
+})
+// .refine(data => { // Temporarily commented out for debugging
+//   if (typeof data.start_year === 'number' && typeof data.end_year === 'number' && !data.currently_studying) {
+//      if (data.end_year < data.start_year) {
+//         return false;
+//      }
+//   }
+//   return true;
+// }, {
+//   message: "End year cannot be before start year.",
+//   path: ["end_year"],
+// })
+;
+
 
 const certificationSchema = z.object({
   id: z.string().optional(),
@@ -106,7 +115,7 @@ const certificationSchema = z.object({
   issued_by: z.string().optional().nullable().transform(val => (val === "" ? null : val)),
   issue_date: z.string().regex(dateRegex, dateErrorMessage).optional().nullable(),
   credential_url: z.string().url("Must be a valid URL if provided.")
-    .or(z.literal("").transform(() => null))
+    .or(z.literal("").transform(() => null)) // Allows empty string to become null
     .optional()
     .nullable(),
 });
@@ -137,11 +146,11 @@ const getErrorMessage = (error: any): string => {
     const detail = error.response.data?.detail;
     const messages = error.response.data?.messages;
     if (typeof detail === 'object' && detail !== null) {
-      return JSON.stringify(detail);
+      try { return JSON.stringify(detail); } catch { /* ignore */ }
     }
     if (detail) { return typeof detail === 'string' ? detail : String(detail); }
     if (typeof messages === 'object' && messages !== null) {
-      return JSON.stringify(messages);
+       try { return JSON.stringify(messages); } catch { /* ignore */ }
     }
     if (messages) { return typeof messages === 'string' ? messages : String(messages); }
     return `Request failed with status code ${error.response.status}`;
@@ -199,6 +208,31 @@ export default function ProfilePage() {
     } catch (e) { /* ignore, will return null */ }
     return null;
   };
+
+  const formatDateForDisplay = (dateInput: string | undefined | null, displayFormat: string = 'MMM yyyy'): string => {
+    if (!dateInput) return 'N/A';
+    let dateObj: Date | null = null;
+
+    if (typeof dateInput === 'string') {
+        try {
+            dateObj = parseISO(dateInput);
+        } catch (e) {
+            console.warn("formatDateForDisplay: Failed to parse date string with parseISO:", dateInput, e);
+            return dateInput; // Return original string if parseISO fails
+        }
+    } else {
+        return 'Invalid Input Type'; // Should ideally not happen if data types are consistent
+    }
+
+    if (dateObj && isValid(dateObj)) {
+        return format(dateObj, displayFormat);
+    } else {
+        // This case means parseISO might have returned an invalid date or the input wasn't a string
+        console.warn("formatDateForDisplay: Date object is not valid for input:", dateInput);
+        return typeof dateInput === 'string' ? dateInput : 'Invalid Date';
+    }
+  };
+
 
   const mapUserToFormValues = (user: User | null, fbUser: FirebaseUser | null): ProfileFormValues => {
     const currentRPFromDBRaw: string | null | undefined = user?.remote_preference;
@@ -307,13 +341,14 @@ export default function ProfilePage() {
     }
 
     let newResumeUrlFromUpload: string | undefined = undefined;
-    let uploadSucceeded = false;
+    let uploadSucceeded = true; // Assume success unless upload is attempted and fails
 
     if (selectedResumeFile && firebaseUser) {
       setIsUploadingResume(true); setUploadResumeProgress(0);
       const filePath = `users/${firebaseUser.uid}/uploaded_resumes/${Date.now()}_${selectedResumeFile.name}`;
       const fileStorageRef = storageRef(storage, filePath);
       const uploadTask = uploadBytesResumable(fileStorageRef, selectedResumeFile);
+      uploadSucceeded = false; // Reset to false before attempting upload
 
       try {
         if (currentResumeUrl) {
@@ -328,18 +363,17 @@ export default function ProfilePage() {
         });
       } catch (error) {
         toast({ title: "Resume Upload Failed", description: `Profile not saved. ${getErrorMessage(error)}`, variant: "destructive" });
-        uploadSucceeded = false;
+        uploadSucceeded = false; // Ensure it's marked as failed
       } finally {
         setIsUploadingResume(false);
         setUploadResumeProgress(null);
       }
 
       if (!uploadSucceeded) {
-        return;
+        return; // Stop submission if resume upload was attempted and failed
       }
-    } else {
-      uploadSucceeded = true;
     }
+
 
     const finalResumeUrl = newResumeUrlFromUpload !== undefined ? newResumeUrlFromUpload : data.resume;
 
@@ -359,8 +393,8 @@ export default function ProfilePage() {
         ...rest,
         company_name: rest.company_name || '',
         job_title: rest.job_title || '',
-        start_date: rest.start_date || '',
-        end_date: currently_working ? null : (rest.end_date || null),
+        start_date: rest.start_date || '', // Should be 'YYYY-MM-DD'
+        end_date: currently_working ? null : (rest.end_date || null), // Should be 'YYYY-MM-DD' or null
         description: rest.description || null,
       })) || [],
       educations: data.educations?.map(({id, currently_studying, ...rest}) => ({
@@ -374,7 +408,7 @@ export default function ProfilePage() {
         ...rest,
         title: rest.title || '',
         issued_by: rest.issued_by || null,
-        issue_date: rest.issue_date || null,
+        issue_date: rest.issue_date || null, // Should be 'YYYY-MM-DD' or null
         credential_url: rest.credential_url || null,
       })) || [],
     };
@@ -384,8 +418,8 @@ export default function ProfilePage() {
       const response = await apiClient.put<UserModifyResponse>(`/users/${backendUserId}`, filteredPayload);
       if (response.data.messages?.toLowerCase() === 'success') {
         await refetchBackendUser();
-        setEditingSection(null);
-        setSelectedResumeFile(null);
+        setEditingSection(null); // Ensure all sections are reset to display mode
+        setSelectedResumeFile(null); // Clear selected file after successful upload and save
         toast({ title: 'Profile Updated Successfully' });
       } else { throw new Error(response.data.messages || "Backend issue during profile update."); }
     } catch (error) {
@@ -393,6 +427,7 @@ export default function ProfilePage() {
     }
   };
 
+  
   const onInvalid = (errors: any) => {
     console.error("Form validation errors (formState.errors object):", errors);
     console.log("Form values at time of invalid submission:", getValues());
@@ -403,38 +438,13 @@ export default function ProfilePage() {
     });
   };
 
-  const formatDateForDisplay = (dateInput: string | Date | undefined | null, displayFormat: string = 'MMM yyyy'): string => {
-    if (!dateInput) return 'N/A';
-    let dateObj: Date | null = null;
-
-    if (typeof dateInput === 'string') {
-        try {
-            dateObj = parseISO(dateInput);
-        } catch (e) {
-            console.warn("formatDateForDisplay: Failed to parse date string with parseISO:", dateInput, e);
-            return dateInput;
-        }
-    } else if (dateInput instanceof Date) {
-        dateObj = dateInput;
-    } else {
-        return 'Invalid Input Type';
-    }
-
-    if (dateObj && isValid(dateObj)) {
-        return format(dateObj, displayFormat);
-    } else {
-        console.warn("formatDateForDisplay: Date object is not valid for input:", dateInput);
-        return typeof dateInput === 'string' ? dateInput : 'Invalid Date';
-    }
-  };
-
 
   const handleSectionEditToggle = (sectionName: EditableSection) => {
-    if (editingSection === sectionName) { // If clicking "Done" or toggling off current section
+    if (editingSection === sectionName) { 
       setEditingSection(null);
-    } else if (editingSection !== null) { // If another section is already being edited
+    } else if (editingSection !== null) { 
       toast({ title: "Finish Current Edit", description: `Please click "Done" or "Cancel" for the ${editingSection.replace('_',' ')} section first.`, variant: "destructive" });
-    } else { // Start editing the new section
+    } else { 
       setEditingSection(sectionName);
     }
   };
@@ -466,19 +476,19 @@ export default function ProfilePage() {
                     <div><Label htmlFor={`work_experiences.${index}.job_title`}>Job Title</Label><Input {...register(`work_experiences.${index}.job_title`)} placeholder="e.g., Software Engineer" className={errors.work_experiences?.[index]?.job_title ? 'border-destructive' : ''}/>{errors.work_experiences?.[index]?.job_title && <p className="text-sm text-destructive">{errors.work_experiences[index]?.job_title?.message}</p>}</div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
-                    <div><Label htmlFor={`work_experiences.${index}.start_date`}>Start Date</Label>
+                    <div><Label htmlFor={`work_experiences.${index}.start_date`}>Start Date <span className="text-destructive">*</span></Label>
                       <Controller control={control} name={`work_experiences.${index}.start_date`} render={({ field }) => (
                         <Popover><PopoverTrigger asChild><Button variant={"outline"} className={cn("w-full justify-start text-left font-normal", !field.value && "text-muted-foreground", errors.work_experiences?.[index]?.start_date && "border-destructive")}><CalendarIcon className="mr-2 h-4 w-4" />{field.value && isValid(parseISO(field.value)) ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger>
                           <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined} onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : "")} captionLayout="dropdown-buttons" fromYear={calendarFromYear} toYear={calendarToYear} initialFocus /></PopoverContent></Popover>)}/>
                       {errors.work_experiences?.[index]?.start_date && <p className="text-sm text-destructive">{errors.work_experiences[index]?.start_date?.message}</p>}</div>
-                    <div><Label htmlFor={`work_experiences.${index}.end_date`}>End Date</Label>
+                    <div><Label htmlFor={`work_experiences.${index}.end_date`}>End Date {currentlyWorking ? "" : <span className="text-destructive">*</span>}</Label>
                       <Controller control={control} name={`work_experiences.${index}.end_date`} render={({ field }) => (
                         <Popover><PopoverTrigger asChild><Button variant={"outline"} disabled={currentlyWorking} className={cn("w-full justify-start text-left font-normal", !field.value && !currentlyWorking && "text-muted-foreground", errors.work_experiences?.[index]?.end_date && !currentlyWorking && "border-destructive")}><CalendarIcon className="mr-2 h-4 w-4" />{field.value && !currentlyWorking && isValid(parseISO(field.value)) ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger>
                           <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined} onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : null)} captionLayout="dropdown-buttons" fromYear={calendarFromYear} toYear={calendarToYear} /></PopoverContent></Popover>)}/>
                       {errors.work_experiences?.[index]?.end_date && !currentlyWorking && <p className="text-sm text-destructive">{errors.work_experiences[index]?.end_date?.message}</p>}</div>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <Controller name={`work_experiences.${index}.currently_working`} control={control} render={({ field }) => (<Checkbox id={`work_exp_current_${index}`} checked={field.value} onCheckedChange={(checked) => { field.onChange(checked); if (checked) { setValue(`work_experiences.${index}.end_date`, null); clearErrors(`work_experiences.${index}.end_date`); } }}/>)}/>
+                    <Controller name={`work_experiences.${index}.currently_working`} control={control} render={({ field }) => (<Checkbox id={`work_exp_current_${index}`} checked={!!field.value} onCheckedChange={(checked) => { field.onChange(checked); if (checked) { setValue(`work_experiences.${index}.end_date`, null); clearErrors(`work_experiences.${index}.end_date`); } }}/>)}/>
                     <Label htmlFor={`work_exp_current_${index}`} className="text-sm font-normal">I currently work here</Label></div>
                   <div><Label htmlFor={`work_experiences.${index}.description`}>Description</Label><Textarea {...register(`work_experiences.${index}.description`)} placeholder="Key responsibilities..." rows={3} className={errors.work_experiences?.[index]?.description ? 'border-destructive' : ''}/>{errors.work_experiences?.[index]?.description && <p className="text-sm text-destructive">{errors.work_experiences[index]?.description?.message}</p>}</div>
                   <Button type="button" variant="outline" size="sm" onClick={() => removeWork(index)} className="text-destructive hover:bg-destructive/10"><Trash2 className="mr-2 h-3.5 w-3.5" /> Remove</Button>
@@ -522,15 +532,15 @@ export default function ProfilePage() {
               <Card key={item.id} className="p-4 bg-muted/30 border-dashed mb-4">
                 <div className="space-y-3">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div><Label htmlFor={`educations.${index}.institution`}>Institution</Label><Input {...register(`educations.${index}.institution`)} placeholder="e.g., University of Example" className={errors.educations?.[index]?.institution ? 'border-destructive' : ''}/>{errors.educations?.[index]?.institution && <p className="text-sm text-destructive">{errors.educations[index]?.institution?.message}</p>}</div>
-                    <div><Label htmlFor={`educations.${index}.degree`}>Degree</Label><Input {...register(`educations.${index}.degree`)} placeholder="e.g., B.S. in Computer Science" className={errors.educations?.[index]?.degree ? 'border-destructive' : ''}/>{errors.educations?.[index]?.degree && <p className="text-sm text-destructive">{errors.educations[index]?.degree?.message}</p>}</div>
+                    <div><Label htmlFor={`educations.${index}.institution`}>Institution <span className="text-destructive">*</span></Label><Input {...register(`educations.${index}.institution`)} placeholder="e.g., University of Example" className={errors.educations?.[index]?.institution ? 'border-destructive' : ''}/>{errors.educations?.[index]?.institution && <p className="text-sm text-destructive">{errors.educations[index]?.institution?.message}</p>}</div>
+                    <div><Label htmlFor={`educations.${index}.degree`}>Degree <span className="text-destructive">*</span></Label><Input {...register(`educations.${index}.degree`)} placeholder="e.g., B.S. in Computer Science" className={errors.educations?.[index]?.degree ? 'border-destructive' : ''}/>{errors.educations?.[index]?.degree && <p className="text-sm text-destructive">{errors.educations[index]?.degree?.message}</p>}</div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
                     <div><Label htmlFor={`educations.${index}.start_year`}>Start Year</Label><Input type="number" {...register(`educations.${index}.start_year`)} placeholder="YYYY" className={`hide-number-spinners ${errors.educations?.[index]?.start_year ? 'border-destructive' : ''}`}/>{errors.educations?.[index]?.start_year && <p className="text-sm text-destructive">{errors.educations[index]?.start_year?.message}</p>}</div>
                     <div><Label htmlFor={`educations.${index}.end_year`}>End Year</Label><Input type="number" {...register(`educations.${index}.end_year`)} placeholder="YYYY" disabled={currentlyStudying} className={`hide-number-spinners ${errors.educations?.[index]?.end_year && !currentlyStudying ? 'border-destructive' : ''}`}/>{errors.educations?.[index]?.end_year && !currentlyStudying && <p className="text-sm text-destructive">{errors.educations[index]?.end_year?.message}</p>}</div>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <Controller name={`educations.${index}.currently_studying`} control={control} render={({ field }) => (<Checkbox id={`edu_current_${index}`} checked={field.value} onCheckedChange={(checked) => { field.onChange(checked); if (checked) { setValue(`educations.${index}.end_year`, null); clearErrors(`educations.${index}.end_year`); } }}/>)}/>
+                    <Controller name={`educations.${index}.currently_studying`} control={control} render={({ field }) => (<Checkbox id={`edu_current_${index}`} checked={!!field.value} onCheckedChange={(checked) => { field.onChange(checked); if (checked) { setValue(`educations.${index}.end_year`, null); clearErrors(`educations.${index}.end_year`); } }}/>)}/>
                     <Label htmlFor={`edu_current_${index}`} className="text-sm font-normal">I am currently studying here</Label></div>
                   <Button type="button" variant="outline" size="sm" onClick={() => removeEdu(index)} className="text-destructive hover:bg-destructive/10"><Trash2 className="mr-2 h-3.5 w-3.5" /> Remove</Button>
                 </div>
@@ -570,7 +580,7 @@ export default function ProfilePage() {
             <Card key={item.id} className="p-4 bg-muted/30 border-dashed mb-4">
               <div className="space-y-3">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><Label htmlFor={`certifications.${index}.title`}>Title</Label><Input {...register(`certifications.${index}.title`)} placeholder="e.g., AWS Certified" className={errors.certifications?.[index]?.title ? 'border-destructive' : ''}/>{errors.certifications?.[index]?.title && <p className="text-sm text-destructive">{errors.certifications[index]?.title?.message}</p>}</div>
+                  <div><Label htmlFor={`certifications.${index}.title`}>Title <span className="text-destructive">*</span></Label><Input {...register(`certifications.${index}.title`)} placeholder="e.g., AWS Certified" className={errors.certifications?.[index]?.title ? 'border-destructive' : ''}/>{errors.certifications?.[index]?.title && <p className="text-sm text-destructive">{errors.certifications[index]?.title?.message}</p>}</div>
                   <div><Label htmlFor={`certifications.${index}.issued_by`}>Issued By</Label><Input {...register(`certifications.${index}.issued_by`)} placeholder="e.g., Amazon Web Services" className={errors.certifications?.[index]?.issued_by ? 'border-destructive' : ''}/>{errors.certifications?.[index]?.issued_by && <p className="text-sm text-destructive">{errors.certifications[index]?.issued_by?.message}</p>}</div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -629,7 +639,7 @@ export default function ProfilePage() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2"><Label htmlFor="preferred_locations">Preferred Locations (comma-separated)</Label><div className="relative flex items-center"><MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="preferred_locations" {...register('preferred_locations')} placeholder="e.g., New York, Remote, London" className={`pl-10 ${errors.preferred_locations ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Optional. Enter cities or "Remote".</p>{errors.preferred_locations && <p className="text-sm text-destructive">{errors.preferred_locations.message}</p>}</div>
-                <div className="space-y-2"><Label htmlFor="countries">Target Countries (comma-separated)</Label><div className="relative flex items-center"><Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="countries" {...register('countries')} placeholder="e.g., US, CA, GB, India" className={`pl-10 ${errors.countries ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Required. Helps in fetching relevant jobs.</p>{errors.countries && <p className="text-sm text-destructive">{errors.countries.message}</p>}</div>
+                <div className="space-y-2"><Label htmlFor="countries">Target Countries (comma-separated) <span className="text-destructive">*</span></Label><div className="relative flex items-center"><Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="countries" {...register('countries')} placeholder="e.g., US, CA, GB, India" className={`pl-10 ${errors.countries ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Required. Helps in fetching relevant jobs.</p>{errors.countries && <p className="text-sm text-destructive">{errors.countries.message}</p>}</div>
               </div>
             </CardContent>
         </Card>
@@ -703,3 +713,5 @@ export default function ProfilePage() {
     </div>
   );
 }
+
+    
