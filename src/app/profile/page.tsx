@@ -55,7 +55,7 @@ const workExperienceSchema = z.object({
     if (dateRegex.test(data.start_date) && dateRegex.test(data.end_date)) {
       try { return parseISO(data.end_date) >= parseISO(data.start_date); } catch (e) { return false; }
     }
-    return true;
+    return true; // Rely on regex for format, this refine is for logical order
   }
   return true;
 }, {
@@ -63,16 +63,30 @@ const workExperienceSchema = z.object({
   path: ["end_date"],
 });
 
+const educationYearSchema = z.preprocess(
+  (val) => {
+    if (typeof val === 'string' && val.trim() === '') return undefined;
+    if (val === null || val === undefined) return undefined;
+    const num = Number(val);
+    return isNaN(num) ? val : num; // If NaN, pass original for Zod to invalidate, else pass number
+  },
+  z.number({invalid_type_error: "Year must be a number."})
+    .int("Year must be a whole number.")
+    .min(1900, "Year must be 1900 or later.")
+    .max(new Date().getFullYear() + 15, (val) => `Year cannot be after ${val.max}.`)
+    .optional()
+    .nullable()
+);
+
 const educationSchema = z.object({
   id: z.string().optional(),
   institution: z.string().min(1, "Institution name is required."),
   degree: z.string().min(1, "Degree is required."),
-  start_year: z.coerce.number().int("Year must be a whole number.").min(1900, "Invalid year").max(new Date().getFullYear() + 10, "Invalid year").optional().nullable(),
-  end_year: z.coerce.number().int("Year must be a whole number.").min(1900, "Invalid year").max(new Date().getFullYear() + 15, "Invalid year").optional().nullable(),
+  start_year: educationYearSchema,
+  end_year: educationYearSchema,
   currently_studying: z.boolean().optional(),
 }).refine(data => {
   if (data.currently_studying) return true;
-  // End year is optional if not currently studying, validation for it being present can be added if business logic requires
   return true; 
 }).refine(data => {
   if (data.start_year && data.end_year && !data.currently_studying) {
@@ -89,7 +103,7 @@ const certificationSchema = z.object({
   title: z.string().min(1, "Certification title is required."),
   issued_by: z.string().optional().nullable().transform(val => (val === "" ? null : val)),
   issue_date: z.string().regex(dateRegex, dateErrorMessage).optional().nullable(),
-  credential_url: z.string().url("Must be a valid URL.")
+  credential_url: z.string().url("Must be a valid URL if provided.")
     .or(z.literal("").transform(() => null)) 
     .optional()
     .nullable(),
@@ -283,11 +297,18 @@ export default function ProfilePage() {
   };
 
   const onSubmit: SubmitHandler<ProfileFormValues> = async (data) => {
-    if (!backendUserId || !firebaseUser) {
-      toast({ title: "Error", description: "User session not found.", variant: "destructive" }); return;
-    }
+    console.log("Profile onSubmit called. Data:", data);
+    console.log("Current editingSection:", editingSection);
+
     if (editingSection) {
-      toast({ title: "Action Required", description: `Please "Done" or "Cancel" editing the ${editingSection.replace('_', ' ')} section before saving.`, variant: "destructive" });
+      toast({ title: "Action Required", description: `Please click "Done" or "Cancel" for the '${editingSection.replace('_', ' ')}' section before saving the entire profile.`, variant: "destructive" });
+      console.warn("Attempted to save while a section is being edited:", editingSection);
+      return;
+    }
+
+    if (!backendUserId || !firebaseUser) {
+      toast({ title: "Error", description: "User session not found. Cannot save profile.", variant: "destructive" });
+      console.error("User session not found for profile save. BackendUserId:", backendUserId, "FirebaseUser:", !!firebaseUser);
       return;
     }
 
@@ -311,12 +332,20 @@ export default function ProfilePage() {
             async () => { try { newResumeUrlFromUpload = await getDownloadURL(uploadTask.snapshot.ref); uploadSucceeded = true; resolve(); } catch (getUrlError){ reject(getUrlError); } }
           );
         });
-      } catch (error) { toast({ title: "Resume Upload Failed", description: `Profile not saved. ${getErrorMessage(error)}`, variant: "destructive" });
-      } finally { setIsUploadingResume(false); setUploadResumeProgress(null); }
+      } catch (error) { 
+        toast({ title: "Resume Upload Failed", description: `Profile not saved. ${getErrorMessage(error)}`, variant: "destructive" });
+        uploadSucceeded = false; 
+      } finally { 
+        setIsUploadingResume(false); 
+        setUploadResumeProgress(null); 
+      }
       
-      if (!uploadSucceeded) return; // Important: Exit if upload failed
+      if (!uploadSucceeded) {
+        console.error("Profile save aborted due to resume upload failure.");
+        return; 
+      }
     } else {
-      uploadSucceeded = true; // No upload attempted, so proceed
+      uploadSucceeded = true; 
     }
 
     const finalResumeUrl = newResumeUrlFromUpload !== undefined ? newResumeUrlFromUpload : data.resume;
@@ -328,7 +357,7 @@ export default function ProfilePage() {
       skills: data.skills || undefined,
       experience: data.experience ?? null,
       preferred_locations: data.preferred_locations || undefined,
-      country: data.countries,
+      country: data.countries, // Backend uses 'country' (string), frontend uses 'countries' (string) for input
       remote_preference: data.remote_preference || null,
       professional_summary: data.professional_summary || null,
       expected_salary: data.expected_salary ?? null,
@@ -338,13 +367,14 @@ export default function ProfilePage() {
       })) || [],
       educations: data.educations?.map(({id, currently_studying, ...rest}) => ({
         ...rest, 
-        start_year: rest.start_year ? Number(rest.start_year) : null,
-        end_year: currently_studying ? null : (rest.end_year ? Number(rest.end_year) : null),
+        start_year: rest.start_year ?? null,
+        end_year: currently_studying ? null : (rest.end_year ?? null),
       })) || [],
-      certifications: data.certifications?.map(({id, ...rest}) => ({ ...rest })) || [],
+      certifications: data.certifications?.map(({id, ...rest}) => ({ ...rest, issue_date: rest.issue_date || null })) || [],
     };
     const filteredPayload = Object.fromEntries( Object.entries(updatePayload).filter(([_, v]) => v !== undefined) ) as Partial<UserUpdateAPI>;
 
+    console.log("Submitting payload to backend:", filteredPayload);
     try {
       const response = await apiClient.put<UserModifyResponse>(`/users/${backendUserId}`, filteredPayload);
       if (response.data.messages?.toLowerCase() === 'success') {
@@ -352,9 +382,22 @@ export default function ProfilePage() {
         setEditingSection(null); 
         setSelectedResumeFile(null); 
         toast({ title: 'Profile Updated Successfully' });
-      } else { throw new Error(response.data.messages || "Backend issue."); }
-    } catch (error) { toast({ title: "Update Failed", description: getErrorMessage(error), variant: "destructive" }); }
+      } else { throw new Error(response.data.messages || "Backend issue during profile update."); }
+    } catch (error) { 
+      console.error("Profile update API call failed:", error);
+      toast({ title: "Update Failed", description: getErrorMessage(error), variant: "destructive" }); 
+    }
   };
+  
+  const onInvalid = (errors: any) => {
+    console.error("Form validation errors:", errors);
+    toast({
+      title: "Validation Error",
+      description: "Please check the form for errors. Some fields might be invalid.",
+      variant: "destructive",
+    });
+  };
+
 
   if (isLoggingOut) return <FullPageLoading message="Processing Account Deletion..." />;
   if (isLoadingAuth || !hasPopulatedFromCurrentUser) return <FullPageLoading message="Loading profile..." />;
@@ -364,30 +407,26 @@ export default function ProfilePage() {
   
   const formatDateForDisplay = (dateInput: string | Date | undefined | null, displayFormat: string = 'MMM yyyy'): string => {
     if (!dateInput) return 'N/A';
+    let dateObj: Date | null = null;
 
-    let dateObj: Date;
     if (typeof dateInput === 'string') {
-      try {
-        // Try to parse ISO string. parseISO is flexible.
-        dateObj = parseISO(dateInput);
-      } catch (e) {
-        console.warn("Failed to parse date string for display:", dateInput, e);
-        return dateInput; // Show original string if it was a string and failed to parse
-      }
+        try {
+            dateObj = parseISO(dateInput);
+        } catch (e) {
+            console.warn("formatDateForDisplay: Failed to parse date string with parseISO:", dateInput, e);
+            return dateInput; 
+        }
     } else if (dateInput instanceof Date) {
-      dateObj = dateInput;
+        dateObj = dateInput;
     } else {
-      // This case should ideally not be hit if types are correct
-      return 'Invalid Input Type';
+        return 'Invalid Input Type';
     }
 
-    if (isValid(dateObj)) {
-      return format(dateObj, displayFormat);
+    if (dateObj && isValid(dateObj)) {
+        return format(dateObj, displayFormat);
     } else {
-      // If dateInput was a string and resulted in Invalid Date, return the original string.
-      // This helps debug by showing the problematic string as it was.
-      // If it was already a Date object but invalid, then 'Invalid Date'.
-      return typeof dateInput === 'string' ? dateInput : 'Invalid Date';
+        console.warn("formatDateForDisplay: Date object is not valid for input:", dateInput);
+        return typeof dateInput === 'string' ? dateInput : 'Invalid Date';
     }
   };
 
@@ -557,7 +596,7 @@ export default function ProfilePage() {
         <p className="text-muted-foreground">Keep your profile and job preferences up-to-date for the best job matches.</p>
       </header>
 
-      <form onSubmit={handleSubmit(onSubmit)}>
+      <form onSubmit={handleSubmit(onSubmit, onInvalid)}>
         <Card className="shadow-lg">
             <CardHeader><CardTitle className="font-headline text-xl">Personal & Contact Information</CardTitle><CardDescription>Basic information about you. Your email is used for account identity.</CardDescription></CardHeader>
             <CardContent className="space-y-6">
@@ -578,7 +617,7 @@ export default function ProfilePage() {
             <CardContent className="space-y-6">
               <div className="space-y-2"><Label htmlFor="professional_summary" className="text-base flex items-center"><BookUser className="mr-2 h-5 w-5 text-primary/80"/>Professional Summary</Label><Textarea id="professional_summary" {...register('professional_summary')} placeholder="A detailed summary..." rows={8} className={errors.professional_summary ? 'border-destructive' : ''} /><p className="text-xs text-muted-foreground">Optional. Min 50 chars if provided.</p>{errors.professional_summary && <p className="text-sm text-destructive">{errors.professional_summary.message}</p>}</div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2"><Label htmlFor="experience">Years of Professional Experience</Label><div className="relative flex items-center"><Briefcase className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="experience" type="number" {...register('experience')} placeholder="e.g., 5" className={`pl-10 ${errors.experience ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Optional.</p>{errors.experience && <p className="text-sm text-destructive">{errors.experience.message}</p>}</div>
+                  <div className="space-y-2"><Label htmlFor="experience">Years of Professional Experience</Label><div className="relative flex items-center"><Briefcase className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="experience" type="number" {...register('experience')} placeholder="e.g., 5" className={`pl-10 hide-number-spinners ${errors.experience ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Optional.</p>{errors.experience && <p className="text-sm text-destructive">{errors.experience.message}</p>}</div>
                   <div className="space-y-2"><Label htmlFor="resume-upload">Your Resume</Label><Input id="resume-upload" type="file" onChange={handleResumeFileChange} accept=".pdf,.doc,.docx" className="mb-1 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" disabled={isUploadingResume || overallSubmitting}/><p className="text-xs text-muted-foreground mt-1">Optional. PDF or Word, max 5MB.</p>{selectedResumeFile && !isUploadingResume && (<p className="text-xs text-muted-foreground mt-1">Selected: {selectedResumeFile.name}</p>)}{currentResumeUrl && !selectedResumeFile && !isUploadingResume && (<div className="mt-2 mb-2 flex items-center justify-between p-2 border rounded-md bg-muted/50"><a href={currentResumeUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center truncate"><Paperclip className="w-4 h-4 mr-2 shrink-0" /><span className="truncate">{currentResumeUrl.split('/').pop()?.split('?')[0].substring(currentResumeUrl.lastIndexOf('_') + 1) || "View Current"}</span></a><Button type="button" variant="ghost" size="icon" onClick={handleRemoveResume} className="h-7 w-7 text-destructive hover:bg-destructive/10" disabled={overallSubmitting || isUploadingResume}><XCircle className="w-4 h-4" /></Button></div>)}{isUploadingResume && uploadResumeProgress !== null && (<div className="mt-2"><Progress value={uploadResumeProgress} className="w-full h-2" /><p className="text-xs text-muted-foreground text-center mt-1">Uploading: {Math.round(uploadResumeProgress)}%</p></div>)}{errors.resume && <p className="text-sm text-destructive">{errors.resume.message}</p>}<input type="hidden" {...register('resume')} /></div>
               </div>
               <div className="space-y-2"><Label htmlFor="skills" className="text-base flex items-center"><ListChecks className="mr-2 h-5 w-5 text-primary/80"/>Key Skills (comma-separated)</Label><Textarea id="skills" {...register('skills')} placeholder="e.g., React, Node.js, Python" rows={3} className={errors.skills ? 'border-destructive' : ''} /><p className="text-xs text-muted-foreground">Optional. Helps AI find relevant jobs.</p>{errors.skills && <p className="text-sm text-destructive">{errors.skills.message}</p>}</div>
@@ -591,7 +630,7 @@ export default function ProfilePage() {
               <div className="space-y-2"><Label htmlFor="desired_job_role" className="text-base">Ideal Job Role</Label><Textarea id="desired_job_role" {...register('desired_job_role')} placeholder="e.g., Senior Frontend Developer..." rows={5} className={errors.desired_job_role ? 'border-destructive' : ''} /><p className="text-xs text-muted-foreground">Optional. Min 10 chars if provided.</p>{errors.desired_job_role && <p className="text-sm text-destructive">{errors.desired_job_role.message}</p>}</div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2"><Label htmlFor="remote_preference">Remote Work Preference</Label><Controller name="remote_preference" control={control} render={({ field }) => (<Select onValueChange={field.onChange} value={field.value ?? undefined} disabled={overallSubmitting}><SelectTrigger className={`relative w-full justify-start pl-10 pr-3 ${errors.remote_preference ? 'border-destructive' : ''}`}><CloudSun className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><SelectValue placeholder="Select preference" /></SelectTrigger><SelectContent>{remotePreferenceOptions.map(option => (<SelectItem key={option} value={option}>{option}</SelectItem>))}</SelectContent></Select>)}/><p className="text-xs text-muted-foreground">Optional.</p>{errors.remote_preference && <p className="text-sm text-destructive">{errors.remote_preference.message}</p>}</div>
-                  <div className="space-y-2"><Label htmlFor="expected_salary">Expected Salary (Numeric)</Label><div className="relative flex items-center"><DollarSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="expected_salary" type="number" {...register('expected_salary')} placeholder="e.g., 120000" className={`pl-10 ${errors.expected_salary ? 'border-destructive' : ''}`} disabled={overallSubmitting}/></div><p className="text-xs text-muted-foreground">Optional. Enter as a number.</p>{errors.expected_salary && <p className="text-sm text-destructive">{errors.expected_salary.message}</p>}</div>
+                  <div className="space-y-2"><Label htmlFor="expected_salary">Expected Salary (Numeric)</Label><div className="relative flex items-center"><DollarSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="expected_salary" type="number" {...register('expected_salary')} placeholder="e.g., 120000" className={`pl-10 hide-number-spinners ${errors.expected_salary ? 'border-destructive' : ''}`} disabled={overallSubmitting}/></div><p className="text-xs text-muted-foreground">Optional. Enter as a number.</p>{errors.expected_salary && <p className="text-sm text-destructive">{errors.expected_salary.message}</p>}</div>
               </div>
             </CardContent>
         </Card>
