@@ -24,7 +24,7 @@ import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign,
 import { FullPageLoading, LoadingSpinner } from '@/components/app/loading-spinner';
 import apiClient from '@/lib/apiClient';
 import { auth as firebaseAuth, storage } from '@/lib/firebase';
-import { deleteUser as deleteFirebaseUser } from 'firebase/auth';
+import { deleteUser as deleteFirebaseUser, type User as FirebaseUser } from 'firebase/auth';
 import { ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
 import { AxiosError } from 'axios';
 import { FeedbackDialog } from '@/components/app/feedback-dialog';
@@ -72,7 +72,7 @@ const educationSchema = z.object({
   currently_studying: z.boolean().optional(),
 }).refine(data => {
   if (data.currently_studying) return true;
-  // if not currently studying, end_year could be required based on specific business logic, not enforced here.
+  // End year is optional if not currently studying, validation for it being present can be added if business logic requires
   return true; 
 }).refine(data => {
   if (data.start_year && data.end_year && !data.currently_studying) {
@@ -90,7 +90,7 @@ const certificationSchema = z.object({
   issued_by: z.string().optional().nullable().transform(val => (val === "" ? null : val)),
   issue_date: z.string().regex(dateRegex, dateErrorMessage).optional().nullable(),
   credential_url: z.string().url("Must be a valid URL.")
-    .or(z.literal("").transform(() => null))
+    .or(z.literal("").transform(() => null)) 
     .optional()
     .nullable(),
 });
@@ -157,9 +157,9 @@ export default function ProfilePage() {
   });
   const { register, handleSubmit, formState: { errors, isSubmitting: isFormSubmitting }, reset, control, setValue, watch, clearErrors } = form;
 
-  const { fields: workFields, append: appendWork, remove: removeWork, update: updateWork } = useFieldArray({ control, name: "work_experiences" });
-  const { fields: eduFields, append: appendEdu, remove: removeEdu, update: updateEdu } = useFieldArray({ control, name: "educations" });
-  const { fields: certFields, append: appendCert, remove: removeCert, update: updateCert } = useFieldArray({ control, name: "certifications" });
+  const { fields: workFields, append: appendWork, remove: removeWork } = useFieldArray({ control, name: "work_experiences" });
+  const { fields: eduFields, append: appendEdu, remove: removeEdu } = useFieldArray({ control, name: "educations" });
+  const { fields: certFields, append: appendCert, remove: removeCert } = useFieldArray({ control, name: "certifications" });
 
   const watchedResumeUrl = watch("resume");
 
@@ -173,6 +173,17 @@ export default function ProfilePage() {
     }
   }, [isLoadingAuth, currentUser, firebaseUser, router, toast, isLoggingOut]);
 
+  const mapDateToFormValue = (dateStr: string | undefined | null): string | null => {
+    if (!dateStr) return null;
+    try {
+      const parsed = parseISO(dateStr);
+      if (isValid(parsed)) {
+        return format(parsed, 'yyyy-MM-dd');
+      }
+    } catch (e) { /* ignore, will return null */ }
+    return null; 
+  };
+  
   const mapUserToFormValues = (user: User | null, fbUser: FirebaseUser | null): ProfileFormValues => {
     const currentRPFromDBRaw: string | null | undefined = user?.remote_preference;
     let formRPValue: RemotePreferenceAPI | undefined = undefined;
@@ -182,7 +193,6 @@ export default function ProfilePage() {
         formRPValue = normalizedRP as RemotePreferenceAPI;
       }
     }
-
     return {
       username: user?.username || fbUser?.displayName || '',
       email_id: user?.email_id || fbUser?.email || '',
@@ -200,8 +210,8 @@ export default function ProfilePage() {
         id: w.id || crypto.randomUUID(),
         company_name: w.company_name || '',
         job_title: w.job_title || '',
-        start_date: w.start_date && isValid(parseISO(w.start_date)) ? format(parseISO(w.start_date), 'yyyy-MM-dd') : '',
-        end_date: w.currently_working ? null : (w.end_date && isValid(parseISO(w.end_date)) ? format(parseISO(w.end_date), 'yyyy-MM-dd') : null),
+        start_date: mapDateToFormValue(w.start_date) || '',
+        end_date: w.currently_working ? null : mapDateToFormValue(w.end_date),
         description: w.description || null,
         currently_working: w.currently_working ?? !w.end_date,
       })) || [],
@@ -217,7 +227,7 @@ export default function ProfilePage() {
         id: c.id || crypto.randomUUID(),
         title: c.title || '',
         issued_by: c.issued_by || null,
-        issue_date: c.issue_date && isValid(parseISO(c.issue_date)) ? format(parseISO(c.issue_date), 'yyyy-MM-dd') : null,
+        issue_date: mapDateToFormValue(c.issue_date),
         credential_url: c.credential_url || null,
       })) || [],
     };
@@ -225,7 +235,6 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (isLoadingAuth || isLoggingOut) return;
-
     const formValues = mapUserToFormValues(currentUser, firebaseUser);
     reset(formValues);
     setCurrentResumeUrl(formValues.resume);
@@ -283,14 +292,14 @@ export default function ProfilePage() {
     }
 
     let newResumeUrlFromUpload: string | undefined = undefined;
+    let uploadSucceeded = false;
 
     if (selectedResumeFile && firebaseUser) {
       setIsUploadingResume(true); setUploadResumeProgress(0);
       const filePath = `users/${firebaseUser.uid}/uploaded_resumes/${Date.now()}_${selectedResumeFile.name}`;
       const fileStorageRef = storageRef(storage, filePath);
       const uploadTask = uploadBytesResumable(fileStorageRef, selectedResumeFile);
-      let uploadSucceeded = false;
-
+      
       try {
         if (currentResumeUrl) {
           try { await deleteObject(storageRef(storage, currentResumeUrl)); }
@@ -304,7 +313,10 @@ export default function ProfilePage() {
         });
       } catch (error) { toast({ title: "Resume Upload Failed", description: `Profile not saved. ${getErrorMessage(error)}`, variant: "destructive" });
       } finally { setIsUploadingResume(false); setUploadResumeProgress(null); }
-      if (!uploadSucceeded) return;
+      
+      if (!uploadSucceeded) return; // Important: Exit if upload failed
+    } else {
+      uploadSucceeded = true; // No upload attempted, so proceed
     }
 
     const finalResumeUrl = newResumeUrlFromUpload !== undefined ? newResumeUrlFromUpload : data.resume;
@@ -325,7 +337,9 @@ export default function ProfilePage() {
         ...rest, end_date: currently_working ? null : (rest.end_date || null),
       })) || [],
       educations: data.educations?.map(({id, currently_studying, ...rest}) => ({
-        ...rest, end_year: currently_studying ? null : (rest.end_year ? Number(rest.end_year) : null),
+        ...rest, 
+        start_year: rest.start_year ? Number(rest.start_year) : null,
+        end_year: currently_studying ? null : (rest.end_year ? Number(rest.end_year) : null),
       })) || [],
       certifications: data.certifications?.map(({id, ...rest}) => ({ ...rest })) || [],
     };
@@ -334,9 +348,9 @@ export default function ProfilePage() {
     try {
       const response = await apiClient.put<UserModifyResponse>(`/users/${backendUserId}`, filteredPayload);
       if (response.data.messages?.toLowerCase() === 'success') {
-        await refetchBackendUser(); // This will re-trigger useEffect to reset form with new currentUser data
-        setEditingSection(null); // Ensure all sections are out of edit mode
-        setSelectedResumeFile(null); // Clear selected file after successful upload and save
+        await refetchBackendUser(); 
+        setEditingSection(null); 
+        setSelectedResumeFile(null); 
         toast({ title: 'Profile Updated Successfully' });
       } else { throw new Error(response.data.messages || "Backend issue."); }
     } catch (error) { toast({ title: "Update Failed", description: getErrorMessage(error), variant: "destructive" }); }
@@ -347,6 +361,35 @@ export default function ProfilePage() {
   if (!currentUser && !isLoadingAuth && !isLoggingOut && !firebaseUser) return <FullPageLoading message="Verifying session..." />;
 
   const overallSubmitting = isFormSubmitting || isUploadingResume;
+  
+  const formatDateForDisplay = (dateInput: string | Date | undefined | null, displayFormat: string = 'MMM yyyy'): string => {
+    if (!dateInput) return 'N/A';
+
+    let dateObj: Date;
+    if (typeof dateInput === 'string') {
+      try {
+        // Try to parse ISO string. parseISO is flexible.
+        dateObj = parseISO(dateInput);
+      } catch (e) {
+        console.warn("Failed to parse date string for display:", dateInput, e);
+        return dateInput; // Show original string if it was a string and failed to parse
+      }
+    } else if (dateInput instanceof Date) {
+      dateObj = dateInput;
+    } else {
+      // This case should ideally not be hit if types are correct
+      return 'Invalid Input Type';
+    }
+
+    if (isValid(dateObj)) {
+      return format(dateObj, displayFormat);
+    } else {
+      // If dateInput was a string and resulted in Invalid Date, return the original string.
+      // This helps debug by showing the problematic string as it was.
+      // If it was already a Date object but invalid, then 'Invalid Date'.
+      return typeof dateInput === 'string' ? dateInput : 'Invalid Date';
+    }
+  };
 
   const renderWorkExperiences = () => {
     if (editingSection === 'work_experiences') {
@@ -397,7 +440,7 @@ export default function ProfilePage() {
             <div key={exp.id || exp.company_name} className="p-3 border rounded-md bg-muted/20">
               <h4 className="font-semibold">{exp.job_title} at {exp.company_name}</h4>
               <p className="text-sm text-muted-foreground">
-                {exp.start_date ? format(parseISO(exp.start_date), 'MMM yyyy') : 'N/A'} - {exp.currently_working ? 'Present' : (exp.end_date ? format(parseISO(exp.end_date), 'MMM yyyy') : 'N/A')}
+                {formatDateForDisplay(exp.start_date)} - {exp.currently_working ? 'Present' : formatDateForDisplay(exp.end_date)}
               </p>
               {exp.description && <p className="text-sm mt-1 whitespace-pre-line">{exp.description}</p>}
             </div>
@@ -496,7 +539,7 @@ export default function ProfilePage() {
             <div key={cert.id || cert.title} className="p-3 border rounded-md bg-muted/20">
               <h4 className="font-semibold">{cert.title}</h4>
               {cert.issued_by && <p className="text-sm text-muted-foreground">Issued by: {cert.issued_by}</p>}
-              {cert.issue_date && <p className="text-sm text-muted-foreground">Issued: {format(parseISO(cert.issue_date), 'MMM yyyy')}</p>}
+              {cert.issue_date && <p className="text-sm text-muted-foreground">Issued: {formatDateForDisplay(cert.issue_date)}</p>}
               {cert.credential_url && <a href={cert.credential_url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline">View Credential</a>}
             </div>
           ))
@@ -573,7 +616,7 @@ export default function ProfilePage() {
             <Button type="submit" disabled={overallSubmitting || !!editingSection} size="lg" className="shadow-md hover:shadow-lg transition-shadow">
                 {isUploadingResume ? <UploadCloud className="mr-2 h-4 w-4 animate-pulse" /> : (isFormSubmitting ? <LoadingSpinner size={16} className="mr-2" /> : null)}
                 {isUploadingResume ? 'Uploading Resume...' : (isFormSubmitting ? 'Saving Profile...' : 'Save Profile')}
-                {!overallSubmitting && <Edit3 className="ml-2 h-4 w-4" />}
+                {!overallSubmitting && !editingSection && <Edit3 className="ml-2 h-4 w-4" />}
             </Button>
         </div>
         {editingSection && <p className="text-sm text-destructive mt-2">Please click "Done" or "Cancel" in the section you are currently editing before saving the entire profile.</p>}
@@ -599,5 +642,3 @@ export default function ProfilePage() {
     </div>
   );
 }
-
-    
