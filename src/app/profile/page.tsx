@@ -6,7 +6,7 @@ import { useForm, type SubmitHandler, Controller, useFieldArray, FieldErrors } f
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useAuth } from '@/contexts/AuthContext';
-import type { User, UserUpdateAPI, RemotePreferenceAPI, UserModifyResponse, WorkExperienceItem, EducationItem, CertificationItem } from '@/types';
+import type { User, UserUpdateAPI, RemotePreferenceAPI, UserModifyResponse, WorkExperienceItem, EducationItem, CertificationItem, ChangePasswordPayload } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -20,11 +20,11 @@ import { Calendar } from '@/components/ui/calendar';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
-import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon, MessageSquare, UploadCloud, Paperclip, XCircle, GraduationCap, Award, PlusCircle, Building, School, ScrollText, CalendarIcon, Edit, Check, X, Save, Mail, Target, BookText } from 'lucide-react'; // Added BookText
+import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon, MessageSquare, UploadCloud, Paperclip, XCircle, GraduationCap, Award, PlusCircle, Building, School, ScrollText, CalendarIcon, Edit, Check, X, Save, Mail, Target, LockKeyhole, Eye, EyeOff } from 'lucide-react';
 import { FullPageLoading, LoadingSpinner } from '@/components/app/loading-spinner';
 import apiClient from '@/lib/apiClient';
 import { auth as firebaseAuth, storage } from '@/lib/firebase';
-import { deleteUser as deleteFirebaseUser, type User as FirebaseUser } from 'firebase/auth';
+import { deleteUser as deleteFirebaseUser, type User as FirebaseUser, EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
 import { ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
 import { AxiosError } from 'axios';
 import { FeedbackDialog } from '@/components/app/feedback-dialog';
@@ -60,7 +60,6 @@ const workExperienceSchema = z.object({
   description: z.string().max(1000, "Description max 1000 chars.").optional().nullable().transform(val => (val === "" || val === undefined) ? null : val),
   currently_working: z.boolean().optional(),
 });
-// .refine(data => !data.end_date || !data.start_date || !isValid(parseISO(data.start_date)) || !isValid(parseISO(data.end_date)) || parseISO(data.end_date) >= parseISO(data.start_date), { message: "End date cannot be before start date.", path: ["end_date"], });
 
 
 const educationSchema = z.object({
@@ -71,7 +70,6 @@ const educationSchema = z.object({
   end_year: educationYearSchema,
   currently_studying: z.boolean().optional(),
 });
-// .refine(data => !data.end_year || !data.start_year || data.end_year >= data.start_year, { message: "End year cannot be before start year.", path: ["end_year"], })
 
 
 const certificationSchema = z.object({
@@ -103,6 +101,20 @@ const profileSchema = z.object({
   educations: z.array(educationSchema).optional().nullable(),
   certifications: z.array(certificationSchema).optional().nullable(),
 });
+
+const changePasswordSchema = z.object({
+  oldPassword: z.string().min(1, "Current password is required."),
+  newPassword: z.string().min(8, { message: "New password must be at least 8 characters." })
+    .regex(/[a-z]/, { message: "Password must contain at least one lowercase letter." })
+    .regex(/[A-Z]/, { message: "Password must contain at least one uppercase letter." })
+    .regex(/[0-9]/, { message: "Password must contain at least one number." })
+    .regex(/[^a-zA-Z0-9]/, { message: "Password must contain at least one special character." }),
+  confirmPassword: z.string(),
+}).refine(data => data.newPassword === data.confirmPassword, {
+  message: "New passwords do not match.",
+  path: ["confirmPassword"],
+});
+type ChangePasswordFormValues = z.infer<typeof changePasswordSchema>;
 
 
 const personalContactSectionPayloadSchema = z.object({
@@ -161,7 +173,7 @@ const certificationsSectionPayloadSchema = z.object({
 
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
-type EditableSection = 'personal_contact' | 'professional_background' | 'job_preferences' | 'work_experiences' | 'educations' | 'certifications' | null;
+type EditableSection = 'personal_contact' | 'professional_background' | 'job_preferences' | 'work_experiences' | 'educations' | 'certifications' | 'password' | null;
 
 const getErrorMessage = (error: any): string => {
   if (error instanceof AxiosError && error.response) {
@@ -207,7 +219,7 @@ const mapIncomingDateToFormValue = (dateStr: string | undefined | null): string 
     }
   } catch (e) { /* Ignore parsing errors here */ }
   
-  console.warn(`mapIncomingDateToFormValue: Could not parse date "${dateStr}" into YYYY-MM-DD format. Returning null.`);
+  // console.warn(`mapIncomingDateToFormValue: Could not parse date "${dateStr}" into YYYY-MM-DD format. Returning null.`);
   return null;
 };
 
@@ -225,11 +237,20 @@ export default function ProfilePage() {
   const [editingSection, setEditingSection] = useState<EditableSection>(null);
   const [isSubmittingSection, setIsSubmittingSection] = useState<EditableSection | null>(null);
 
+  const [showOldPassword, setShowOldPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
+
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
     defaultValues: { /* Defaults set in useEffect */ }
   });
   const { register, handleSubmit, formState: { errors }, reset, control, setValue, watch, clearErrors, getValues, trigger } = form;
+
+  const changePasswordForm = useForm<ChangePasswordFormValues>({
+    resolver: zodResolver(changePasswordSchema),
+    defaultValues: { oldPassword: "", newPassword: "", confirmPassword: "" },
+  });
 
   const { fields: workFields, append: appendWork, remove: removeWork, replace: replaceWork } = useFieldArray({ control, name: "work_experiences" });
   const { fields: eduFields, append: appendEdu, remove: removeEdu, replace: replaceEdu } = useFieldArray({ control, name: "educations" });
@@ -251,7 +272,6 @@ export default function ProfilePage() {
     if (typeof dateInput !== 'string' || !dateInput.trim()) return 'N/A';
     let dateToParse = dateInput;
 
-    // Check if it's DD-MM-YYYY and rearrange to YYYY-MM-DD for parseISO
     if (/^\d{2}-\d{2}-\d{4}$/.test(dateInput)) {
         const parts = dateInput.split('-');
         if (parts.length === 3) {
@@ -262,25 +282,21 @@ export default function ProfilePage() {
           if (d > 0 && d <= 31 && m > 0 && m <= 12 && y > 1800 && y < 2200) {
              dateToParse = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
           } else {
-            // console.warn(`formatDateForDisplay: Invalid DD-MM-YYYY components: ${dateInput}`);
-            return dateInput; // return original if components are invalid
+            return dateInput; 
           }
         } else {
-           // console.warn(`formatDateForDisplay: Could not split DD-MM-YYYY string: ${dateInput}`);
-           return dateInput; // return original if split fails
+           return dateInput; 
         }
     }
     try {
-        const dateObj = parseISO(dateToParse); // parseISO expects YYYY-MM-DD or other ISO formats
+        const dateObj = parseISO(dateToParse); 
         if (isValid(dateObj)) {
             return format(dateObj, displayFormat);
         }
     } catch (e) {
-        // console.warn("Error parsing date for display:", dateInput, "Parsed as:", dateToParse, e);
         return "Invalid Date";
     }
-    // console.warn(`formatDateForDisplay: Could not parse date: "${dateInput}" (tried as "${dateToParse}"). Returning original.`);
-    return dateInput; // Fallback to original string if all else fails
+    return dateInput; 
   }, []);
 
 
@@ -374,7 +390,7 @@ export default function ProfilePage() {
 
       const payload: Partial<UserUpdateAPI> = {
         resume: null,
-        country: getValues().countries, // Always include country
+        country: getValues().countries, 
       };
       await apiClient.put(`/users/${backendUserId}`, payload);
       setValue('resume', null, { shouldValidate: true, shouldDirty: true });
@@ -388,6 +404,7 @@ export default function ProfilePage() {
   const handleSectionEditToggle = (sectionName: EditableSection) => {
     if (editingSection === sectionName) {
       setEditingSection(null);
+       if (sectionName === 'password') changePasswordForm.reset();
     } else if (editingSection !== null) {
       toast({ title: "Finish Current Edit", description: `Please save or cancel changes in the '${editingSection.replace(/_/g,' ')}' section first.`, variant: "default" });
     } else {
@@ -422,8 +439,12 @@ export default function ProfilePage() {
         case 'certifications':
           replaceCert(freshFormValues.certifications || []);
           break;
+        case 'password':
+          changePasswordForm.reset(); // Reset password form specifically
+          break;
       }
-      clearErrors();
+      clearErrors(); // Clear main form errors
+      if (sectionName !== 'password') form.clearErrors();
       setEditingSection(sectionName);
     }
   };
@@ -462,9 +483,13 @@ export default function ProfilePage() {
       case 'certifications':
         replaceCert(originalFormValues.certifications || []);
         break;
+      case 'password':
+        changePasswordForm.reset();
+        break;
     }
     setEditingSection(null);
     clearErrors();
+    if (sectionName !== 'password') form.clearErrors(); else changePasswordForm.clearErrors();
   };
 
  const handleSaveSection = async (
@@ -481,19 +506,35 @@ export default function ProfilePage() {
     const currentFormValues = getValues();
     let payloadForValidation: Partial<UserUpdateAPI> = {
       ...sectionPayloadBuilder(currentFormValues),
-      country: currentFormValues.countries, // Always include country string
+      country: currentFormValues.countries || currentUser?.countries?.join(', ') || '', 
     };
+    
+    if (!payloadForValidation.country && currentUser?.countries && currentUser.countries.length > 0) {
+      payloadForValidation.country = currentUser.countries.join(', ');
+    } else if (!payloadForValidation.country) {
+       toast({ title: "Missing Country", description: "Target countries are required to save this section.", variant: "destructive" });
+       setIsSubmittingSection(null);
+       form.setError("countries", { type: "manual", message: "Target countries are required." });
+       return;
+    }
+
 
     const validationResult = sectionSchema.safeParse(payloadForValidation);
 
     if (!validationResult.success) {
       console.error(`${sectionKey} Section - Validation Errors:`, validationResult.error.flatten());
       console.log(`${sectionKey} Section - Data that failed validation:`, payloadForValidation);
-      toast({ title: "Validation Error", description: `Please check entries in the ${sectionKey?.replace(/_/g, ' ')} section. Error: ${validationResult.error.flatten().formErrors.join(', ') || 'See console for details.'}`, variant: "destructive" });
       
       const fieldErrors = validationResult.error.flatten().fieldErrors;
+      let errorMessages = Object.entries(fieldErrors)
+        .map(([path, messages]) => `${path}: ${(messages as string[])?.[0] || 'Invalid value'}`)
+        .join('; ');
+      if (!errorMessages) errorMessages = validationResult.error.flatten().formErrors.join(', ') || "Unknown validation error.";
+
+      toast({ title: "Validation Error", description: `Please check entries in the ${sectionKey?.replace(/_/g, ' ')} section. ${errorMessages}`, variant: "destructive" });
+      
       Object.entries(fieldErrors).forEach(([path, messages]) => {
-        const fieldName = path as keyof ProfileFormValues; // Simple direct cast, might need refinement for nested paths
+        const fieldName = path as keyof ProfileFormValues; 
         if (typeof fieldName === 'string' && form.getFieldState(fieldName)) {
            form.setError(fieldName, { type: 'manual', message: (messages as string[])?.[0] || 'Invalid value' });
         }
@@ -506,7 +547,7 @@ export default function ProfilePage() {
     try {
       const response = await apiClient.put<UserModifyResponse>(`/users/${backendUserId}`, validationResult.data);
       if (response.data.messages?.toLowerCase() === 'success') {
-        await refetchBackendUser(); // This will internally call reset with new currentUser
+        await refetchBackendUser(); 
         setEditingSection(null);
         clearErrors();
         toast({ title: `${sectionKey?.replace(/_/g, ' ')} Updated Successfully` });
@@ -525,10 +566,10 @@ export default function ProfilePage() {
   if (isLoadingAuth || !hasPopulatedFromCurrentUser) return <FullPageLoading message="Loading profile..." />;
   if (!currentUser && !isLoadingAuth && !isLoggingOut && !firebaseUser) return <FullPageLoading message="Verifying session..." />;
 
-  const overallSubmitting = isUploadingResume || !!isSubmittingSection;
+  const overallSubmitting = isUploadingResume || !!isSubmittingSection || changePasswordForm.formState.isSubmitting;
 
-  const SectionCard: React.FC<{title: string; description: string; sectionKey: EditableSection; children: React.ReactNode; editContent: React.ReactNode; onSave: () => Promise<void>; icon?: React.ElementType }> =
-    ({ title, description, sectionKey, children, editContent, onSave, icon: Icon }) => (
+  const SectionCard: React.FC<{title: string; description: string; sectionKey: EditableSection; children: React.ReactNode; editContent: React.ReactNode; onSave: () => Promise<void>; icon?: React.ElementType; isPasswordSection?: boolean }> =
+    ({ title, description, sectionKey, children, editContent, onSave, icon: Icon, isPasswordSection = false }) => (
     <Card className="shadow-lg">
       <CardHeader className="flex flex-row justify-between items-start">
         <div>
@@ -548,11 +589,11 @@ export default function ProfilePage() {
         {editingSection === sectionKey ? editContent : children}
         {editingSection === sectionKey && (
           <div className="flex gap-2 mt-6">
-            <Button type="button" variant="default" onClick={onSave} disabled={isSubmittingSection === sectionKey || overallSubmitting}>
-             {isSubmittingSection === sectionKey ? <LoadingSpinner size={16} className="mr-2" /> : <Save className="mr-2 h-4 w-4" />}
-              {isSubmittingSection === sectionKey ? 'Saving...' : 'Save Section'}
+            <Button type="button" variant="default" onClick={onSave} disabled={isSubmittingSection === sectionKey || overallSubmitting || (isPasswordSection && changePasswordForm.formState.isSubmitting) }>
+             {(isSubmittingSection === sectionKey || (isPasswordSection && changePasswordForm.formState.isSubmitting)) ? <LoadingSpinner size={16} className="mr-2" /> : <Save className="mr-2 h-4 w-4" />}
+              {(isSubmittingSection === sectionKey || (isPasswordSection && changePasswordForm.formState.isSubmitting)) ? 'Saving...' : 'Save Section'}
             </Button>
-            <Button type="button" variant="ghost" onClick={() => handleCancelSectionEdit(sectionKey)} disabled={isSubmittingSection === sectionKey || overallSubmitting}><X className="mr-2 h-4 w-4" /> Cancel</Button>
+            <Button type="button" variant="ghost" onClick={() => handleCancelSectionEdit(sectionKey)} disabled={isSubmittingSection === sectionKey || overallSubmitting || (isPasswordSection && changePasswordForm.formState.isSubmitting)}><X className="mr-2 h-4 w-4" /> Cancel</Button>
           </div>
         )}
       </CardContent>
@@ -586,7 +627,6 @@ export default function ProfilePage() {
       username: values.username,
       number: values.phone_number || null,
       preferred_locations: values.preferred_locations || undefined,
-      // 'country' is added by handleSaveSection from values.countries
     }), personalContactSectionPayloadSchema);
   };
 
@@ -673,6 +713,49 @@ export default function ProfilePage() {
     }), certificationsSectionPayloadSchema);
   };
 
+  const handleSavePassword: SubmitHandler<ChangePasswordFormValues> = async (data) => {
+    if (!firebaseUser || !backendUserId) {
+      toast({ title: "Error", description: "User not authenticated.", variant: "destructive" });
+      return;
+    }
+    setIsSubmittingSection('password'); // Use general section submitting state
+    try {
+      const credential = EmailAuthProvider.credential(firebaseUser.email!, data.oldPassword);
+      await reauthenticateWithCredential(firebaseUser, credential);
+      toast({ title: "Re-authentication successful", description: "Proceeding to update password..." });
+
+      await updatePassword(firebaseUser, data.newPassword);
+      toast({ title: "Firebase Password Updated", description: "Your password has been updated in Firebase." });
+
+      const backendPasswordPayload: ChangePasswordPayload = {
+        old_password: data.oldPassword,
+        new_password: data.newPassword,
+      };
+      await apiClient.post(`/users/${backendUserId}/change_password`, backendPasswordPayload);
+      toast({ title: "Password Changed Successfully", description: "Your password has been updated on both Firebase and our backend." });
+      
+      changePasswordForm.reset();
+      setEditingSection(null);
+
+    } catch (error: any) {
+      console.error("Password change error:", error);
+      let errorMessage = getErrorMessage(error);
+      if (error.code === 'auth/wrong-password') {
+        errorMessage = "Incorrect current password. Please try again.";
+        changePasswordForm.setError("oldPassword", { type: "manual", message: errorMessage });
+      } else if (error.code === 'auth/too-many-requests') {
+        errorMessage = "Too many attempts. Please try again later.";
+      } else if (error instanceof AxiosError && error.response?.status === 400) {
+         errorMessage = "Backend: " + (error.response.data?.detail || "Failed to update password on backend.");
+      }
+      if (!changePasswordForm.formState.errors.oldPassword) {
+         toast({ title: "Password Change Failed", description: errorMessage, variant: "destructive" });
+      }
+    } finally {
+      setIsSubmittingSection(null);
+    }
+  };
+
 
   const renderPersonalContactInfo = () => {
     const currentData = getValues();
@@ -705,7 +788,7 @@ export default function ProfilePage() {
     const currentData = getValues();
     const displayContent = (
       <div className="space-y-4">
-        <DisplayField label="Professional Summary" value={currentData.professional_summary} icon={BookText} className="md:col-span-2" />
+        <DisplayField label="Professional Summary" value={currentData.professional_summary} icon={BookUser} className="md:col-span-2" />
         <div className="grid grid-cols-1 md:grid-cols-2 md:gap-x-6 md:gap-y-4">
           <DisplayField label="Years of Professional Experience" value={currentData.experience} icon={Briefcase} />
           <DisplayField label="Key Skills" value={currentData.skills} icon={ListChecks}/>
@@ -902,7 +985,63 @@ export default function ProfilePage() {
         <Button type="button" variant="outline" onClick={() => appendCert({id: crypto.randomUUID(), title: '', issued_by: '', issue_date: null, credential_url: '' })}><PlusCircle className="mr-2 h-4 w-4" /> Add Certification</Button>
       </>
     );
-    return <SectionCard title="Certifications &amp; Licenses" description="Include professional certifications." sectionKey="certifications" editContent={editContent} onSave={handleSaveCertifications} icon={Award}>{displayContent}</SectionCard>;
+    return <SectionCard title="Certifications & Licenses" description="Include professional certifications." sectionKey="certifications" editContent={editContent} onSave={handleSaveCertifications} icon={Award}>{displayContent}</SectionCard>;
+  };
+
+  const renderPasswordSection = () => {
+    const displayContent = (
+      <div className="text-sm text-muted-foreground">
+        Update your password to keep your account secure.
+      </div>
+    );
+    const editContent = (
+      <form onSubmit={changePasswordForm.handleSubmit(handleSavePassword)} className="space-y-6">
+        <div className="space-y-2">
+          <Label htmlFor="oldPassword">Current Password</Label>
+          <div className="relative flex items-center">
+            <Input id="oldPassword" type={showOldPassword ? "text" : "password"} {...changePasswordForm.register('oldPassword')} className={changePasswordForm.formState.errors.oldPassword ? 'border-destructive' : ''}/>
+            <Button type="button" variant="ghost" size="icon" className="absolute right-1 h-7 w-7 text-muted-foreground hover:bg-transparent focus-visible:ring-0" onClick={() => setShowOldPassword(!showOldPassword)} tabIndex={-1}>
+              {showOldPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </Button>
+          </div>
+          {changePasswordForm.formState.errors.oldPassword && <p className="text-sm text-destructive">{changePasswordForm.formState.errors.oldPassword.message}</p>}
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="newPassword">New Password</Label>
+          <div className="relative flex items-center">
+            <Input id="newPassword" type={showNewPassword ? "text" : "password"} {...changePasswordForm.register('newPassword')} className={changePasswordForm.formState.errors.newPassword ? 'border-destructive' : ''}/>
+            <Button type="button" variant="ghost" size="icon" className="absolute right-1 h-7 w-7 text-muted-foreground hover:bg-transparent focus-visible:ring-0" onClick={() => setShowNewPassword(!showNewPassword)} tabIndex={-1}>
+              {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </Button>
+          </div>
+          {changePasswordForm.formState.errors.newPassword && <p className="text-sm text-destructive">{changePasswordForm.formState.errors.newPassword.message}</p>}
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="confirmPassword">Confirm New Password</Label>
+          <div className="relative flex items-center">
+            <Input id="confirmPassword" type={showConfirmNewPassword ? "text" : "password"} {...changePasswordForm.register('confirmPassword')} className={changePasswordForm.formState.errors.confirmPassword ? 'border-destructive' : ''}/>
+            <Button type="button" variant="ghost" size="icon" className="absolute right-1 h-7 w-7 text-muted-foreground hover:bg-transparent focus-visible:ring-0" onClick={() => setShowConfirmNewPassword(!showConfirmNewPassword)} tabIndex={-1}>
+              {showConfirmNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </Button>
+          </div>
+          {changePasswordForm.formState.errors.confirmPassword && <p className="text-sm text-destructive">{changePasswordForm.formState.errors.confirmPassword.message}</p>}
+        </div>
+        {/* Save/Cancel buttons are rendered by SectionCard */}
+      </form>
+    );
+    return (
+      <SectionCard
+        title="Security"
+        description="Change your password."
+        sectionKey="password"
+        editContent={editContent}
+        onSave={() => changePasswordForm.handleSubmit(handleSavePassword)()}
+        icon={LockKeyhole}
+        isPasswordSection={true}
+      >
+        {displayContent}
+      </SectionCard>
+    );
   };
 
   return (
@@ -923,6 +1062,9 @@ export default function ProfilePage() {
       {renderEducations()}
       <Separator className="my-6" />
       {renderCertifications()}
+      <Separator className="my-6" />
+      {renderPasswordSection()}
+
 
       <Separator className="my-10" />
       <Card className="shadow-lg">
@@ -944,4 +1086,3 @@ export default function ProfilePage() {
     </div>
   );
 }
-

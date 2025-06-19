@@ -427,3 +427,14 @@ export interface AnalyzeResultOut {
   explanation: string;
 }
 
+// Payload for POST /users/{id}/change_password
+export interface ChangePasswordPayload {
+  old_password: string;
+  new_password: string;
+}
+
+// The backend might return a simple success message for password change
+export interface ChangePasswordResponse {
+  messages: string; 
+  detail?: string; // Often used for error messages from FastAPI
+}

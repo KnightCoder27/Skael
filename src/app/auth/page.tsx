@@ -12,13 +12,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
-import { LogIn, UserPlus, Eye, EyeOff, Compass, Phone } from 'lucide-react';
+import { LogIn, UserPlus, Eye, EyeOff, Compass, Phone, KeyRound } from 'lucide-react';
 import type { UserIn, UserLogin as UserLoginType, UserLoginResponse, UserRegistrationResponse } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import apiClient from '@/lib/apiClient';
 import { auth as firebaseAuth } from '@/lib/firebase';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile }from 'firebase/auth';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, sendPasswordResetEmail }from 'firebase/auth';
 import { AxiosError } from 'axios';
 import { LoadingSpinner } from '@/components/app/loading-spinner';
 
@@ -43,6 +44,12 @@ const registerSchema = z.object({
   path: ["confirmPassword"],
 });
 type RegisterFormValues = z.infer<typeof registerSchema>;
+
+const forgotPasswordSchema = z.object({
+  email: z.string().email({ message: "Invalid email address." }),
+});
+type ForgotPasswordFormValues = z.infer<typeof forgotPasswordSchema>;
+
 
 const getErrorMessage = (error: any): string => {
   if (error instanceof AxiosError && error.response) {
@@ -79,6 +86,7 @@ export default function AuthPage() {
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const [showRegisterConfirmPassword, setShowRegisterConfirmPassword] = useState(false);
+  const [isForgotPasswordDialogOpen, setIsForgotPasswordDialogOpen] = useState(false);
 
   const loginForm = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -89,6 +97,12 @@ export default function AuthPage() {
     resolver: zodResolver(registerSchema),
     defaultValues: { name: "", email: "", phoneNumber: "", password: "", confirmPassword: "" },
   });
+
+  const forgotPasswordForm = useForm<ForgotPasswordFormValues>({
+    resolver: zodResolver(forgotPasswordSchema),
+    defaultValues: { email: "" },
+  });
+
 
   const onLoginSubmit: SubmitHandler<LoginFormValues> = async (data) => {
     loginForm.clearErrors();
@@ -109,7 +123,7 @@ export default function AuthPage() {
       let errorMessage = getErrorMessage(error);
       if (error instanceof AxiosError && (error.response?.status === 400 || error.response?.status === 401)) {
           loginForm.setError("password", { type: "manual", message: "Invalid email or password." });
-          errorMessage = "Invalid email or password."; // Prioritize this specific message
+          errorMessage = "Invalid email or password."; 
       } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
         const firebaseError = error as any;
         const firebaseErrorCode = firebaseError.code;
@@ -160,7 +174,7 @@ export default function AuthPage() {
             registerForm.setError("email", { type: "manual", message: "This email is already registered." });
             errorMessage = "This email is already registered.";
           } else {
-             errorMessage = "Invalid data for registration. " + (typeof detail === 'string' && detail.length < 100 ? detail : ''); // Add detail if it's a short string
+             errorMessage = "Invalid data for registration. " + (typeof detail === 'string' && detail.length < 100 ? detail : ''); 
           }
       } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
         const firebaseError = error as any;
@@ -178,6 +192,31 @@ export default function AuthPage() {
 
       if (!registerForm.formState.errors.email && !registerForm.formState.errors.password) {
         toast({ title: "Registration Failed", description: errorMessage, variant: "destructive" });
+      }
+    }
+  };
+
+  const handleForgotPasswordSubmit: SubmitHandler<ForgotPasswordFormValues> = async (data) => {
+    forgotPasswordForm.clearErrors();
+    toast({ title: "Processing Request...", description: "Sending password reset email..." });
+    try {
+      await sendPasswordResetEmail(firebaseAuth, data.email);
+      toast({ title: "Reset Email Sent", description: "If an account exists for this email, a password reset link has been sent." });
+      setIsForgotPasswordDialogOpen(false);
+      forgotPasswordForm.reset();
+    } catch (error: any) {
+      let errorMessage = "Failed to send reset email. Please try again.";
+      if (error.code === 'auth/user-not-found') {
+        errorMessage = "No user found with this email address.";
+         forgotPasswordForm.setError("email", { type: "manual", message: errorMessage });
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = "Invalid email format.";
+         forgotPasswordForm.setError("email", { type: "manual", message: errorMessage });
+      } else {
+        console.error("Forgot Password Error:", error);
+      }
+      if (!forgotPasswordForm.formState.errors.email) {
+        toast({ title: "Request Failed", description: errorMessage, variant: "destructive" });
       }
     }
   };
@@ -264,9 +303,9 @@ export default function AuthPage() {
                   )}
                 </div>
                 <div className="flex items-center justify-end">
-                  <Link href="#" className="text-sm text-primary hover:underline" tabIndex={-1} onClick={(e) => { e.preventDefault(); toast({title: "Feature Coming Soon", description: "Password recovery will be available in a future update."}) }}>
+                  <Button variant="link" type="button" className="p-0 h-auto text-sm text-primary hover:underline" onClick={() => setIsForgotPasswordDialogOpen(true)}>
                     Forgot password?
-                  </Link>
+                  </Button>
                 </div>
               </CardContent>
               <CardFooter className="flex flex-col gap-4 pt-2">
@@ -428,8 +467,39 @@ export default function AuthPage() {
           </TabsContent>
         </Tabs>
       </Card>
+
+      <AlertDialog open={isForgotPasswordDialogOpen} onOpenChange={setIsForgotPasswordDialogOpen}>
+        <AlertDialogContent>
+          <form onSubmit={forgotPasswordForm.handleSubmit(handleForgotPasswordSubmit)}>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center"><KeyRound className="mr-2 h-5 w-5 text-primary"/>Forgot Your Password?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Enter your email address below and we'll send you a link to reset your password.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="py-4 space-y-2">
+              <Label htmlFor="forgot-email">Email Address</Label>
+              <Input
+                id="forgot-email"
+                type="email"
+                placeholder="you@example.com"
+                {...forgotPasswordForm.register('email')}
+                className={forgotPasswordForm.formState.errors.email ? 'border-destructive focus-visible:ring-destructive' : ''}
+              />
+              {forgotPasswordForm.formState.errors.email && (
+                <p className="text-sm text-destructive">{forgotPasswordForm.formState.errors.email.message}</p>
+              )}
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel type="button" onClick={() => { setIsForgotPasswordDialogOpen(false); forgotPasswordForm.reset(); }}>Cancel</AlertDialogCancel>
+              <Button type="submit" disabled={forgotPasswordForm.formState.isSubmitting}>
+                {forgotPasswordForm.formState.isSubmitting ? <LoadingSpinner size={16} className="mr-2" /> : null}
+                {forgotPasswordForm.formState.isSubmitting ? 'Sending...' : 'Send Reset Email'}
+              </Button>
+            </AlertDialogFooter>
+          </form>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
-
-  
