@@ -40,19 +40,21 @@ const workExperienceSchema = z.object({
   id: z.string().optional(),
   company_name: z.string().min(1, "Company name is required."),
   job_title: z.string().min(1, "Job title is required."),
-  start_date: z.string().regex(dateRegex, dateErrorMessage),
+  start_date: z.string().regex(dateRegex, dateErrorMessage).nullable(),
   end_date: z.string().regex(dateRegex, dateErrorMessage).optional().nullable(),
   description: z.string().max(1000, "Description cannot exceed 1000 characters.").optional().nullable(),
   currently_working: z.boolean().optional(),
 }).refine(data => {
-  if (data.currently_working) return true; // If currently working, end_date is not required
-  return !!data.end_date; // Otherwise, end_date is required
+  if (data.currently_working) return true;
+  return !!data.end_date;
 }, {
   message: "End date is required if not currently working here.",
   path: ["end_date"],
 }).refine(data => {
   if (data.start_date && data.end_date && !data.currently_working) {
-    return new Date(data.end_date) >= new Date(data.start_date);
+    try {
+      return parseISO(data.end_date) >= parseISO(data.start_date);
+    } catch (e) { return false; } // Invalid date format would fail regex first
   }
   return true;
 }, {
@@ -84,7 +86,7 @@ const certificationSchema = z.object({
   credential_url: z.string().url("Must be a valid URL.")
     .optional()
     .nullable()
-    .transform(val => (val === "" ? null : val)), // Treat empty string as null
+    .transform(val => (val === "" ? null : val)),
 });
 
 const profileSchema = z.object({
@@ -100,8 +102,8 @@ const profileSchema = z.object({
   remote_preference: z.enum(remotePreferenceOptions, { errorMap: () => ({ message: "Please select a valid remote preference."}) }).optional().nullable(),
   expected_salary: z.coerce.number().positive("Expected salary must be a positive number.").optional().nullable(),
   resume: z.string().url('Resume must be a valid URL (this will be the Firebase Storage URL).').max(1024, 'Resume URL too long.').optional().nullable(),
-  work_experience: z.array(workExperienceSchema).optional().nullable(),
-  education: z.array(educationSchema).optional().nullable(),
+  work_experiences: z.array(workExperienceSchema).optional().nullable(),
+  educations: z.array(educationSchema).optional().nullable(),
   certifications: z.array(certificationSchema).optional().nullable(),
 });
 
@@ -157,15 +159,15 @@ export default function ProfilePage() {
       remote_preference: undefined,
       expected_salary: null,
       resume: null,
-      work_experience: [],
-      education: [],
+      work_experiences: [],
+      educations: [],
       certifications: [],
     }
   });
   const { register, handleSubmit, formState: { errors, isSubmitting: isFormSubmitting }, reset, control, setValue, watch, clearErrors } = form;
 
-  const { fields: workFields, append: appendWork, remove: removeWork } = useFieldArray({ control, name: "work_experience" });
-  const { fields: eduFields, append: appendEdu, remove: removeEdu } = useFieldArray({ control, name: "education" });
+  const { fields: workFields, append: appendWork, remove: removeWork } = useFieldArray({ control, name: "work_experiences" });
+  const { fields: eduFields, append: appendEdu, remove: removeEdu } = useFieldArray({ control, name: "educations" });
   const { fields: certFields, append: appendCert, remove: removeCert } = useFieldArray({ control, name: "certifications" });
 
 
@@ -224,33 +226,31 @@ export default function ProfilePage() {
             remote_preference: formRPValue,
             expected_salary: currentUser.expected_salary ?? null,
             resume: currentUser.resume || null,
-            work_experience: currentUser.work_experience?.map(w => ({
-              ...w, 
-              id: w.id || crypto.randomUUID(),
-              start_date: w.start_date ? format(parseISO(w.start_date), 'yyyy-MM-dd') : '',
-              end_date: w.end_date ? format(parseISO(w.end_date), 'yyyy-MM-dd') : null,
-              currently_working: !w.end_date,
+            work_experiences: currentUser.work_experience?.map(w => {
+              const startDate = w.start_date && isValid(parseISO(w.start_date)) ? format(parseISO(w.start_date), 'yyyy-MM-dd') : null;
+              const endDate = w.end_date && isValid(parseISO(w.end_date)) ? format(parseISO(w.end_date), 'yyyy-MM-dd') : null;
+              return {
+                ...w,
+                id: w.id || crypto.randomUUID(),
+                start_date: startDate,
+                end_date: endDate,
+                currently_working: w.currently_working ?? !endDate,
+              };
+            }) || [],
+            educations: currentUser.education?.map(e => ({
+                id: e.id || crypto.randomUUID(),
+                institution: e.institution || '',
+                degree: e.degree || '',
+                start_year: typeof e.start_year === 'number' ? e.start_year : null,
+                end_year: typeof e.end_year === 'number' ? e.end_year : null,
             })) || [],
-            education: currentUser.education?.map(e_raw => {
-                const e = e_raw as any; 
-                return {
-                    id: e.id || crypto.randomUUID(),
-                    institution: e.institution || '',
-                    degree: e.degree || '',
-                    start_year: typeof e.start_year === 'number' ? e.start_year : null,
-                    end_year: typeof e.end_year === 'number' ? e.end_year : null,
-                };
-            }) || [],
-            certifications: currentUser.certifications?.map(c_raw => {
-                 const c = c_raw as any;
-                 return {
-                    id: c.id || crypto.randomUUID(),
-                    title: c.title || '',
-                    issued_by: c.issued_by || '',
-                    issue_date: c.issue_date ? format(parseISO(c.issue_date), 'yyyy-MM-dd') : null,
-                    credential_url: c.credential_url || null,
-                 };
-            }) || [],
+            certifications: currentUser.certifications?.map(c => ({
+                 id: c.id || crypto.randomUUID(),
+                 title: c.title || '',
+                 issued_by: c.issued_by || '',
+                 issue_date: c.issue_date && isValid(parseISO(c.issue_date)) ? format(parseISO(c.issue_date), 'yyyy-MM-dd') : null,
+                 credential_url: c.credential_url || null,
+            })) || [],
         };
         newResumeUrlToSet = currentUser.resume || null;
         setHasPopulatedFromCurrentUser(true);
@@ -263,7 +263,7 @@ export default function ProfilePage() {
             skills: null, experience: null, preferred_locations: null, countries: '',
             remote_preference: undefined,
             expected_salary: null, resume: null,
-            work_experience: [], education: [], certifications: [],
+            work_experiences: [], educations: [], certifications: [],
         };
         newResumeUrlToSet = null;
     } else if (!firebaseUser && !currentUser) {
@@ -273,7 +273,7 @@ export default function ProfilePage() {
             skills: null, experience: null, preferred_locations: null, countries: '',
             remote_preference: undefined,
             expected_salary: null, resume: null,
-            work_experience: [], education: [], certifications: [],
+            work_experiences: [], educations: [], certifications: [],
        };
        newResumeUrlToSet = null;
     }
@@ -282,7 +282,7 @@ export default function ProfilePage() {
         reset(formValuesToReset);
         setCurrentResumeUrl(newResumeUrlToSet);
     }
-}, [currentUser, firebaseUser, reset, isLoadingAuth, isLoggingOut, hasPopulatedFromCurrentUser, currentResumeUrl]);
+  }, [currentUser, firebaseUser, reset, isLoadingAuth, isLoggingOut, hasPopulatedFromCurrentUser, currentResumeUrl]);
 
 
   const handleResumeFileChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -399,16 +399,20 @@ export default function ProfilePage() {
       professional_summary: data.professional_summary || null,
       expected_salary: data.expected_salary ?? null,
       resume: newResumeUrl,
-      work_experiences: data.work_experience?.map(({id, currently_working, ...rest}) => ({
+      work_experiences: data.work_experiences?.map(({id, currently_working, ...rest}) => ({
         ...rest,
-        end_date: currently_working ? null : rest.end_date,
+        start_date: rest.start_date || '', // Ensure string for backend
+        end_date: currently_working ? null : (rest.end_date || null),
       })) || [],
-      educations: data.education?.map(({id, ...rest}) => ({
+      educations: data.educations?.map(({id, ...rest}) => ({
         ...rest,
         start_year: rest.start_year ? Number(rest.start_year) : null,
         end_year: rest.end_year ? Number(rest.end_year) : null,
       })) || [],
-      certifications: data.certifications?.map(({id, ...rest}) => rest) || [],
+      certifications: data.certifications?.map(({id, ...rest}) => ({
+        ...rest,
+        issue_date: rest.issue_date || null, // Ensure null if empty
+      })) || [],
     };
 
     const filteredUpdatePayload = Object.fromEntries(
@@ -744,28 +748,28 @@ export default function ProfilePage() {
           </CardHeader>
           <CardContent className="space-y-4">
             {workFields.map((item, index) => {
-              const currentlyWorking = watch(`work_experience.${index}.currently_working`);
+              const currentlyWorking = watch(`work_experiences.${index}.currently_working`);
               return (
                 <Card key={item.id} className="p-4 bg-muted/30 border-dashed">
                   <div className="space-y-3">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <Label htmlFor={`work_experience.${index}.company_name`}>Company Name</Label>
-                        <Input {...register(`work_experience.${index}.company_name`)} placeholder="e.g., Acme Corp" className={errors.work_experience?.[index]?.company_name ? 'border-destructive' : ''}/>
-                        {errors.work_experience?.[index]?.company_name && <p className="text-sm text-destructive">{errors.work_experience[index]?.company_name?.message}</p>}
+                        <Label htmlFor={`work_experiences.${index}.company_name`}>Company Name</Label>
+                        <Input {...register(`work_experiences.${index}.company_name`)} placeholder="e.g., Acme Corp" className={errors.work_experiences?.[index]?.company_name ? 'border-destructive' : ''}/>
+                        {errors.work_experiences?.[index]?.company_name && <p className="text-sm text-destructive">{errors.work_experiences[index]?.company_name?.message}</p>}
                       </div>
                       <div>
-                        <Label htmlFor={`work_experience.${index}.job_title`}>Job Title</Label>
-                        <Input {...register(`work_experience.${index}.job_title`)} placeholder="e.g., Software Engineer" className={errors.work_experience?.[index]?.job_title ? 'border-destructive' : ''}/>
-                        {errors.work_experience?.[index]?.job_title && <p className="text-sm text-destructive">{errors.work_experience[index]?.job_title?.message}</p>}
+                        <Label htmlFor={`work_experiences.${index}.job_title`}>Job Title</Label>
+                        <Input {...register(`work_experiences.${index}.job_title`)} placeholder="e.g., Software Engineer" className={errors.work_experiences?.[index]?.job_title ? 'border-destructive' : ''}/>
+                        {errors.work_experiences?.[index]?.job_title && <p className="text-sm text-destructive">{errors.work_experiences[index]?.job_title?.message}</p>}
                       </div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
                       <div>
-                        <Label htmlFor={`work_experience.${index}.start_date`}>Start Date</Label>
+                        <Label htmlFor={`work_experiences.${index}.start_date`}>Start Date</Label>
                         <Controller
                           control={control}
-                          name={`work_experience.${index}.start_date`}
+                          name={`work_experiences.${index}.start_date`}
                           render={({ field }) => (
                             <Popover>
                               <PopoverTrigger asChild>
@@ -774,31 +778,31 @@ export default function ProfilePage() {
                                   className={cn(
                                     "w-full justify-start text-left font-normal",
                                     !field.value && "text-muted-foreground",
-                                    errors.work_experience?.[index]?.start_date && "border-destructive"
+                                    errors.work_experiences?.[index]?.start_date && "border-destructive"
                                   )}
                                 >
                                   <CalendarIcon className="mr-2 h-4 w-4" />
-                                  {field.value ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}
+                                  {field.value && isValid(parseISO(field.value)) ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}
                                 </Button>
                               </PopoverTrigger>
                               <PopoverContent className="w-auto p-0">
                                 <Calendar
                                   mode="single"
-                                  selected={field.value ? parseISO(field.value) : undefined}
-                                  onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : '')}
+                                  selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined}
+                                  onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : null)}
                                   initialFocus
                                 />
                               </PopoverContent>
                             </Popover>
                           )}
                         />
-                        {errors.work_experience?.[index]?.start_date && <p className="text-sm text-destructive">{errors.work_experience[index]?.start_date?.message}</p>}
+                        {errors.work_experiences?.[index]?.start_date && <p className="text-sm text-destructive">{errors.work_experiences[index]?.start_date?.message}</p>}
                       </div>
                       <div>
-                        <Label htmlFor={`work_experience.${index}.end_date`}>End Date</Label>
+                        <Label htmlFor={`work_experiences.${index}.end_date`}>End Date</Label>
                          <Controller
                           control={control}
-                          name={`work_experience.${index}.end_date`}
+                          name={`work_experiences.${index}.end_date`}
                           render={({ field }) => (
                             <Popover>
                               <PopoverTrigger asChild>
@@ -808,50 +812,50 @@ export default function ProfilePage() {
                                   className={cn(
                                     "w-full justify-start text-left font-normal",
                                     !field.value && !currentlyWorking && "text-muted-foreground",
-                                    errors.work_experience?.[index]?.end_date && !currentlyWorking && "border-destructive"
+                                    errors.work_experiences?.[index]?.end_date && !currentlyWorking && "border-destructive"
                                   )}
                                 >
                                   <CalendarIcon className="mr-2 h-4 w-4" />
-                                  {field.value && !currentlyWorking ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}
+                                  {field.value && !currentlyWorking && isValid(parseISO(field.value)) ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}
                                 </Button>
                               </PopoverTrigger>
                               <PopoverContent className="w-auto p-0">
                                 <Calendar
                                   mode="single"
-                                  selected={field.value ? parseISO(field.value) : undefined}
-                                  onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : '')}
+                                  selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined}
+                                  onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : null)}
                                 />
                               </PopoverContent>
                             </Popover>
                           )}
                         />
-                        {errors.work_experience?.[index]?.end_date && !currentlyWorking && <p className="text-sm text-destructive">{errors.work_experience[index]?.end_date?.message}</p>}
+                        {errors.work_experiences?.[index]?.end_date && !currentlyWorking && <p className="text-sm text-destructive">{errors.work_experiences[index]?.end_date?.message}</p>}
                       </div>
                     </div>
                     <div className="flex items-center space-x-2">
                       <Controller
-                        name={`work_experience.${index}.currently_working`}
+                        name={`work_experiences.${index}.currently_working`}
                         control={control}
                         render={({ field }) => (
                           <Checkbox
-                            id={`work_experience.${index}.currently_working_checkbox`}
+                            id={`work_experiences.${index}.currently_working_checkbox`}
                             checked={field.value}
                             onCheckedChange={(checked) => {
                               field.onChange(checked);
                               if (checked) {
-                                setValue(`work_experience.${index}.end_date`, null);
-                                clearErrors(`work_experience.${index}.end_date`);
+                                setValue(`work_experiences.${index}.end_date`, null);
+                                clearErrors(`work_experiences.${index}.end_date`);
                               }
                             }}
                           />
                         )}
                       />
-                      <Label htmlFor={`work_experience.${index}.currently_working_checkbox`} className="text-sm font-normal">I currently work here</Label>
+                      <Label htmlFor={`work_experiences.${index}.currently_working_checkbox`} className="text-sm font-normal">I currently work here</Label>
                     </div>
                     <div>
-                      <Label htmlFor={`work_experience.${index}.description`}>Description</Label>
-                      <Textarea {...register(`work_experience.${index}.description`)} placeholder="Key responsibilities and achievements..." rows={3} className={errors.work_experience?.[index]?.description ? 'border-destructive' : ''}/>
-                      {errors.work_experience?.[index]?.description && <p className="text-sm text-destructive">{errors.work_experience[index]?.description?.message}</p>}
+                      <Label htmlFor={`work_experiences.${index}.description`}>Description</Label>
+                      <Textarea {...register(`work_experiences.${index}.description`)} placeholder="Key responsibilities and achievements..." rows={3} className={errors.work_experiences?.[index]?.description ? 'border-destructive' : ''}/>
+                      {errors.work_experiences?.[index]?.description && <p className="text-sm text-destructive">{errors.work_experiences[index]?.description?.message}</p>}
                     </div>
                     <Button type="button" variant="outline" size="sm" onClick={() => removeWork(index)} className="text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/50">
                       <Trash2 className="mr-2 h-3.5 w-3.5" /> Remove Experience
@@ -860,7 +864,7 @@ export default function ProfilePage() {
                 </Card>
               );
             })}
-            <Button type="button" variant="outline" onClick={() => appendWork({ id: crypto.randomUUID(), company_name: '', job_title: '', start_date: '', end_date: null, description: '', currently_working: false })}>
+            <Button type="button" variant="outline" onClick={() => appendWork({ id: crypto.randomUUID(), company_name: '', job_title: '', start_date: null, end_date: null, description: '', currently_working: false })}>
               <PlusCircle className="mr-2 h-4 w-4" /> Add Work Experience
             </Button>
           </CardContent>
@@ -880,26 +884,26 @@ export default function ProfilePage() {
                 <div className="space-y-3">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor={`education.${index}.institution`}>Institution</Label>
-                      <Input {...register(`education.${index}.institution`)} placeholder="e.g., University of Example" className={errors.education?.[index]?.institution ? 'border-destructive' : ''}/>
-                       {errors.education?.[index]?.institution && <p className="text-sm text-destructive">{errors.education[index]?.institution?.message}</p>}
+                      <Label htmlFor={`educations.${index}.institution`}>Institution</Label>
+                      <Input {...register(`educations.${index}.institution`)} placeholder="e.g., University of Example" className={errors.educations?.[index]?.institution ? 'border-destructive' : ''}/>
+                       {errors.educations?.[index]?.institution && <p className="text-sm text-destructive">{errors.educations[index]?.institution?.message}</p>}
                     </div>
                     <div>
-                      <Label htmlFor={`education.${index}.degree`}>Degree</Label>
-                      <Input {...register(`education.${index}.degree`)} placeholder="e.g., B.S. in Computer Science" className={errors.education?.[index]?.degree ? 'border-destructive' : ''}/>
-                       {errors.education?.[index]?.degree && <p className="text-sm text-destructive">{errors.education[index]?.degree?.message}</p>}
+                      <Label htmlFor={`educations.${index}.degree`}>Degree</Label>
+                      <Input {...register(`educations.${index}.degree`)} placeholder="e.g., B.S. in Computer Science" className={errors.educations?.[index]?.degree ? 'border-destructive' : ''}/>
+                       {errors.educations?.[index]?.degree && <p className="text-sm text-destructive">{errors.educations[index]?.degree?.message}</p>}
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                      <div>
-                      <Label htmlFor={`education.${index}.start_year`}>Start Year</Label>
-                      <Input type="number" {...register(`education.${index}.start_year`)} placeholder="YYYY" className={errors.education?.[index]?.start_year ? 'border-destructive' : ''}/>
-                       {errors.education?.[index]?.start_year && <p className="text-sm text-destructive">{errors.education[index]?.start_year?.message}</p>}
+                      <Label htmlFor={`educations.${index}.start_year`}>Start Year</Label>
+                      <Input type="number" {...register(`educations.${index}.start_year`)} placeholder="YYYY" className={errors.educations?.[index]?.start_year ? 'border-destructive' : ''}/>
+                       {errors.educations?.[index]?.start_year && <p className="text-sm text-destructive">{errors.educations[index]?.start_year?.message}</p>}
                     </div>
                      <div>
-                        <Label htmlFor={`education.${index}.end_year`}>End Year (or Current)</Label>
-                        <Input type="number" {...register(`education.${index}.end_year`)} placeholder="YYYY or leave blank if current" className={errors.education?.[index]?.end_year ? 'border-destructive' : ''}/>
-                         {errors.education?.[index]?.end_year && <p className="text-sm text-destructive">{errors.education[index]?.end_year?.message}</p>}
+                        <Label htmlFor={`educations.${index}.end_year`}>End Year (or Current)</Label>
+                        <Input type="number" {...register(`educations.${index}.end_year`)} placeholder="YYYY or leave blank if current" className={errors.educations?.[index]?.end_year ? 'border-destructive' : ''}/>
+                         {errors.educations?.[index]?.end_year && <p className="text-sm text-destructive">{errors.educations[index]?.end_year?.message}</p>}
                      </div>
                    </div>
                   <Button type="button" variant="outline" size="sm" onClick={() => removeEdu(index)} className="text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/50">
@@ -919,7 +923,7 @@ export default function ProfilePage() {
         {/* Certifications Section */}
         <Card className="shadow-lg">
           <CardHeader>
-            <CardTitle className="font-headline text-xl flex items-center"><ScrollText className="mr-2 h-5 w-5 text-primary" />Certifications &amp; Licenses</CardTitle>
+            <CardTitle className="font-headline text-xl flex items-center"><Award className="mr-2 h-5 w-5 text-primary" />Certifications &amp; Licenses</CardTitle>
             <CardDescription>Include your professional certifications and licenses.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -956,14 +960,14 @@ export default function ProfilePage() {
                                   )}
                                 >
                                   <CalendarIcon className="mr-2 h-4 w-4" />
-                                  {field.value ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}
+                                  {field.value && isValid(parseISO(field.value)) ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}
                                 </Button>
                               </PopoverTrigger>
                               <PopoverContent className="w-auto p-0">
                                 <Calendar
                                   mode="single"
-                                  selected={field.value ? parseISO(field.value) : undefined}
-                                  onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : '')}
+                                  selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined}
+                                  onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : null)}
                                   initialFocus
                                 />
                               </PopoverContent>
@@ -984,7 +988,7 @@ export default function ProfilePage() {
                 </div>
               </Card>
             ))}
-            <Button type="button" variant="outline" onClick={() => appendCert({id: crypto.randomUUID(), title: '', issued_by: '', issue_date: '', credential_url: '' })}>
+            <Button type="button" variant="outline" onClick={() => appendCert({id: crypto.randomUUID(), title: '', issued_by: '', issue_date: null, credential_url: '' })}>
               <PlusCircle className="mr-2 h-4 w-4" /> Add Certification
             </Button>
           </CardContent>
