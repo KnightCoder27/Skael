@@ -51,11 +51,14 @@ const workExperienceSchema = z.object({
   message: "End date is required if not currently working here.",
   path: ["end_date"],
 }).refine(data => {
-  if (data.start_date && data.end_date && !data.currently_working) {
-    if (dateRegex.test(data.start_date) && dateRegex.test(data.end_date)) {
-      try { return parseISO(data.end_date) >= parseISO(data.start_date); } catch (e) { return false; }
+  if (data.start_date && dateRegex.test(data.start_date) &&
+      data.end_date && dateRegex.test(data.end_date) &&
+      !data.currently_working) {
+    try {
+      return parseISO(data.end_date) >= parseISO(data.start_date);
+    } catch (e) {
+      return false; // Parsing error indicates invalid date logic here
     }
-    return true; // Rely on regex for format, this refine is for logical order
   }
   return true;
 }, {
@@ -68,7 +71,7 @@ const educationYearSchema = z.preprocess(
     if (typeof val === 'string' && val.trim() === '') return undefined;
     if (val === null || val === undefined) return undefined;
     const num = Number(val);
-    return isNaN(num) ? val : num; // If NaN, pass original for Zod to invalidate, else pass number
+    return isNaN(num) ? val : num;
   },
   z.number({invalid_type_error: "Year must be a number."})
     .int("Year must be a whole number.")
@@ -86,11 +89,10 @@ const educationSchema = z.object({
   end_year: educationYearSchema,
   currently_studying: z.boolean().optional(),
 }).refine(data => {
-  if (data.currently_studying) return true;
-  return true; 
-}).refine(data => {
   if (data.start_year && data.end_year && !data.currently_studying) {
-    return data.end_year >= data.start_year;
+     if (data.end_year < data.start_year) {
+        return false;
+     }
   }
   return true;
 }, {
@@ -104,7 +106,7 @@ const certificationSchema = z.object({
   issued_by: z.string().optional().nullable().transform(val => (val === "" ? null : val)),
   issue_date: z.string().regex(dateRegex, dateErrorMessage).optional().nullable(),
   credential_url: z.string().url("Must be a valid URL if provided.")
-    .or(z.literal("").transform(() => null)) 
+    .or(z.literal("").transform(() => null))
     .optional()
     .nullable(),
 });
@@ -169,7 +171,7 @@ export default function ProfilePage() {
     resolver: zodResolver(profileSchema),
     defaultValues: { /* Defaults set in useEffect */ }
   });
-  const { register, handleSubmit, formState: { errors, isSubmitting: isFormSubmitting }, reset, control, setValue, watch, clearErrors } = form;
+  const { register, handleSubmit, formState: { errors, isSubmitting: isFormSubmitting }, reset, control, setValue, watch, clearErrors, getValues } = form;
 
   const { fields: workFields, append: appendWork, remove: removeWork } = useFieldArray({ control, name: "work_experiences" });
   const { fields: eduFields, append: appendEdu, remove: removeEdu } = useFieldArray({ control, name: "educations" });
@@ -195,9 +197,9 @@ export default function ProfilePage() {
         return format(parsed, 'yyyy-MM-dd');
       }
     } catch (e) { /* ignore, will return null */ }
-    return null; 
+    return null;
   };
-  
+
   const mapUserToFormValues = (user: User | null, fbUser: FirebaseUser | null): ProfileFormValues => {
     const currentRPFromDBRaw: string | null | undefined = user?.remote_preference;
     let formRPValue: RemotePreferenceAPI | undefined = undefined;
@@ -255,11 +257,6 @@ export default function ProfilePage() {
     setHasPopulatedFromCurrentUser(true);
   }, [currentUser, firebaseUser, reset, isLoadingAuth, isLoggingOut]);
 
-  const handleCancelSectionEdit = (sectionName: 'work_experiences' | 'educations' | 'certifications') => {
-    const originalSectionData = mapUserToFormValues(currentUser, firebaseUser)[sectionName];
-    setValue(sectionName, originalSectionData as any, { shouldValidate: false, shouldDirty: false });
-    setEditingSection(null);
-  };
 
   const handleResumeFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -298,17 +295,14 @@ export default function ProfilePage() {
 
   const onSubmit: SubmitHandler<ProfileFormValues> = async (data) => {
     console.log("Profile onSubmit called. Data:", data);
-    console.log("Current editingSection:", editingSection);
 
     if (editingSection) {
       toast({ title: "Action Required", description: `Please click "Done" or "Cancel" for the '${editingSection.replace('_', ' ')}' section before saving the entire profile.`, variant: "destructive" });
-      console.warn("Attempted to save while a section is being edited:", editingSection);
       return;
     }
 
     if (!backendUserId || !firebaseUser) {
       toast({ title: "Error", description: "User session not found. Cannot save profile.", variant: "destructive" });
-      console.error("User session not found for profile save. BackendUserId:", backendUserId, "FirebaseUser:", !!firebaseUser);
       return;
     }
 
@@ -320,7 +314,7 @@ export default function ProfilePage() {
       const filePath = `users/${firebaseUser.uid}/uploaded_resumes/${Date.now()}_${selectedResumeFile.name}`;
       const fileStorageRef = storageRef(storage, filePath);
       const uploadTask = uploadBytesResumable(fileStorageRef, selectedResumeFile);
-      
+
       try {
         if (currentResumeUrl) {
           try { await deleteObject(storageRef(storage, currentResumeUrl)); }
@@ -332,20 +326,19 @@ export default function ProfilePage() {
             async () => { try { newResumeUrlFromUpload = await getDownloadURL(uploadTask.snapshot.ref); uploadSucceeded = true; resolve(); } catch (getUrlError){ reject(getUrlError); } }
           );
         });
-      } catch (error) { 
+      } catch (error) {
         toast({ title: "Resume Upload Failed", description: `Profile not saved. ${getErrorMessage(error)}`, variant: "destructive" });
-        uploadSucceeded = false; 
-      } finally { 
-        setIsUploadingResume(false); 
-        setUploadResumeProgress(null); 
+        uploadSucceeded = false;
+      } finally {
+        setIsUploadingResume(false);
+        setUploadResumeProgress(null);
       }
-      
+
       if (!uploadSucceeded) {
-        console.error("Profile save aborted due to resume upload failure.");
-        return; 
+        return;
       }
     } else {
-      uploadSucceeded = true; 
+      uploadSucceeded = true;
     }
 
     const finalResumeUrl = newResumeUrlFromUpload !== undefined ? newResumeUrlFromUpload : data.resume;
@@ -357,40 +350,52 @@ export default function ProfilePage() {
       skills: data.skills || undefined,
       experience: data.experience ?? null,
       preferred_locations: data.preferred_locations || undefined,
-      country: data.countries, // Backend uses 'country' (string), frontend uses 'countries' (string) for input
+      country: data.countries,
       remote_preference: data.remote_preference || null,
       professional_summary: data.professional_summary || null,
       expected_salary: data.expected_salary ?? null,
       resume: finalResumeUrl,
       work_experiences: data.work_experiences?.map(({id, currently_working, ...rest}) => ({
-        ...rest, end_date: currently_working ? null : (rest.end_date || null),
+        ...rest,
+        company_name: rest.company_name || '',
+        job_title: rest.job_title || '',
+        start_date: rest.start_date || '',
+        end_date: currently_working ? null : (rest.end_date || null),
+        description: rest.description || null,
       })) || [],
       educations: data.educations?.map(({id, currently_studying, ...rest}) => ({
-        ...rest, 
+        ...rest,
+        institution: rest.institution || '',
+        degree: rest.degree || '',
         start_year: rest.start_year ?? null,
         end_year: currently_studying ? null : (rest.end_year ?? null),
       })) || [],
-      certifications: data.certifications?.map(({id, ...rest}) => ({ ...rest, issue_date: rest.issue_date || null })) || [],
+      certifications: data.certifications?.map(({id, ...rest}) => ({
+        ...rest,
+        title: rest.title || '',
+        issued_by: rest.issued_by || null,
+        issue_date: rest.issue_date || null,
+        credential_url: rest.credential_url || null,
+      })) || [],
     };
     const filteredPayload = Object.fromEntries( Object.entries(updatePayload).filter(([_, v]) => v !== undefined) ) as Partial<UserUpdateAPI>;
 
-    console.log("Submitting payload to backend:", filteredPayload);
     try {
       const response = await apiClient.put<UserModifyResponse>(`/users/${backendUserId}`, filteredPayload);
       if (response.data.messages?.toLowerCase() === 'success') {
-        await refetchBackendUser(); 
-        setEditingSection(null); 
-        setSelectedResumeFile(null); 
+        await refetchBackendUser();
+        setEditingSection(null);
+        setSelectedResumeFile(null);
         toast({ title: 'Profile Updated Successfully' });
       } else { throw new Error(response.data.messages || "Backend issue during profile update."); }
-    } catch (error) { 
-      console.error("Profile update API call failed:", error);
-      toast({ title: "Update Failed", description: getErrorMessage(error), variant: "destructive" }); 
+    } catch (error) {
+      toast({ title: "Update Failed", description: getErrorMessage(error), variant: "destructive" });
     }
   };
-  
+
   const onInvalid = (errors: any) => {
-    console.error("Form validation errors:", errors);
+    console.error("Form validation errors (formState.errors object):", errors);
+    console.log("Form values at time of invalid submission:", getValues());
     toast({
       title: "Validation Error",
       description: "Please check the form for errors. Some fields might be invalid.",
@@ -398,13 +403,6 @@ export default function ProfilePage() {
     });
   };
 
-
-  if (isLoggingOut) return <FullPageLoading message="Processing Account Deletion..." />;
-  if (isLoadingAuth || !hasPopulatedFromCurrentUser) return <FullPageLoading message="Loading profile..." />;
-  if (!currentUser && !isLoadingAuth && !isLoggingOut && !firebaseUser) return <FullPageLoading message="Verifying session..." />;
-
-  const overallSubmitting = isFormSubmitting || isUploadingResume;
-  
   const formatDateForDisplay = (dateInput: string | Date | undefined | null, displayFormat: string = 'MMM yyyy'): string => {
     if (!dateInput) return 'N/A';
     let dateObj: Date | null = null;
@@ -414,7 +412,7 @@ export default function ProfilePage() {
             dateObj = parseISO(dateInput);
         } catch (e) {
             console.warn("formatDateForDisplay: Failed to parse date string with parseISO:", dateInput, e);
-            return dateInput; 
+            return dateInput;
         }
     } else if (dateInput instanceof Date) {
         dateObj = dateInput;
@@ -429,6 +427,30 @@ export default function ProfilePage() {
         return typeof dateInput === 'string' ? dateInput : 'Invalid Date';
     }
   };
+
+
+  const handleSectionEditToggle = (sectionName: EditableSection) => {
+    if (editingSection === sectionName) { // If clicking "Done" or toggling off current section
+      setEditingSection(null);
+    } else if (editingSection !== null) { // If another section is already being edited
+      toast({ title: "Finish Current Edit", description: `Please click "Done" or "Cancel" for the ${editingSection.replace('_',' ')} section first.`, variant: "destructive" });
+    } else { // Start editing the new section
+      setEditingSection(sectionName);
+    }
+  };
+
+  const handleCancelSectionEdit = (sectionName: 'work_experiences' | 'educations' | 'certifications') => {
+    const originalSectionData = mapUserToFormValues(currentUser, firebaseUser)[sectionName];
+    setValue(sectionName, originalSectionData as any, { shouldValidate: false, shouldDirty: false });
+    setEditingSection(null);
+  };
+
+
+  if (isLoggingOut) return <FullPageLoading message="Processing Account Deletion..." />;
+  if (isLoadingAuth || !hasPopulatedFromCurrentUser) return <FullPageLoading message="Loading profile..." />;
+  if (!currentUser && !isLoadingAuth && !isLoggingOut && !firebaseUser) return <FullPageLoading message="Verifying session..." />;
+
+  const overallSubmitting = isFormSubmitting || isUploadingResume;
 
   const renderWorkExperiences = () => {
     if (editingSection === 'work_experiences') {
@@ -466,7 +488,7 @@ export default function ProfilePage() {
           })}
           <Button type="button" variant="outline" onClick={() => appendWork({ id: crypto.randomUUID(), company_name: '', job_title: '', start_date: '', end_date: null, description: '', currently_working: false })}><PlusCircle className="mr-2 h-4 w-4" /> Add Work Experience</Button>
           <div className="flex gap-2 mt-4">
-            <Button type="button" variant="default" onClick={() => setEditingSection(null)}><Check className="mr-2 h-4 w-4" /> Done</Button>
+            <Button type="button" variant="default" onClick={() => handleSectionEditToggle('work_experiences')}><Check className="mr-2 h-4 w-4" /> Done</Button>
             <Button type="button" variant="ghost" onClick={() => handleCancelSectionEdit('work_experiences')}><X className="mr-2 h-4 w-4" /> Cancel</Button>
           </div>
         </>
@@ -476,7 +498,7 @@ export default function ProfilePage() {
       <div className="space-y-3">
         {currentUser?.work_experiences && currentUser.work_experiences.length > 0 ? (
           currentUser.work_experiences.map(exp => (
-            <div key={exp.id || exp.company_name} className="p-3 border rounded-md bg-muted/20">
+            <div key={exp.id || exp.company_name + exp.job_title} className="p-3 border rounded-md bg-muted/20">
               <h4 className="font-semibold">{exp.job_title} at {exp.company_name}</h4>
               <p className="text-sm text-muted-foreground">
                 {formatDateForDisplay(exp.start_date)} - {exp.currently_working ? 'Present' : formatDateForDisplay(exp.end_date)}
@@ -485,7 +507,7 @@ export default function ProfilePage() {
             </div>
           ))
         ) : <p className="text-sm text-muted-foreground">No work experience added yet.</p>}
-        <Button type="button" variant="outline" onClick={() => setEditingSection('work_experiences')}><Edit className="mr-2 h-4 w-4" /> Edit Work Experience</Button>
+        <Button type="button" variant="outline" onClick={() => handleSectionEditToggle('work_experiences')}><Edit className="mr-2 h-4 w-4" /> Edit Work Experience</Button>
       </div>
     );
   };
@@ -517,7 +539,7 @@ export default function ProfilePage() {
           })}
           <Button type="button" variant="outline" onClick={() => appendEdu({ id: crypto.randomUUID(), institution: '', degree: '', start_year: null, end_year: null, currently_studying: false })}><PlusCircle className="mr-2 h-4 w-4" /> Add Education</Button>
           <div className="flex gap-2 mt-4">
-            <Button type="button" variant="default" onClick={() => setEditingSection(null)}><Check className="mr-2 h-4 w-4" /> Done</Button>
+            <Button type="button" variant="default" onClick={() => handleSectionEditToggle('educations')}><Check className="mr-2 h-4 w-4" /> Done</Button>
             <Button type="button" variant="ghost" onClick={() => handleCancelSectionEdit('educations')}><X className="mr-2 h-4 w-4" /> Cancel</Button>
           </div>
         </>
@@ -527,7 +549,7 @@ export default function ProfilePage() {
       <div className="space-y-3">
         {currentUser?.educations && currentUser.educations.length > 0 ? (
           currentUser.educations.map(edu => (
-            <div key={edu.id || edu.institution} className="p-3 border rounded-md bg-muted/20">
+            <div key={edu.id || edu.institution + edu.degree} className="p-3 border rounded-md bg-muted/20">
               <h4 className="font-semibold">{edu.degree} from {edu.institution}</h4>
               <p className="text-sm text-muted-foreground">
                 {edu.start_year || 'N/A'} - {edu.currently_studying ? 'Present' : (edu.end_year || 'N/A')}
@@ -535,7 +557,7 @@ export default function ProfilePage() {
             </div>
           ))
         ) : <p className="text-sm text-muted-foreground">No education added yet.</p>}
-        <Button type="button" variant="outline" onClick={() => setEditingSection('educations')}><Edit className="mr-2 h-4 w-4" /> Edit Education</Button>
+        <Button type="button" variant="outline" onClick={() => handleSectionEditToggle('educations')}><Edit className="mr-2 h-4 w-4" /> Edit Education</Button>
       </div>
     );
   };
@@ -565,7 +587,7 @@ export default function ProfilePage() {
           ))}
           <Button type="button" variant="outline" onClick={() => appendCert({id: crypto.randomUUID(), title: '', issued_by: '', issue_date: null, credential_url: '' })}><PlusCircle className="mr-2 h-4 w-4" /> Add Certification</Button>
           <div className="flex gap-2 mt-4">
-            <Button type="button" variant="default" onClick={() => setEditingSection(null)}><Check className="mr-2 h-4 w-4" /> Done</Button>
+            <Button type="button" variant="default" onClick={() => handleSectionEditToggle('certifications')}><Check className="mr-2 h-4 w-4" /> Done</Button>
             <Button type="button" variant="ghost" onClick={() => handleCancelSectionEdit('certifications')}><X className="mr-2 h-4 w-4" /> Cancel</Button>
           </div>
         </>
@@ -583,7 +605,7 @@ export default function ProfilePage() {
             </div>
           ))
         ) : <p className="text-sm text-muted-foreground">No certifications added yet.</p>}
-        <Button type="button" variant="outline" onClick={() => setEditingSection('certifications')}><Edit className="mr-2 h-4 w-4" /> Edit Certifications</Button>
+        <Button type="button" variant="outline" onClick={() => handleSectionEditToggle('certifications')}><Edit className="mr-2 h-4 w-4" /> Edit Certifications</Button>
       </div>
     );
   };
@@ -650,7 +672,7 @@ export default function ProfilePage() {
           <CardHeader><CardTitle className="font-headline text-xl flex items-center"><Award className="mr-2 h-5 w-5 text-primary" />Certifications & Licenses</CardTitle><CardDescription>Include professional certifications.</CardDescription></CardHeader>
           <CardContent>{renderCertifications()}</CardContent>
         </Card>
-        
+
         <div className="mt-8 flex justify-start">
             <Button type="submit" disabled={overallSubmitting || !!editingSection} size="lg" className="shadow-md hover:shadow-lg transition-shadow">
                 {isUploadingResume ? <UploadCloud className="mr-2 h-4 w-4 animate-pulse" /> : (isFormSubmitting ? <LoadingSpinner size={16} className="mr-2" /> : null)}
