@@ -38,10 +38,10 @@ const dateErrorMessage = "Date must be in YYYY-MM-DD format.";
 
 const educationYearSchema = z.preprocess(
   (val) => {
-    if (typeof val === 'string' && val.trim() === '') return undefined; // Handle empty string for optional
+    if (typeof val === 'string' && val.trim() === '') return undefined;
     if (val === null || val === undefined) return undefined;
     const num = Number(val);
-    return isNaN(num) ? val : num; // Let Zod catch non-number string if it's not empty
+    return isNaN(num) ? val : num;
   },
   z.coerce.number({invalid_type_error: "Year must be a number."})
     .int("Year must be a whole number.")
@@ -52,7 +52,7 @@ const educationYearSchema = z.preprocess(
 );
 
 const workExperienceSchema = z.object({
-  id: z.string().optional(), // Frontend ID
+  id: z.string().optional(),
   company_name: z.string().min(1, "Company name is required."),
   job_title: z.string().min(1, "Job title is required."),
   start_date: z.string().min(1, "Start date is required.").regex(dateRegex, dateErrorMessage),
@@ -60,18 +60,22 @@ const workExperienceSchema = z.object({
   description: z.string().max(1000, "Description max 1000 chars.").optional().nullable().transform(val => (val === "" || val === undefined) ? null : val),
   currently_working: z.boolean().optional(),
 });
+// .refine(data => !data.end_date || !data.start_date || isValid(parseISO(data.start_date)) && isValid(parseISO(data.end_date)) && parseISO(data.end_date) >= parseISO(data.start_date), { message: "End date cannot be before start date.", path: ["end_date"], })
+
 
 const educationSchema = z.object({
-  id: z.string().optional(), // Frontend ID
+  id: z.string().optional(),
   institution: z.string().min(1, "Institution name is required."),
   degree: z.string().min(1, "Degree is required."),
   start_year: educationYearSchema,
   end_year: educationYearSchema,
   currently_studying: z.boolean().optional(),
 });
+// .refine(data => !data.end_year || !data.start_year || data.end_year >= data.start_year, { message: "End year cannot be before start year.", path: ["end_year"], })
+
 
 const certificationSchema = z.object({
-  id: z.string().optional(), // Frontend ID
+  id: z.string().optional(),
   title: z.string().min(1, "Certification title is required."),
   issued_by: z.string().optional().nullable().transform(val => (val === "" || val === undefined) ? null : val),
   issue_date: z.string().regex(dateRegex, dateErrorMessage).optional().nullable(),
@@ -100,12 +104,12 @@ const profileSchema = z.object({
   certifications: z.array(certificationSchema).optional().nullable(),
 });
 
-// Section-specific payload schemas
+
 const personalContactSectionPayloadSchema = z.object({
   username: profileSchema.shape.username.optional(),
-  number: profileSchema.shape.phone_number, // 'number' is key for backend
+  number: profileSchema.shape.phone_number,
   preferred_locations: profileSchema.shape.preferred_locations,
-  country: profileSchema.shape.countries, // 'country' is key for backend (string)
+  country: profileSchema.shape.countries,
 });
 
 const professionalBackgroundSectionPayloadSchema = z.object({
@@ -125,7 +129,11 @@ const jobPreferencesSectionPayloadSchema = z.object({
 
 const workExperiencesSectionPayloadSchema = z.object({
   work_experiences: z.array(
-    workExperienceSchema.omit({ id: true, currently_working: true }) // Omit frontend-only fields
+    workExperienceSchema.omit({ id: true, currently_working: true })
+      .extend({
+        start_date: z.string().min(1, "Start date is required.").regex(dateRegex, dateErrorMessage),
+        end_date: z.string().regex(dateRegex, dateErrorMessage).nullable(), // Make explicitly nullable for backend
+      })
   ).optional().nullable(),
   country: profileSchema.shape.countries,
 });
@@ -133,6 +141,10 @@ const workExperiencesSectionPayloadSchema = z.object({
 const educationsSectionPayloadSchema = z.object({
   educations: z.array(
     educationSchema.omit({ id: true, currently_studying: true })
+     .extend({
+        start_year: educationYearSchema.nullable(),
+        end_year: educationYearSchema.nullable(),
+      })
   ).optional().nullable(),
   country: profileSchema.shape.countries,
 });
@@ -140,6 +152,9 @@ const educationsSectionPayloadSchema = z.object({
 const certificationsSectionPayloadSchema = z.object({
   certifications: z.array(
     certificationSchema.omit({ id: true })
+    .extend({
+      issue_date: z.string().regex(dateRegex, dateErrorMessage).nullable(), // Make explicitly nullable
+    })
   ).optional().nullable(),
   country: profileSchema.shape.countries,
 });
@@ -152,24 +167,56 @@ const getErrorMessage = (error: any): string => {
   if (error instanceof AxiosError && error.response) {
     const detail = error.response.data?.detail;
     const messages = error.response.data?.messages;
-    if (typeof detail === 'object' && detail !== null) {
-      try { return JSON.stringify(detail); } catch { /* ignore */ }
-    }
+    if (typeof detail === 'object' && detail !== null) { try { return JSON.stringify(detail); } catch { /* ignore */ } }
     if (detail) { return typeof detail === 'string' ? detail : String(detail); }
-    if (typeof messages === 'object' && messages !== null) {
-       try { return JSON.stringify(messages); } catch { /* ignore */ }
-    }
+    if (typeof messages === 'object' && messages !== null) { try { return JSON.stringify(messages); } catch { /* ignore */ } }
     if (messages) { return typeof messages === 'string' ? messages : String(messages); }
     return `Request failed with status code ${error.response.status}`;
-  } else if (error instanceof Error) {
-    return error.message;
-  }
+  } else if (error instanceof Error) { return error.message; }
   return "An unexpected error occurred.";
 };
 
 const currentYear = new Date().getFullYear();
 const calendarFromYear = currentYear - 100;
 const calendarToYear = currentYear + 10;
+
+// New helper to parse incoming dates (possibly "DD-MM-YYYY") to "YYYY-MM-DD"
+const mapIncomingDateToFormValue = (dateStr: string | undefined | null): string | null => {
+  if (!dateStr || typeof dateStr !== 'string' || dateStr.trim() === '') return null;
+
+  // Attempt 1: Check if it's DD-MM-YYYY
+  if (/^\d{2}-\d{2}-\d{4}$/.test(dateStr)) {
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      const [day, month, year] = parts;
+      // Ensure day, month, year are reasonable before forming ISO string
+      const d = parseInt(day, 10);
+      const m = parseInt(month, 10);
+      const y = parseInt(year, 10);
+      if (d > 0 && d <= 31 && m > 0 && m <= 12 && y > 1800 && y < 2200) {
+        const isoAttempt = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+        if (isValid(parseISO(isoAttempt))) {
+          return isoAttempt; // Successfully converted to YYYY-MM-DD
+        }
+      }
+    }
+  }
+
+  // Attempt 2: Check if it's already YYYY-MM-DD (or close enough for parseISO)
+  // parseISO is quite flexible with YYYY-MM-DD variations
+  try {
+    const parsed = parseISO(dateStr);
+    if (isValid(parsed)) {
+      return format(parsed, 'yyyy-MM-dd'); // Normalize to strict YYYY-MM-DD
+    }
+  } catch (e) {
+    // Ignore parsing errors here, proceed to warn
+  }
+  
+  console.warn(`mapIncomingDateToFormValue: Could not parse date "${dateStr}" into YYYY-MM-DD format. Returning null.`);
+  return null;
+};
+
 
 export default function ProfilePage() {
   const { currentUser, firebaseUser, isLoadingAuth, backendUserId, setBackendUser, refetchBackendUser, isLoggingOut, setIsLoggingOut } = useAuth();
@@ -190,9 +237,9 @@ export default function ProfilePage() {
   });
   const { register, handleSubmit, formState: { errors, isSubmitting: isFormSubmitting }, reset, control, setValue, watch, clearErrors, getValues, trigger } = form;
 
-  const { fields: workFields, append: appendWork, remove: removeWork } = useFieldArray({ control, name: "work_experiences" });
-  const { fields: eduFields, append: appendEdu, remove: removeEdu } = useFieldArray({ control, name: "educations" });
-  const { fields: certFields, append: appendCert, remove: removeCert } = useFieldArray({ control, name: "certifications" });
+  const { fields: workFields, append: appendWork, remove: removeWork, replace: replaceWork } = useFieldArray({ control, name: "work_experiences" });
+  const { fields: eduFields, append: appendEdu, remove: removeEdu, replace: replaceEdu } = useFieldArray({ control, name: "educations" });
+  const { fields: certFields, append: appendCert, remove: removeCert, replace: replaceCert } = useFieldArray({ control, name: "certifications" });
 
   const watchedResumeUrl = watch("resume");
 
@@ -206,29 +253,41 @@ export default function ProfilePage() {
     }
   }, [isLoadingAuth, currentUser, firebaseUser, router, toast, isLoggingOut]);
 
-  const mapDateToFormValue = useCallback((dateStr: string | undefined | null): string | null => {
-    if (!dateStr) return null;
-    try {
-      const parsed = parseISO(dateStr); // Handles full ISO strings from backend or "yyyy-MM-dd"
-      if (isValid(parsed)) {
-        return format(parsed, 'yyyy-MM-dd');
-      }
-    } catch (e) { /* ignore */ }
-    // If it's already "yyyy-MM-dd", regex will validate. If not, it's invalid.
-    return dateStr;
-  }, []);
-
   const formatDateForDisplay = useCallback((dateInput: string | undefined | null, displayFormat: string = 'MMM yyyy'): string => {
     if (typeof dateInput !== 'string' || !dateInput.trim()) return 'N/A';
-    try {
-      const dateObj = parseISO(dateInput); // Handles full ISO strings or "yyyy-MM-dd"
-      if (isValid(dateObj)) {
-        return format(dateObj, displayFormat);
-      }
-    } catch (e) {
-      console.warn("Error parsing date for display:", dateInput, e);
-      return "Invalid Date";
+    let dateToParse = dateInput;
+
+    // Attempt to convert DD-MM-YYYY to YYYY-MM-DD for robust parsing by parseISO
+    if (/^\d{2}-\d{2}-\d{4}$/.test(dateInput)) {
+        const parts = dateInput.split('-');
+        if (parts.length === 3) {
+          const [day, month, year] = parts;
+          const d = parseInt(day, 10);
+          const m = parseInt(month, 10);
+          const y = parseInt(year, 10);
+          if (d > 0 && d <= 31 && m > 0 && m <= 12 && y > 1800 && y < 2200) {
+             dateToParse = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+          } else {
+            console.warn(`formatDateForDisplay: Invalid DD-MM-YYYY components: ${dateInput}`);
+            return dateInput; // Return original problematic string
+          }
+        } else {
+           console.warn(`formatDateForDisplay: Could not split DD-MM-YYYY string: ${dateInput}`);
+           return dateInput;
+        }
     }
+    // If it's already YYYY-MM-DD or some other ISO-like format, parseISO should handle it.
+
+    try {
+        const dateObj = parseISO(dateToParse); // parseISO expects YYYY-MM-DD or ISO 8601
+        if (isValid(dateObj)) {
+            return format(dateObj, displayFormat);
+        }
+    } catch (e) {
+        console.warn("Error parsing date for display:", dateInput, "Parsed as:", dateToParse, e);
+        return "Invalid Date";
+    }
+    console.warn(`formatDateForDisplay: Could not parse date: "${dateInput}" (tried as "${dateToParse}"). Returning original.`);
     return dateInput; // Fallback for unparseable or invalid dates
   }, []);
 
@@ -236,20 +295,24 @@ export default function ProfilePage() {
   const mapUserToFormValues = useCallback((user: User | null, fbUser: FirebaseUser | null): ProfileFormValues => {
     const currentRPFromDBRaw: string | null | undefined = user?.remote_preference;
     let formRPValue: RemotePreferenceAPI | undefined = undefined;
+
     if (typeof currentRPFromDBRaw === 'string' && currentRPFromDBRaw.trim() !== '') {
-      const normalizedRP = currentRPFromDBRaw.toLowerCase().trim() as RemotePreferenceAPI;
-      if (remotePreferenceOptions.includes(normalizedRP)) {
-        formRPValue = normalizedRP;
+      const matchedOption = remotePreferenceOptions.find(
+        opt => opt.toLowerCase() === currentRPFromDBRaw.trim().toLowerCase()
+      );
+      if (matchedOption) {
+        formRPValue = matchedOption;
+      } else {
+        console.warn(`Remote preference "${currentRPFromDBRaw}" from backend does not match defined options: ${remotePreferenceOptions.join(', ')}`);
       }
     }
 
     let formCountries = '';
     if (user?.countries && Array.isArray(user.countries)) {
         formCountries = user.countries.join(', ');
-    } else if (user && typeof (user as any).country === 'string') { // Handle if backend sends singular 'country' string
+    } else if (user && typeof (user as any).country === 'string') {
         formCountries = (user as any).country;
     }
-
 
     return {
       username: user?.username || fbUser?.displayName || '',
@@ -265,11 +328,11 @@ export default function ProfilePage() {
       expected_salary: user?.expected_salary ?? null,
       resume: user?.resume || null,
       work_experiences: user?.work_experiences?.map(w => ({
-        id: typeof w.id === 'number' ? String(w.id) : (w.id || crypto.randomUUID()), // Ensure string ID
+        id: typeof w.id === 'number' ? String(w.id) : (w.id || crypto.randomUUID()),
         company_name: w.company_name || '',
         job_title: w.job_title || '',
-        start_date: mapDateToFormValue(w.start_date) || '',
-        end_date: w.currently_working ? null : mapDateToFormValue(w.end_date),
+        start_date: mapIncomingDateToFormValue(w.start_date) || '',
+        end_date: w.currently_working ? null : mapIncomingDateToFormValue(w.end_date),
         description: w.description || null,
         currently_working: w.currently_working ?? (!w.end_date && !!w.start_date),
       })) || [],
@@ -285,16 +348,16 @@ export default function ProfilePage() {
         id: typeof c.id === 'number' ? String(c.id) : (c.id || crypto.randomUUID()),
         title: c.title || '',
         issued_by: c.issued_by || null,
-        issue_date: mapDateToFormValue(c.issue_date),
+        issue_date: mapIncomingDateToFormValue(c.issue_date),
         credential_url: c.credential_url || null,
       })) || [],
     };
-  }, [mapDateToFormValue]);
+  }, []);
 
   useEffect(() => {
     if (isLoadingAuth || isLoggingOut) return;
     const formValues = mapUserToFormValues(currentUser, firebaseUser);
-    reset(formValues); // Reset the entire form with new default values
+    reset(formValues);
     setCurrentResumeUrl(formValues.resume);
     setHasPopulatedFromCurrentUser(true);
   }, [currentUser, firebaseUser, reset, isLoadingAuth, isLoggingOut, mapUserToFormValues]);
@@ -319,7 +382,7 @@ export default function ProfilePage() {
 
       const payload: Partial<UserUpdateAPI> = {
         resume: null,
-        country: getValues().countries, // Always pass country
+        country: getValues().countries,
       };
       await apiClient.put(`/users/${backendUserId}`, payload);
       setValue('resume', null, { shouldValidate: true, shouldDirty: true });
@@ -332,11 +395,10 @@ export default function ProfilePage() {
 
   const handleSectionEditToggle = (sectionName: EditableSection) => {
     if (editingSection === sectionName) {
-      setEditingSection(null); // Toggle off if already editing this section
+      setEditingSection(null);
     } else if (editingSection !== null) {
-      toast({ title: "Finish Current Edit", description: `Please click "Save Section" or "Cancel" for the '${editingSection.replace(/_/g,' ')}' section first.`, variant: "default" });
+      toast({ title: "Finish Current Edit", description: `Please save or cancel changes in the '${editingSection.replace(/_/g,' ')}' section first.`, variant: "default" });
     } else {
-      // Before entering edit mode, ensure the form fields for this section reflect the *latest* currentUser data
       const freshFormValues = mapUserToFormValues(currentUser, firebaseUser);
       switch (sectionName) {
         case 'personal_contact':
@@ -351,7 +413,7 @@ export default function ProfilePage() {
           setValue('experience', freshFormValues.experience);
           setValue('resume', freshFormValues.resume);
           setCurrentResumeUrl(freshFormValues.resume);
-          setSelectedResumeFile(null); // Clear any pending file selection
+          setSelectedResumeFile(null);
           setValue('skills', freshFormValues.skills);
           break;
         case 'job_preferences':
@@ -360,25 +422,24 @@ export default function ProfilePage() {
           setValue('expected_salary', freshFormValues.expected_salary);
           break;
         case 'work_experiences':
-          setValue('work_experiences', freshFormValues.work_experiences);
+          replaceWork(freshFormValues.work_experiences || []);
           break;
         case 'educations':
-          setValue('educations', freshFormValues.educations);
+          replaceEdu(freshFormValues.educations || []);
           break;
         case 'certifications':
-          setValue('certifications', freshFormValues.certifications);
+          replaceCert(freshFormValues.certifications || []);
           break;
       }
-      clearErrors(); // Clear all form errors when starting a new edit session
+      clearErrors();
       setEditingSection(sectionName);
     }
   };
 
   const handleCancelSectionEdit = (sectionName: EditableSection) => {
-    if (!currentUser && !firebaseUser) return; // Should not happen if page loaded
+    if (!currentUser && !firebaseUser) return;
     const originalFormValues = mapUserToFormValues(currentUser, firebaseUser);
 
-    // Reset only the fields relevant to the cancelled section
     switch (sectionName) {
       case 'personal_contact':
         setValue('username', originalFormValues.username);
@@ -391,8 +452,8 @@ export default function ProfilePage() {
         setValue('professional_summary', originalFormValues.professional_summary);
         setValue('experience', originalFormValues.experience);
         setValue('resume', originalFormValues.resume);
-        setCurrentResumeUrl(originalFormValues.resume); // Reset displayed resume URL
-        setSelectedResumeFile(null); // Clear any selected file
+        setCurrentResumeUrl(originalFormValues.resume);
+        setSelectedResumeFile(null);
         setValue('skills', originalFormValues.skills);
         break;
       case 'job_preferences':
@@ -401,20 +462,24 @@ export default function ProfilePage() {
         setValue('expected_salary', originalFormValues.expected_salary);
         break;
       case 'work_experiences':
-        setValue('work_experiences', originalFormValues.work_experiences || []);
+        replaceWork(originalFormValues.work_experiences || []);
         break;
       case 'educations':
-        setValue('educations', originalFormValues.educations || []);
+        replaceEdu(originalFormValues.educations || []);
         break;
       case 'certifications':
-        setValue('certifications', originalFormValues.certifications || []);
+        replaceCert(originalFormValues.certifications || []);
         break;
     }
     setEditingSection(null);
-    clearErrors(); // Clear any validation errors shown for this section
+    clearErrors();
   };
 
-  const handleSaveSection = async (sectionKey: EditableSection, sectionPayload: Partial<UserUpdateAPI>, sectionSchema: z.ZodSchema<any>) => {
+ const handleSaveSection = async (
+    sectionKey: EditableSection,
+    sectionPayloadBuilder: (allFormValues: ProfileFormValues) => Partial<UserUpdateAPI>,
+    sectionSchema: z.ZodSchema<any>
+  ) => {
     if (!backendUserId) {
       toast({ title: "Error", description: "User session not found. Cannot save.", variant: "destructive" });
       return;
@@ -422,8 +487,8 @@ export default function ProfilePage() {
     setIsSubmittingSection(sectionKey);
 
     const currentFormValues = getValues();
-    const payloadForValidation = {
-      ...sectionPayload,
+    let payloadForValidation: Partial<UserUpdateAPI> = {
+      ...sectionPayloadBuilder(currentFormValues),
       country: currentFormValues.countries, // Always include country
     };
 
@@ -432,12 +497,14 @@ export default function ProfilePage() {
     if (!validationResult.success) {
       console.error(`${sectionKey} Section - Validation Errors:`, validationResult.error.flatten());
       console.log(`${sectionKey} Section - Data that failed validation:`, payloadForValidation);
-      toast({ title: "Validation Error", description: `Please check entries in the ${sectionKey?.replace(/_/g, ' ')} section.`, variant: "destructive" });
-      // Manually set errors if react-hook-form doesn't pick them up for complex cases
+      toast({ title: "Validation Error", description: `Please check entries in the ${sectionKey?.replace(/_/g, ' ')} section. Error: ${validationResult.error.flatten().formErrors.join(', ') || 'See console for details.'}`, variant: "destructive" });
+      
       const fieldErrors = validationResult.error.flatten().fieldErrors;
-      for (const field in fieldErrors) {
-          form.setError(field as any, { type: 'manual', message: fieldErrors[field]?.[0] || 'Invalid value' });
-      }
+      Object.entries(fieldErrors).forEach(([path, messages]) => {
+        const fieldName = path as keyof ProfileFormValues; // Adjust type as needed
+        form.setError(fieldName, { type: 'manual', message: (messages as string[])?.[0] || 'Invalid value' });
+      });
+      
       setIsSubmittingSection(null);
       return;
     }
@@ -445,9 +512,9 @@ export default function ProfilePage() {
     try {
       const response = await apiClient.put<UserModifyResponse>(`/users/${backendUserId}`, validationResult.data);
       if (response.data.messages?.toLowerCase() === 'success') {
-        await refetchBackendUser(); // This will trigger useEffect to reset form with new currentUser
+        await refetchBackendUser();
         setEditingSection(null);
-        clearErrors(); // Clear any previous errors after successful save
+        clearErrors();
         toast({ title: `${sectionKey?.replace(/_/g, ' ')} Updated Successfully` });
       } else {
         throw new Error(response.data.messages || `Backend issue during ${sectionKey} update.`);
@@ -520,16 +587,12 @@ export default function ProfilePage() {
     );
   };
 
-  // --- Section Specific Save Handlers ---
   const handleSavePersonalContact = async () => {
-    const currentFormValues = getValues();
-    const payload: Partial<UserUpdateAPI> = {
-      username: currentFormValues.username,
-      number: currentFormValues.phone_number || null,
-      preferred_locations: currentFormValues.preferred_locations || undefined,
-      // 'country' will be added by handleSaveSection
-    };
-    await handleSaveSection('personal_contact', payload, personalContactSectionPayloadSchema);
+    await handleSaveSection('personal_contact', (values) => ({
+      username: values.username,
+      number: values.phone_number || null,
+      preferred_locations: values.preferred_locations || undefined,
+    }), personalContactSectionPayloadSchema);
   };
 
   const handleSaveProfessionalBackground = async () => {
@@ -559,73 +622,63 @@ export default function ProfilePage() {
           setUploadResumeProgress(null);
       }
       if (!uploadSucceeded) {
-        setIsSubmittingSection(null); // Ensure this is reset
+        setIsSubmittingSection(null);
         return;
       }
     }
-
-    const currentFormValues = getValues();
-    const finalResumeUrl = newResumeUrlFromUpload !== undefined ? newResumeUrlFromUpload : currentFormValues.resume;
-
-    const payload: Partial<UserUpdateAPI> = {
-      professional_summary: currentFormValues.professional_summary || null,
-      experience: currentFormValues.experience ?? null,
-      skills: currentFormValues.skills || undefined,
-      resume: finalResumeUrl,
-    };
-    await handleSaveSection('professional_background', payload, professionalBackgroundSectionPayloadSchema);
+    
+    await handleSaveSection('professional_background', (values) => ({
+      professional_summary: values.professional_summary || null,
+      experience: values.experience ?? null,
+      skills: values.skills || undefined,
+      resume: newResumeUrlFromUpload !== undefined ? newResumeUrlFromUpload : values.resume,
+    }), professionalBackgroundSectionPayloadSchema);
     if (uploadSucceeded && newResumeUrlFromUpload) setSelectedResumeFile(null);
   };
 
   const handleSaveJobPreferences = async () => {
-    const currentFormValues = getValues();
-    const payload: Partial<UserUpdateAPI> = {
-      desired_job_role: currentFormValues.desired_job_role || null,
-      remote_preference: currentFormValues.remote_preference || null,
-      expected_salary: currentFormValues.expected_salary ?? null,
-    };
-    await handleSaveSection('job_preferences', payload, jobPreferencesSectionPayloadSchema);
+    await handleSaveSection('job_preferences', (values) => ({
+      desired_job_role: values.desired_job_role || null,
+      remote_preference: values.remote_preference || null,
+      expected_salary: values.expected_salary ?? null,
+    }), jobPreferencesSectionPayloadSchema);
   };
 
   const handleSaveWorkExperiences = async () => {
-    const currentFormValues = getValues();
-    const preparedWorkExperiences = currentFormValues.work_experiences?.map(({ id, currently_working, ...rest }) => ({
-      company_name: rest.company_name || '',
-      job_title: rest.job_title || '',
-      start_date: rest.start_date || '', // validated by Zod
-      end_date: currently_working ? null : (rest.end_date || null),
-      description: rest.description || null,
-    })) || [];
-    const payload: Partial<UserUpdateAPI> = { work_experiences: preparedWorkExperiences };
-    await handleSaveSection('work_experiences', payload, workExperiencesSectionPayloadSchema);
+    await handleSaveSection('work_experiences', (values) => ({
+      work_experiences: values.work_experiences?.map(({ id, currently_working, ...rest }) => ({
+        company_name: rest.company_name || '',
+        job_title: rest.job_title || '',
+        start_date: rest.start_date || '', 
+        end_date: currently_working ? null : (rest.end_date || null),
+        description: rest.description || null,
+      })) || [],
+    }), workExperiencesSectionPayloadSchema);
   };
 
   const handleSaveEducations = async () => {
-    const currentFormValues = getValues();
-    const preparedEducations = currentFormValues.educations?.map(({ id, currently_studying, ...rest }) => ({
-      institution: rest.institution || '',
-      degree: rest.degree || '',
-      start_year: rest.start_year ?? null,
-      end_year: currently_studying ? null : (rest.end_year ?? null),
-    })) || [];
-    const payload: Partial<UserUpdateAPI> = { educations: preparedEducations };
-    await handleSaveSection('educations', payload, educationsSectionPayloadSchema);
+     await handleSaveSection('educations', (values) => ({
+      educations: values.educations?.map(({ id, currently_studying, ...rest }) => ({
+        institution: rest.institution || '',
+        degree: rest.degree || '',
+        start_year: rest.start_year ?? null,
+        end_year: currently_studying ? null : (rest.end_year ?? null),
+      })) || [],
+    }), educationsSectionPayloadSchema);
   };
 
   const handleSaveCertifications = async () => {
-    const currentFormValues = getValues();
-    const preparedCertifications = currentFormValues.certifications?.map(({ id, ...rest }) => ({
-      title: rest.title || '',
-      issued_by: rest.issued_by || null,
-      issue_date: rest.issue_date || null,
-      credential_url: rest.credential_url || null,
-    })) || [];
-    const payload: Partial<UserUpdateAPI> = { certifications: preparedCertifications };
-    await handleSaveSection('certifications', payload, certificationsSectionPayloadSchema);
+    await handleSaveSection('certifications', (values) => ({
+      certifications: values.certifications?.map(({ id, ...rest }) => ({
+        title: rest.title || '',
+        issued_by: rest.issued_by || null,
+        issue_date: rest.issue_date || null,
+        credential_url: rest.credential_url || null,
+      })) || [],
+    }), certificationsSectionPayloadSchema);
   };
 
 
-  // --- Render Methods ---
   const renderPersonalContactInfo = () => {
     const currentData = getValues();
     const displayContent = (
@@ -847,7 +900,7 @@ export default function ProfilePage() {
                 <div><Label htmlFor={`certifications.${index}.issue_date`}>Issue Date</Label>
                   <Controller control={control} name={`certifications.${index}.issue_date`} render={({ field }) => (
                     <Popover><PopoverTrigger asChild><Button variant={"outline"} className={cn("w-full justify-start text-left font-normal", !field.value && "text-muted-foreground", errors.certifications?.[index]?.issue_date && "border-destructive")}><CalendarIcon className="mr-2 h-4 w-4" />{field.value && isValid(parseISO(field.value)) ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger>
-                      <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined} onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : null)} captionLayout="dropdown-buttons" fromYear={calendarFromYear} toYear={calendarToYear} /></PopoverContent></Popover>)}/>
+                      <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined} onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : null)} captionLayout="dropdown-buttons" fromYear={calendarFromYear} toYear={calendarToYear} initialFocus/></PopoverContent></Popover>)}/>
                   {errors.certifications?.[index]?.issue_date && <p className="text-sm text-destructive">{errors.certifications[index]?.issue_date?.message}</p>}</div>
                 <div><Label htmlFor={`certifications.${index}.credential_url`}>Credential URL</Label><Input {...register(`certifications.${index}.credential_url`)} placeholder="https://example.com/credential" className={errors.certifications?.[index]?.credential_url ? 'border-destructive' : ''}/>{errors.certifications?.[index]?.credential_url && <p className="text-sm text-destructive">{errors.certifications[index]?.credential_url?.message}</p>}</div>
               </div>
@@ -869,7 +922,6 @@ export default function ProfilePage() {
         <p className="text-muted-foreground">Keep your profile and job preferences up-to-date for the best job matches.</p>
       </header>
 
-      {/* No global form tag needed as saves are per section */}
       {renderPersonalContactInfo()}
       <Separator className="my-6" />
       {renderProfessionalBackground()}
@@ -902,3 +954,4 @@ export default function ProfilePage() {
     </div>
   );
 }
+
