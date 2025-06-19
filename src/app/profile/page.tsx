@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useState, ChangeEvent } from 'react';
-import { useForm, type SubmitHandler, Controller, useFieldArray } from 'react-hook-form';
+import { useForm, type SubmitHandler, Controller, useFieldArray, FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useAuth } from '@/contexts/AuthContext';
@@ -20,7 +20,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
-import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon, MessageSquare, UploadCloud, Paperclip, XCircle, GraduationCap, Award, PlusCircle, Building, School, ScrollText, CalendarIcon, Edit, Check, X } from 'lucide-react';
+import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon, MessageSquare, UploadCloud, Paperclip, XCircle, GraduationCap, Award, PlusCircle, Building, School, ScrollText, CalendarIcon, Edit, Check, X, Save } from 'lucide-react';
 import { FullPageLoading, LoadingSpinner } from '@/components/app/loading-spinner';
 import apiClient from '@/lib/apiClient';
 import { auth as firebaseAuth, storage } from '@/lib/firebase';
@@ -60,14 +60,14 @@ const workExperienceSchema = z.object({
   description: z.string().max(1000, "Description max 1000 chars.").optional().nullable().transform(val => (val === "" ? null : val)),
   currently_working: z.boolean().optional(),
 });
-// .refine(data => {
+// .refine(data => { // Temporarily commented out for debugging
 //   if (!data.start_date || !data.end_date || data.currently_working) return true;
 //   try {
 //     const startDate = parseISO(data.start_date);
 //     const endDate = parseISO(data.end_date);
-//     if (!isValid(startDate) || !isValid(endDate)) return true; // Skip if dates are not parsable
+//     if (!isValid(startDate) || !isValid(endDate)) return true; 
 //     return endDate >= startDate;
-//   } catch { return true; } // Skip if dates are not parsable
+//   } catch { return true; } 
 // }, {
 //   message: "End date cannot be before start date.",
 //   path: ["end_date"],
@@ -82,9 +82,9 @@ const educationSchema = z.object({
   end_year: educationYearSchema,
   currently_studying: z.boolean().optional(),
 });
-// .refine(data => {
+// .refine(data => { // Temporarily commented out for debugging
 //   if (!data.start_year || !data.end_year || data.currently_studying) return true;
-//   if (typeof data.start_year !== 'number' || typeof data.end_year !== 'number') return true; // Skip if not numbers
+//   if (typeof data.start_year !== 'number' || typeof data.end_year !== 'number') return true; 
 //   return data.end_year >= data.start_year;
 // }, {
 //   message: "End year cannot be before start year.",
@@ -102,27 +102,23 @@ const certificationSchema = z.object({
     .nullable(),
 });
 
-// TEMPORARY DEBUGGING SCHEMA
 const profileSchema = z.object({
   username: z.string().min(2, 'Name should be at least 2 characters.').max(50, 'Name cannot exceed 50 characters.'),
   email_id: z.string().email('Invalid email address.'),
-  // phone_number: z.string().max(20, 'Phone number cannot exceed 20 characters.').optional().nullable().transform(val => (val === "" ? null : val)),
-  // professional_summary: z.string().min(50, 'Profile summary should be at least 50 characters.').optional().nullable().transform(val => (val === "" ? null : val)),
-  // desired_job_role: z.string().min(10, 'Ideal Job Role should be at least 10 characters.').optional().nullable().transform(val => (val === "" ? null : val)),
-  // skills: z.string().max(500, 'Skills list cannot exceed 500 characters (comma-separated).').optional().nullable().transform(val => (val === "" ? null : val)),
-  // experience: z.coerce.number().int().nonnegative('Experience must be a positive number.').optional().nullable(),
-  // preferred_locations: z.string().max(255, 'Preferred Locations cannot exceed 255 characters (comma-separated).').optional().nullable().transform(val => (val === "" ? null : val)),
-  // countries: z.string().min(1, 'Countries are required. Enter names or ISO alpha-2 codes (e.g., United States, CA).').max(255, 'Countries list cannot exceed 255 characters (comma-separated).'),
-  // remote_preference: z.enum(remotePreferenceOptions, { errorMap: () => ({ message: "Please select a valid remote preference."}) }).optional().nullable(),
-  // expected_salary: z.coerce.number().positive("Expected salary must be a positive number.").optional().nullable(),
-  // resume: z.string().url('Resume must be a valid URL (this will be the Firebase Storage URL).').max(1024, 'Resume URL too long.').optional().nullable(),
-
-  // Temporarily simplifying array validation for debugging
-  work_experiences: z.array(z.any()).optional().nullable(),
-  educations: z.array(z.any()).optional().nullable(),
-  certifications: z.array(z.any()).optional().nullable(),
+  phone_number: z.string().max(20, 'Phone number cannot exceed 20 characters.').optional().nullable().transform(val => (val === "" ? null : val)),
+  professional_summary: z.string().min(50, 'Profile summary should be at least 50 characters.').optional().nullable().transform(val => (val === "" ? null : val)),
+  desired_job_role: z.string().min(10, 'Ideal Job Role should be at least 10 characters.').optional().nullable().transform(val => (val === "" ? null : val)),
+  skills: z.string().max(500, 'Skills list cannot exceed 500 characters (comma-separated).').optional().nullable().transform(val => (val === "" ? null : val)),
+  experience: z.coerce.number().int().nonnegative('Experience must be a positive number.').optional().nullable(),
+  preferred_locations: z.string().max(255, 'Preferred Locations cannot exceed 255 characters (comma-separated).').optional().nullable().transform(val => (val === "" ? null : val)),
+  countries: z.string().min(1, 'Countries are required. Enter names or ISO alpha-2 codes (e.g., United States, CA).').max(255, 'Countries list cannot exceed 255 characters (comma-separated).'),
+  remote_preference: z.enum(remotePreferenceOptions, { errorMap: () => ({ message: "Please select a valid remote preference."}) }).optional().nullable(),
+  expected_salary: z.coerce.number().positive("Expected salary must be a positive number.").optional().nullable(),
+  resume: z.string().url('Resume must be a valid URL (this will be the Firebase Storage URL).').max(1024, 'Resume URL too long.').optional().nullable(),
+  work_experiences: z.array(workExperienceSchema).optional().nullable(),
+  educations: z.array(educationSchema).optional().nullable(),
+  certifications: z.array(certificationSchema).optional().nullable(),
 });
-
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
 type EditableSection = 'personal_contact' | 'professional_background' | 'job_preferences' | 'work_experiences' | 'educations' | 'certifications' | null;
@@ -161,16 +157,17 @@ export default function ProfilePage() {
   const [currentResumeUrl, setCurrentResumeUrl] = useState<string | null>(null);
   const [hasPopulatedFromCurrentUser, setHasPopulatedFromCurrentUser] = useState(false);
   const [editingSection, setEditingSection] = useState<EditableSection>(null);
+  const [isSubmittingSection, setIsSubmittingSection] = useState<EditableSection | null>(null);
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
     defaultValues: { /* Defaults set in useEffect */ }
   });
-  const { register, handleSubmit, formState: { errors, isSubmitting: isFormSubmitting }, reset, control, setValue, watch, clearErrors, getValues } = form;
+  const { register, handleSubmit, formState: { errors, isSubmitting: isFormSubmitting }, reset, control, setValue, watch, clearErrors, getValues, trigger } = form;
 
-  const { fields: workFields, append: appendWork, remove: removeWork } = useFieldArray({ control, name: "work_experiences" });
-  const { fields: eduFields, append: appendEdu, remove: removeEdu } = useFieldArray({ control, name: "educations" });
-  const { fields: certFields, append: appendCert, remove: removeCert } = useFieldArray({ control, name: "certifications" });
+  const { fields: workFields, append: appendWork, remove: removeWork, update: updateWork } = useFieldArray({ control, name: "work_experiences" });
+  const { fields: eduFields, append: appendEdu, remove: removeEdu, update: updateEdu } = useFieldArray({ control, name: "educations" });
+  const { fields: certFields, append: appendCert, remove: removeCert, update: updateCert } = useFieldArray({ control, name: "certifications" });
 
   const watchedResumeUrl = watch("resume");
 
@@ -192,7 +189,7 @@ export default function ProfilePage() {
         return format(parsed, 'yyyy-MM-dd');
       }
     } catch (e) { /* ignore */ }
-    return null;
+    return dateStr; // Return original string if parsing fails to allow Zod to catch format error
   };
   
   const formatDateForDisplay = (dateInput: string | undefined | null, displayFormat: string = 'MMM yyyy'): string => {
@@ -204,7 +201,10 @@ export default function ProfilePage() {
       if (isValid(dateObj)) {
         return format(dateObj, displayFormat);
       }
-    } catch (e) { /* ignore error, will fallback */ }
+    } catch (e) { 
+      console.warn("Error parsing date for display:", dateInput, e);
+      return "Invalid Date";
+     }
     return dateInput; // Fallback for unparseable or invalid dates
   };
 
@@ -220,16 +220,16 @@ export default function ProfilePage() {
     return {
       username: user?.username || fbUser?.displayName || '',
       email_id: user?.email_id || fbUser?.email || '',
-      // phone_number: user?.phone_number || null,
-      // professional_summary: user?.professional_summary || null,
-      // desired_job_role: user?.desired_job_role || null,
-      // skills: user?.skills?.join(', ') || null,
-      // experience: user?.experience ?? null,
-      // preferred_locations: user?.preferred_locations?.join(', ') || null,
-      // countries: user?.countries?.join(', ') || '',
-      // remote_preference: formRPValue,
-      // expected_salary: user?.expected_salary ?? null,
-      // resume: user?.resume || null,
+      phone_number: user?.phone_number || null,
+      professional_summary: user?.professional_summary || null,
+      desired_job_role: user?.desired_job_role || null,
+      skills: user?.skills?.join(', ') || null,
+      experience: user?.experience ?? null,
+      preferred_locations: user?.preferred_locations?.join(', ') || null,
+      countries: user?.countries?.join(', ') || '', // Convert array to comma-separated string for form
+      remote_preference: formRPValue,
+      expected_salary: user?.expected_salary ?? null,
+      resume: user?.resume || null,
       work_experiences: user?.work_experiences?.map(w => ({
         id: w.id || crypto.randomUUID(),
         company_name: w.company_name || '',
@@ -261,7 +261,7 @@ export default function ProfilePage() {
     if (isLoadingAuth || isLoggingOut) return;
     const formValues = mapUserToFormValues(currentUser, firebaseUser);
     reset(formValues);
-    // setCurrentResumeUrl(formValues.resume); // Resume field temporarily removed from schema
+    setCurrentResumeUrl(formValues.resume);
     setHasPopulatedFromCurrentUser(true);
   }, [currentUser, firebaseUser, reset, isLoadingAuth, isLoggingOut]);
 
@@ -282,8 +282,8 @@ export default function ProfilePage() {
       const fileRef = storageRef(storage, currentResumeUrl);
       await deleteObject(fileRef);
       if (backendUserId) {
-        await apiClient.put(`/users/${backendUserId}`, { resume: null });
-        // setValue('resume', null, { shouldValidate: true, shouldDirty: true }); // Resume field temporarily removed from schema
+        await apiClient.put(`/users/${backendUserId}`, { resume: null, country: getValues().countries });
+        setValue('resume', null, { shouldValidate: true, shouldDirty: true });
         setCurrentResumeUrl(null); setSelectedResumeFile(null);
         await refetchBackendUser(); toast({ title: "Resume Removed" });
       }
@@ -291,87 +291,11 @@ export default function ProfilePage() {
     } finally { setIsUploadingResume(false); }
   };
 
-  const onSubmit: SubmitHandler<ProfileFormValues> = async (data) => {
-    console.log("Profile onSubmit called. Data:", data);
-    if (editingSection) {
-      toast({ title: "Action Required", description: `Please click "Done" or "Cancel" for the '${editingSection.replace(/_/g, ' ')}' section before saving the entire profile.`, variant: "destructive" });
-      return;
-    }
-    if (!backendUserId || !firebaseUser) { toast({ title: "Error", description: "User session not found. Cannot save profile.", variant: "destructive" }); return; }
-
-    let newResumeUrlFromUpload: string | undefined = undefined;
-    let uploadSucceeded = true;
-
-    // Resume upload logic commented out as 'resume' field is temporarily out of schema
-    // if (selectedResumeFile && firebaseUser) {
-    //   setIsUploadingResume(true); setUploadResumeProgress(0);
-    //   const filePath = `users/${firebaseUser.uid}/uploaded_resumes/${Date.now()}_${selectedResumeFile.name}`;
-    //   const fileStorageRef = storageRef(storage, filePath);
-    //   const uploadTask = uploadBytesResumable(fileStorageRef, selectedResumeFile);
-      
-    //   try {
-    //     if (currentResumeUrl) { try { await deleteObject(storageRef(storage, currentResumeUrl)); } catch (deleteError: any) { if (deleteError.code !== 'storage/object-not-found') console.warn("Could not delete old resume during update:", deleteError); } }
-    //     await new Promise<void>((resolve, reject) => {
-    //       uploadTask.on('state_changed', 
-    //         (snapshot) => setUploadResumeProgress((snapshot.bytesTransferred / snapshot.totalBytes) * 100),
-    //         reject, 
-    //         async () => { try { newResumeUrlFromUpload = await getDownloadURL(uploadTask.snapshot.ref); uploadSucceeded = true; resolve(); } catch (getUrlError){ reject(getUrlError); } }
-    //       );
-    //     });
-    //   } catch (error) {
-    //     uploadSucceeded = false;
-    //     toast({ title: "Resume Upload Failed", description: `Profile not saved. ${getErrorMessage(error)}`, variant: "destructive" });
-    //   } finally {
-    //       setIsUploadingResume(false);
-    //       setUploadResumeProgress(null);
-    //   }
-    //   if (!uploadSucceeded) return;
-    // }
-
-    // const finalResumeUrl = newResumeUrlFromUpload !== undefined ? newResumeUrlFromUpload : data.resume;
-    const updatePayload: UserUpdateAPI = {
-      username: data.username,
-      // number: data.phone_number || null,
-      // desired_job_role: data.desired_job_role || null,
-      // skills: data.skills || undefined,
-      // experience: data.experience ?? null,
-      // preferred_locations: data.preferred_locations || undefined,
-      // country: data.countries,
-      // remote_preference: data.remote_preference || null,
-      // professional_summary: data.professional_summary || null,
-      // expected_salary: data.expected_salary ?? null,
-      // resume: finalResumeUrl,
-
-      // Array fields still included as they are `z.any()` in the temp schema
-      work_experiences: data.work_experiences?.map(({id, currently_working, ...rest}) => ({ ...rest, company_name: rest.company_name || '', job_title: rest.job_title || '', start_date: rest.start_date || '', end_date: currently_working ? null : (rest.end_date || null), description: rest.description || null, })) || [],
-      educations: data.educations?.map(({id, currently_studying, ...rest}) => ({ ...rest, institution: rest.institution || '', degree: rest.degree || '', start_year: rest.start_year ?? null, end_year: currently_studying ? null : (rest.end_year ?? null), })) || [],
-      certifications: data.certifications?.map(({id, ...rest}) => ({ ...rest, title: rest.title || '', issued_by: rest.issued_by || null, issue_date: rest.issue_date || null, credential_url: rest.credential_url || null, })) || [],
-    };
-    const filteredPayload = Object.fromEntries( Object.entries(updatePayload).filter(([_, v]) => v !== undefined) ) as Partial<UserUpdateAPI>;
-
-    try {
-      const response = await apiClient.put<UserModifyResponse>(`/users/${backendUserId}`, filteredPayload);
-      if (response.data.messages?.toLowerCase() === 'success') {
-        await refetchBackendUser();
-        setEditingSection(null); setSelectedResumeFile(null);
-        toast({ title: 'Profile Updated Successfully' });
-      } else { throw new Error(response.data.messages || "Backend issue during profile update."); }
-    } catch (error) {
-      toast({ title: "Update Failed", description: getErrorMessage(error), variant: "destructive" });
-    }
-  };
-  
-  const onInvalid = (errors: any) => {
-    console.error("Form validation errors (formState.errors object):", errors);
-    console.log("Form values at time of invalid submission:", getValues());
-    toast({ title: "Validation Error", description: "Please check the form for errors. Some fields might be invalid.", variant: "destructive", });
-  };
-
   const handleSectionEditToggle = (sectionName: EditableSection) => {
     if (editingSection === sectionName) { 
       setEditingSection(null);
     } else if (editingSection !== null) { 
-      toast({ title: "Finish Current Edit", description: `Please click "Done" or "Cancel" for the '${editingSection.replace(/_/g,' ')}' section first.`, variant: "destructive" });
+      toast({ title: "Finish Current Edit", description: `Please click "Save Section" or "Cancel" for the '${editingSection.replace(/_/g,' ')}' section first.`, variant: "destructive" });
     } else { 
       setEditingSection(sectionName);
     }
@@ -385,22 +309,22 @@ export default function ProfilePage() {
       case 'personal_contact':
         setValue('username', originalFormValues.username);
         setValue('email_id', originalFormValues.email_id);
-        // setValue('phone_number', originalFormValues.phone_number);
-        // setValue('preferred_locations', originalFormValues.preferred_locations);
-        // setValue('countries', originalFormValues.countries);
+        setValue('phone_number', originalFormValues.phone_number);
+        setValue('preferred_locations', originalFormValues.preferred_locations);
+        setValue('countries', originalFormValues.countries);
         break;
       case 'professional_background':
-        // setValue('professional_summary', originalFormValues.professional_summary);
-        // setValue('experience', originalFormValues.experience);
-        // setValue('resume', originalFormValues.resume);
-        // setCurrentResumeUrl(originalFormValues.resume);
-        // setSelectedResumeFile(null);
-        // setValue('skills', originalFormValues.skills);
+        setValue('professional_summary', originalFormValues.professional_summary);
+        setValue('experience', originalFormValues.experience);
+        setValue('resume', originalFormValues.resume);
+        setCurrentResumeUrl(originalFormValues.resume);
+        setSelectedResumeFile(null);
+        setValue('skills', originalFormValues.skills);
         break;
       case 'job_preferences':
-        // setValue('desired_job_role', originalFormValues.desired_job_role);
-        // setValue('remote_preference', originalFormValues.remote_preference);
-        // setValue('expected_salary', originalFormValues.expected_salary);
+        setValue('desired_job_role', originalFormValues.desired_job_role);
+        setValue('remote_preference', originalFormValues.remote_preference);
+        setValue('expected_salary', originalFormValues.expected_salary);
         break;
       case 'work_experiences':
         setValue('work_experiences', originalFormValues.work_experiences);
@@ -415,14 +339,45 @@ export default function ProfilePage() {
     setEditingSection(null);
   };
 
+  const handleSaveSection = async (sectionKey: EditableSection, sectionData: Partial<UserUpdateAPI>) => {
+    if (!backendUserId) {
+      toast({ title: "Error", description: "User session not found. Cannot save.", variant: "destructive" });
+      return;
+    }
+    setIsSubmittingSection(sectionKey);
+
+    // Always include 'country' (from 'countries' form field) in the payload
+    const currentCountries = getValues().countries;
+    const payload: UserUpdateAPI = {
+      ...sectionData,
+      country: currentCountries // Already a comma-separated string from the form
+    };
+    
+    try {
+      const response = await apiClient.put<UserModifyResponse>(`/users/${backendUserId}`, payload);
+      if (response.data.messages?.toLowerCase() === 'success') {
+        await refetchBackendUser();
+        setEditingSection(null);
+        toast({ title: `${sectionKey?.replace(/_/g, ' ')} Updated Successfully` });
+      } else {
+        throw new Error(response.data.messages || `Backend issue during ${sectionKey} update.`);
+      }
+    } catch (error) {
+      toast({ title: "Update Failed", description: getErrorMessage(error), variant: "destructive" });
+    } finally {
+      setIsSubmittingSection(null);
+    }
+  };
+
+
   if (isLoggingOut) return <FullPageLoading message="Processing Account Deletion..." />;
   if (isLoadingAuth || !hasPopulatedFromCurrentUser) return <FullPageLoading message="Loading profile..." />;
   if (!currentUser && !isLoadingAuth && !isLoggingOut && !firebaseUser) return <FullPageLoading message="Verifying session..." />;
 
-  const overallSubmitting = isFormSubmitting || isUploadingResume;
+  const overallSubmitting = isFormSubmitting || isUploadingResume || !!isSubmittingSection;
 
-  const SectionCard: React.FC<{title: string; description: string; sectionKey: EditableSection; children: React.ReactNode; editContent: React.ReactNode; icon?: React.ElementType }> = 
-    ({ title, description, sectionKey, children, editContent, icon: Icon }) => (
+  const SectionCard: React.FC<{title: string; description: string; sectionKey: EditableSection; children: React.ReactNode; editContent: React.ReactNode; onSave: () => Promise<void>; icon?: React.ElementType }> = 
+    ({ title, description, sectionKey, children, editContent, onSave, icon: Icon }) => (
     <Card className="shadow-lg">
       <CardHeader className="flex flex-row justify-between items-start">
         <div>
@@ -433,7 +388,7 @@ export default function ProfilePage() {
           <CardDescription>{description}</CardDescription>
         </div>
         {editingSection !== sectionKey && (
-          <Button variant="outline" size="sm" onClick={() => handleSectionEditToggle(sectionKey)} disabled={!!editingSection && editingSection !== sectionKey}>
+          <Button variant="outline" size="sm" onClick={() => handleSectionEditToggle(sectionKey)} disabled={!!editingSection && editingSection !== sectionKey || overallSubmitting}>
             <Edit className="mr-2 h-4 w-4" /> Edit
           </Button>
         )}
@@ -442,8 +397,11 @@ export default function ProfilePage() {
         {editingSection === sectionKey ? editContent : children}
         {editingSection === sectionKey && (
           <div className="flex gap-2 mt-6">
-            <Button type="button" variant="default" onClick={() => handleSectionEditToggle(sectionKey)}><Check className="mr-2 h-4 w-4" /> Done</Button>
-            <Button type="button" variant="ghost" onClick={() => handleCancelSectionEdit(sectionKey)}><X className="mr-2 h-4 w-4" /> Cancel</Button>
+            <Button type="button" variant="default" onClick={onSave} disabled={isSubmittingSection === sectionKey || overallSubmitting}>
+             {isSubmittingSection === sectionKey ? <LoadingSpinner size={16} className="mr-2" /> : <Save className="mr-2 h-4 w-4" />}
+              {isSubmittingSection === sectionKey ? 'Saving...' : 'Save Section'}
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => handleCancelSectionEdit(sectionKey)} disabled={isSubmittingSection === sectionKey || overallSubmitting}><X className="mr-2 h-4 w-4" /> Cancel</Button>
           </div>
         )}
       </CardContent>
@@ -455,7 +413,11 @@ export default function ProfilePage() {
     if (Array.isArray(value)) {
       displayValue = value.length > 0 ? value.join(', ') : 'N/A';
     } else if (value !== null && value !== undefined && String(value).trim() !== '') {
-      displayValue = String(value);
+      if (label === "Expected Salary" && typeof value === 'number') {
+        displayValue = `$${value.toLocaleString()}`;
+      } else {
+        displayValue = String(value);
+      }
     }
     return (
       <div className="mb-3">
@@ -468,19 +430,144 @@ export default function ProfilePage() {
     );
   };
 
+  // --- Section Specific Save Handlers ---
+  const handleSavePersonalContact = async () => {
+    const isValid = await trigger(["username", "email_id", "phone_number", "preferred_locations", "countries"]);
+    if (!isValid) {
+      toast({ title: "Validation Error", description: "Please check personal contact fields.", variant: "destructive" });
+      return;
+    }
+    const data = getValues();
+    const payload: Partial<UserUpdateAPI> = {
+      username: data.username,
+      // email_id is not updatable
+      number: data.phone_number || null,
+      preferred_locations: data.preferred_locations || undefined, // Backend expects comma-separated string
+      // 'country' (singular) is added to all payloads by handleSaveSection
+    };
+    await handleSaveSection('personal_contact', payload);
+  };
+
+  const handleSaveProfessionalBackground = async () => {
+    let newResumeUrlFromUpload: string | undefined = undefined;
+    let uploadSucceeded = true;
+
+    if (selectedResumeFile && firebaseUser) {
+      setIsUploadingResume(true); setUploadResumeProgress(0);
+      const filePath = `users/${firebaseUser.uid}/uploaded_resumes/${Date.now()}_${selectedResumeFile.name}`;
+      const fileStorageRef = storageRef(storage, filePath);
+      const uploadTask = uploadBytesResumable(fileStorageRef, selectedResumeFile);
+      
+      try {
+        if (currentResumeUrl) { try { await deleteObject(storageRef(storage, currentResumeUrl)); } catch (deleteError: any) { if (deleteError.code !== 'storage/object-not-found') console.warn("Could not delete old resume during update:", deleteError); } }
+        await new Promise<void>((resolve, reject) => {
+          uploadTask.on('state_changed', 
+            (snapshot) => setUploadResumeProgress((snapshot.bytesTransferred / snapshot.totalBytes) * 100),
+            (error) => { console.error("Upload task error:", error); reject(error); }, 
+            async () => { try { newResumeUrlFromUpload = await getDownloadURL(uploadTask.snapshot.ref); uploadSucceeded = true; resolve(); } catch (getUrlError){ console.error("Get URL error:", getUrlError); reject(getUrlError); } }
+          );
+        });
+      } catch (error) {
+        uploadSucceeded = false;
+        toast({ title: "Resume Upload Failed", description: `${getErrorMessage(error)} Section not saved.`, variant: "destructive" });
+      } finally {
+          setIsUploadingResume(false);
+          setUploadResumeProgress(null);
+      }
+      if (!uploadSucceeded) return;
+    }
+    
+    const isValid = await trigger(["professional_summary", "experience", "skills", "resume"]);
+    if (!isValid && !uploadSucceeded && selectedResumeFile) { // If upload failed, don't proceed
+        toast({title: "Validation Error", description: "Please check professional background fields or resume upload.", variant: "destructive"});
+        return;
+    }
+    if (!isValid && !(selectedResumeFile && !uploadSucceeded)) { // If validation failed for other reasons
+        toast({title: "Validation Error", description: "Please check professional background fields.", variant: "destructive"});
+        return;
+    }
+
+    const data = getValues();
+    const finalResumeUrl = newResumeUrlFromUpload !== undefined ? newResumeUrlFromUpload : data.resume;
+
+    const payload: Partial<UserUpdateAPI> = {
+      professional_summary: data.professional_summary || null,
+      experience: data.experience ?? null,
+      skills: data.skills || undefined, // Backend expects comma-separated string
+      resume: finalResumeUrl,
+    };
+    await handleSaveSection('professional_background', payload);
+    if (uploadSucceeded && newResumeUrlFromUpload) setSelectedResumeFile(null);
+  };
+
+  const handleSaveJobPreferences = async () => {
+    const isValid = await trigger(["desired_job_role", "remote_preference", "expected_salary"]);
+     if (!isValid) {
+      toast({ title: "Validation Error", description: "Please check job preference fields.", variant: "destructive" });
+      return;
+    }
+    const data = getValues();
+    const payload: Partial<UserUpdateAPI> = {
+      desired_job_role: data.desired_job_role || null,
+      remote_preference: data.remote_preference || null,
+      expected_salary: data.expected_salary ?? null,
+    };
+    await handleSaveSection('job_preferences', payload);
+  };
+
+  const handleSaveWorkExperiences = async () => {
+    const isValid = await trigger("work_experiences");
+    if (!isValid) {
+      toast({ title: "Validation Error", description: "Please check work experience entries.", variant: "destructive" });
+      return;
+    }
+    const data = getValues();
+    const payload: Partial<UserUpdateAPI> = {
+      work_experiences: data.work_experiences?.map(({id, currently_working, ...rest}) => ({ ...rest, company_name: rest.company_name || '', job_title: rest.job_title || '', start_date: rest.start_date || '', end_date: currently_working ? null : (rest.end_date || null), description: rest.description || null, })) || [],
+    };
+    await handleSaveSection('work_experiences', payload);
+  };
+  
+  const handleSaveEducations = async () => {
+    const isValid = await trigger("educations");
+    if (!isValid) {
+      toast({ title: "Validation Error", description: "Please check education entries.", variant: "destructive" });
+      return;
+    }
+    const data = getValues();
+    const payload: Partial<UserUpdateAPI> = {
+      educations: data.educations?.map(({id, currently_studying, ...rest}) => ({ ...rest, institution: rest.institution || '', degree: rest.degree || '', start_year: rest.start_year ?? null, end_year: currently_studying ? null : (rest.end_year ?? null), })) || [],
+    };
+    await handleSaveSection('educations', payload);
+  };
+
+  const handleSaveCertifications = async () => {
+    const isValid = await trigger("certifications");
+    if (!isValid) {
+      toast({ title: "Validation Error", description: "Please check certification entries.", variant: "destructive" });
+      return;
+    }
+    const data = getValues();
+    const payload: Partial<UserUpdateAPI> = {
+      certifications: data.certifications?.map(({id, ...rest}) => ({ ...rest, title: rest.title || '', issued_by: rest.issued_by || null, issue_date: rest.issue_date || null, credential_url: rest.credential_url || null, })) || [],
+    };
+    await handleSaveSection('certifications', payload);
+  };
+
+  // --- Render Methods ---
   const renderPersonalContactInfo = () => {
-    const currentData = getValues();
+    const currentData = getValues(); // Use getValues to get current form state for display
     const displayContent = (
       <div className="space-y-3">
         <DisplayField label="Full Name" value={currentData.username} />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
           <DisplayField label="Email Address" value={currentData.email_id} />
-          {/* <DisplayField label="Phone Number" value={currentData.phone_number} icon={Phone} /> */}
+          <DisplayField label="Phone Number" value={currentData.phone_number} icon={Phone} />
         </div>
-        {/* <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
           <DisplayField label="Preferred Locations" value={currentData.preferred_locations} icon={MapPin} />
           <DisplayField label="Target Countries" value={currentData.countries} icon={Globe} />
-        </div> */}
+        </div>
       </div>
     );
     const editContent = (
@@ -488,22 +575,22 @@ export default function ProfilePage() {
         <div className="space-y-2 md:max-w-md"><Label htmlFor="username">Full Name</Label><Input id="username" {...register('username')} placeholder="Your Full Name" className={`${errors.username ? 'border-destructive' : ''}`} />{errors.username && <p className="text-sm text-destructive">{errors.username.message}</p>}</div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-2"><Label htmlFor="email_id">Email Address</Label><Input id="email_id" type="email" {...register('email_id')} placeholder="you@example.com" className={errors.email_id ? 'border-destructive' : ''} readOnly />{errors.email_id && <p className="text-sm text-destructive">{errors.email_id.message}</p>}</div>
-          {/* <div className="space-y-2"><Label htmlFor="phone_number">Phone Number</Label><div className="relative flex items-center"><Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="phone_number" type="tel" {...register('phone_number')} placeholder="(123) 456-7890" className={`pl-10 ${errors.phone_number ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Optional.</p>{errors.phone_number && <p className="text-sm text-destructive">{errors.phone_number.message}</p>}</div> */}
+          <div className="space-y-2"><Label htmlFor="phone_number">Phone Number</Label><div className="relative flex items-center"><Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="phone_number" type="tel" {...register('phone_number')} placeholder="(123) 456-7890" className={`pl-10 ${errors.phone_number ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Optional.</p>{errors.phone_number && <p className="text-sm text-destructive">{errors.phone_number.message}</p>}</div>
         </div>
-        {/* <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-2"><Label htmlFor="preferred_locations">Preferred Locations (comma-separated)</Label><div className="relative flex items-center"><MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="preferred_locations" {...register('preferred_locations')} placeholder="e.g., New York, Remote, London" className={`pl-10 ${errors.preferred_locations ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Optional. Enter cities or "Remote".</p>{errors.preferred_locations && <p className="text-sm text-destructive">{errors.preferred_locations.message}</p>}</div>
           <div className="space-y-2"><Label htmlFor="countries">Target Countries (comma-separated) <span className="text-destructive">*</span></Label><div className="relative flex items-center"><Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="countries" {...register('countries')} placeholder="e.g., US, CA, GB, India" className={`pl-10 ${errors.countries ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Required. Helps in fetching relevant jobs.</p>{errors.countries && <p className="text-sm text-destructive">{errors.countries.message}</p>}</div>
-        </div> */}
+        </div>
       </div>
     );
-    return <SectionCard title="Personal & Contact Information" description="Basic information about you." sectionKey="personal_contact" editContent={editContent} icon={UserIcon}>{displayContent}</SectionCard>;
+    return <SectionCard title="Personal &amp; Contact Information" description="Basic information about you." sectionKey="personal_contact" editContent={editContent} onSave={handleSavePersonalContact} icon={UserIcon}>{displayContent}</SectionCard>;
   };
 
   const renderProfessionalBackground = () => {
     const currentData = getValues();
     const displayContent = (
       <div className="space-y-4">
-        {/* <DisplayField label="Professional Summary" value={currentData.professional_summary} icon={BookUser} />
+        <DisplayField label="Professional Summary" value={currentData.professional_summary} icon={BookUser} />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
           <DisplayField label="Years of Professional Experience" value={currentData.experience} icon={Briefcase} />
           <div>
@@ -520,56 +607,53 @@ export default function ProfilePage() {
             ) : <p className="text-base text-foreground">N/A</p>}
           </div>
         </div>
-        <DisplayField label="Key Skills" value={currentData.skills} icon={ListChecks}/> */}
-         <p>Professional Background Content (Temporarily Simple)</p>
+        <DisplayField label="Key Skills" value={currentData.skills} icon={ListChecks}/>
       </div>
     );
     const editContent = (
       <div className="space-y-6">
-        {/* <div className="space-y-2"><Label htmlFor="professional_summary" className="text-base flex items-center"><BookUser className="mr-2 h-5 w-5 text-primary/80"/>Professional Summary</Label><Textarea id="professional_summary" {...register('professional_summary')} placeholder="A detailed summary..." rows={8} className={errors.professional_summary ? 'border-destructive' : ''} /><p className="text-xs text-muted-foreground">Optional. Min 50 chars if provided.</p>{errors.professional_summary && <p className="text-sm text-destructive">{errors.professional_summary.message}</p>}</div>
+        <div className="space-y-2"><Label htmlFor="professional_summary" className="text-base flex items-center"><BookUser className="mr-2 h-5 w-5 text-primary/80"/>Professional Summary</Label><Textarea id="professional_summary" {...register('professional_summary')} placeholder="A detailed summary..." rows={8} className={errors.professional_summary ? 'border-destructive' : ''} /><p className="text-xs text-muted-foreground">Optional. Min 50 chars if provided.</p>{errors.professional_summary && <p className="text-sm text-destructive">{errors.professional_summary.message}</p>}</div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2"><Label htmlFor="experience">Years of Professional Experience</Label><div className="relative flex items-center"><Briefcase className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="experience" type="number" {...register('experience')} placeholder="e.g., 5" className={`pl-10 hide-number-spinners ${errors.experience ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Optional.</p>{errors.experience && <p className="text-sm text-destructive">{errors.experience.message}</p>}</div>
             <div className="space-y-2"><Label htmlFor="resume-upload">Your Resume</Label><Input id="resume-upload" type="file" onChange={handleResumeFileChange} accept=".pdf,.doc,.docx" className="mb-1 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" disabled={isUploadingResume || overallSubmitting}/><p className="text-xs text-muted-foreground mt-1">Optional. PDF or Word, max 5MB.</p>{selectedResumeFile && !isUploadingResume && (<p className="text-xs text-muted-foreground mt-1">Selected: {selectedResumeFile.name}</p>)}{currentResumeUrl && !selectedResumeFile && !isUploadingResume && (<div className="mt-2 mb-2 flex items-center justify-between p-2 border rounded-md bg-muted/50"><a href={currentResumeUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center truncate"><Paperclip className="w-4 h-4 mr-2 shrink-0" /><span className="truncate">{currentResumeUrl.split('/').pop()?.split('?')[0].substring(currentResumeUrl.lastIndexOf('_') + 1) || "View Current"}</span></a><Button type="button" variant="ghost" size="icon" onClick={handleRemoveResume} className="h-7 w-7 text-destructive hover:bg-destructive/10" disabled={overallSubmitting || isUploadingResume}><XCircle className="w-4 h-4" /></Button></div>)}{isUploadingResume && uploadResumeProgress !== null && (<div className="mt-2"><Progress value={uploadResumeProgress} className="w-full h-2" /><p className="text-xs text-muted-foreground text-center mt-1">Uploading: {Math.round(uploadResumeProgress)}%</p></div>)}{errors.resume && <p className="text-sm text-destructive">{errors.resume.message}</p>}<input type="hidden" {...register('resume')} /></div>
         </div>
-        <div className="space-y-2"><Label htmlFor="skills" className="text-base flex items-center"><ListChecks className="mr-2 h-5 w-5 text-primary/80"/>Key Skills (comma-separated)</Label><Textarea id="skills" {...register('skills')} placeholder="e.g., React, Node.js, Python" rows={3} className={errors.skills ? 'border-destructive' : ''} /><p className="text-xs text-muted-foreground">Optional. Helps AI find relevant jobs.</p>{errors.skills && <p className="text-sm text-destructive">{errors.skills.message}</p>}</div> */}
-         <p>Professional Background Edit Content (Temporarily Simple)</p>
+        <div className="space-y-2"><Label htmlFor="skills" className="text-base flex items-center"><ListChecks className="mr-2 h-5 w-5 text-primary/80"/>Key Skills (comma-separated)</Label><Textarea id="skills" {...register('skills')} placeholder="e.g., React, Node.js, Python" rows={3} className={errors.skills ? 'border-destructive' : ''} /><p className="text-xs text-muted-foreground">Optional. Helps AI find relevant jobs.</p>{errors.skills && <p className="text-sm text-destructive">{errors.skills.message}</p>}</div>
       </div>
     );
-    return <SectionCard title="Professional Background" description="Experience, skills, and resume summary." sectionKey="professional_background" editContent={editContent} icon={Briefcase}>{displayContent}</SectionCard>;
+    return <SectionCard title="Professional Background" description="Experience, skills, and resume summary." sectionKey="professional_background" editContent={editContent} onSave={handleSaveProfessionalBackground} icon={Briefcase}>{displayContent}</SectionCard>;
   };
 
   const renderJobPreferences = () => {
     const currentData = getValues();
     const displayContent = (
       <div className="space-y-3">
-        {/* <DisplayField label="Ideal Job Role" value={currentData.desired_job_role}/>
+        <DisplayField label="Ideal Job Role" value={currentData.desired_job_role}/>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
           <DisplayField label="Remote Work Preference" value={currentData.remote_preference} icon={CloudSun}/>
-          <DisplayField label="Expected Salary" value={currentData.expected_salary ? `$${currentData.expected_salary.toLocaleString()}` : null} icon={DollarSign}/>
-        </div> */}
-         <p>Job Preferences Content (Temporarily Simple)</p>
+          <DisplayField label="Expected Salary" value={currentData.expected_salary} icon={DollarSign}/>
+        </div>
       </div>
     );
     const editContent = (
       <div className="space-y-6">
-        {/* <div className="space-y-2"><Label htmlFor="desired_job_role" className="text-base">Ideal Job Role</Label><Textarea id="desired_job_role" {...register('desired_job_role')} placeholder="e.g., Senior Frontend Developer..." rows={5} className={errors.desired_job_role ? 'border-destructive' : ''} /><p className="text-xs text-muted-foreground">Optional. Min 10 chars if provided.</p>{errors.desired_job_role && <p className="text-sm text-destructive">{errors.desired_job_role.message}</p>}</div>
+        <div className="space-y-2"><Label htmlFor="desired_job_role" className="text-base">Ideal Job Role</Label><Textarea id="desired_job_role" {...register('desired_job_role')} placeholder="e.g., Senior Frontend Developer..." rows={5} className={errors.desired_job_role ? 'border-destructive' : ''} /><p className="text-xs text-muted-foreground">Optional. Min 10 chars if provided.</p>{errors.desired_job_role && <p className="text-sm text-destructive">{errors.desired_job_role.message}</p>}</div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2"><Label htmlFor="remote_preference">Remote Work Preference</Label><Controller name="remote_preference" control={control} render={({ field }) => (<Select onValueChange={field.onChange} value={field.value ?? undefined} disabled={overallSubmitting}><SelectTrigger className={`relative w-full justify-start pl-10 pr-3 ${errors.remote_preference ? 'border-destructive' : ''}`}><CloudSun className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><SelectValue placeholder="Select preference" /></SelectTrigger><SelectContent>{remotePreferenceOptions.map(option => (<SelectItem key={option} value={option}>{option}</SelectItem>))}</SelectContent></Select>)}/><p className="text-xs text-muted-foreground">Optional.</p>{errors.remote_preference && <p className="text-sm text-destructive">{errors.remote_preference.message}</p>}</div>
             <div className="space-y-2"><Label htmlFor="expected_salary">Expected Salary (Numeric)</Label><div className="relative flex items-center"><DollarSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="expected_salary" type="number" {...register('expected_salary')} placeholder="e.g., 120000" className={`pl-10 hide-number-spinners ${errors.expected_salary ? 'border-destructive' : ''}`} disabled={overallSubmitting}/></div><p className="text-xs text-muted-foreground">Optional. Enter as a number.</p>{errors.expected_salary && <p className="text-sm text-destructive">{errors.expected_salary.message}</p>}</div>
-        </div> */}
-        <p>Job Preferences Edit Content (Temporarily Simple)</p>
+        </div>
       </div>
     );
-    return <SectionCard title="Job Preferences" description="Tailor job suggestions to your ideal role." sectionKey="job_preferences" editContent={editContent} icon={Wand2}>{displayContent}</SectionCard>;
+    return <SectionCard title="Job Preferences" description="Tailor job suggestions to your ideal role." sectionKey="job_preferences" editContent={editContent} onSave={handleSaveJobPreferences} icon={Wand2}>{displayContent}</SectionCard>;
   };
 
   const renderWorkExperiences = () => {
+    const experiencesToDisplay = getValues().work_experiences || currentUser?.work_experiences || [];
     const displayContent = (
       <div className="space-y-3">
-        {(currentUser?.work_experiences || []).length > 0 ? (
-          currentUser?.work_experiences?.map(exp => (
+        {experiencesToDisplay.length > 0 ? (
+          experiencesToDisplay.map(exp => (
             <div key={exp.id || exp.company_name + exp.job_title} className="p-3 border rounded-md bg-muted/20">
-              <h4 className="font-semibold">{exp.job_title} at {exp.company_name}</h4>
+              <h4 className="font-semibold">{exp.job_title || 'N/A'} at {exp.company_name || 'N/A'}</h4>
               <p className="text-sm text-muted-foreground">
                 {formatDateForDisplay(exp.start_date, 'MMM yyyy')} - {exp.currently_working ? 'Present' : formatDateForDisplay(exp.end_date, 'MMM yyyy')}
               </p>
@@ -583,6 +667,9 @@ export default function ProfilePage() {
       <>
         {workFields.map((item, index) => {
           const currentlyWorking = watch(`work_experiences.${index}.currently_working`);
+          const fieldStartDate = watch(`work_experiences.${index}.start_date`);
+          const fieldEndDate = watch(`work_experiences.${index}.end_date`);
+
           return (
             <Card key={item.id} className="p-4 bg-muted/30 border-dashed mb-4">
               <div className="space-y-3">
@@ -614,16 +701,17 @@ export default function ProfilePage() {
         <Button type="button" variant="outline" onClick={() => appendWork({ id: crypto.randomUUID(), company_name: '', job_title: '', start_date: '', end_date: null, description: '', currently_working: false })}><PlusCircle className="mr-2 h-4 w-4" /> Add Work Experience</Button>
       </>
     );
-    return <SectionCard title="Work Experience" description="Detail your professional roles." sectionKey="work_experiences" editContent={editContent} icon={Building}>{displayContent}</SectionCard>;
+    return <SectionCard title="Work Experience" description="Detail your professional roles." sectionKey="work_experiences" editContent={editContent} onSave={handleSaveWorkExperiences} icon={Building}>{displayContent}</SectionCard>;
   };
 
   const renderEducations = () => {
+    const educationsToDisplay = getValues().educations || currentUser?.educations || [];
     const displayContent = (
       <div className="space-y-3">
-        {(currentUser?.educations || []).length > 0 ? (
-          currentUser?.educations?.map(edu => (
+        {educationsToDisplay.length > 0 ? (
+          educationsToDisplay.map(edu => (
             <div key={edu.id || edu.institution + edu.degree} className="p-3 border rounded-md bg-muted/20">
-              <h4 className="font-semibold">{edu.degree} from {edu.institution}</h4>
+              <h4 className="font-semibold">{edu.degree || 'N/A'} from {edu.institution || 'N/A'}</h4>
               <p className="text-sm text-muted-foreground">
                 {edu.start_year || 'N/A'} - {edu.currently_studying ? 'Present' : (edu.end_year || 'N/A')}
               </p>
@@ -658,16 +746,17 @@ export default function ProfilePage() {
         <Button type="button" variant="outline" onClick={() => appendEdu({ id: crypto.randomUUID(), institution: '', degree: '', start_year: null, end_year: null, currently_studying: false })}><PlusCircle className="mr-2 h-4 w-4" /> Add Education</Button>
       </>
     );
-    return <SectionCard title="Education" description="List your academic qualifications." sectionKey="educations" editContent={editContent} icon={School}>{displayContent}</SectionCard>;
+    return <SectionCard title="Education" description="List your academic qualifications." sectionKey="educations" editContent={editContent} onSave={handleSaveEducations} icon={School}>{displayContent}</SectionCard>;
   };
 
   const renderCertifications = () => {
+    const certificationsToDisplay = getValues().certifications || currentUser?.certifications || [];
     const displayContent = (
       <div className="space-y-3">
-        {(currentUser?.certifications || []).length > 0 ? (
-          currentUser?.certifications?.map(cert => (
+        {certificationsToDisplay.length > 0 ? (
+          certificationsToDisplay.map(cert => (
             <div key={cert.id || cert.title} className="p-3 border rounded-md bg-muted/20">
-              <h4 className="font-semibold">{cert.title}</h4>
+              <h4 className="font-semibold">{cert.title || 'N/A'}</h4>
               {cert.issued_by && <p className="text-sm text-muted-foreground">Issued by: {cert.issued_by}</p>}
               {cert.issue_date && <p className="text-sm text-muted-foreground">Issued: {formatDateForDisplay(cert.issue_date)}</p>}
               {cert.credential_url && <a href={cert.credential_url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline">View Credential</a>}
@@ -678,8 +767,10 @@ export default function ProfilePage() {
     );
     const editContent = (
       <>
-        {certFields.map((item, index) => (
-          <Card key={item.id} className="p-4 bg-muted/30 border-dashed mb-4">
+        {certFields.map((item, index) => {
+          const fieldIssueDate = watch(`certifications.${index}.issue_date`);
+          return (
+            <Card key={item.id} className="p-4 bg-muted/30 border-dashed mb-4">
             <div className="space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div><Label htmlFor={`certifications.${index}.title`}>Title <span className="text-destructive">*</span></Label><Input {...register(`certifications.${index}.title`)} placeholder="e.g., AWS Certified" className={errors.certifications?.[index]?.title ? 'border-destructive' : ''}/>{errors.certifications?.[index]?.title && <p className="text-sm text-destructive">{errors.certifications[index]?.title?.message}</p>}</div>
@@ -696,11 +787,12 @@ export default function ProfilePage() {
               <Button type="button" variant="outline" size="sm" onClick={() => removeCert(index)} className="text-destructive hover:bg-destructive/10"><Trash2 className="mr-2 h-3.5 w-3.5" /> Remove</Button>
             </div>
           </Card>
-        ))}
+        );
+        })}
         <Button type="button" variant="outline" onClick={() => appendCert({id: crypto.randomUUID(), title: '', issued_by: '', issue_date: null, credential_url: '' })}><PlusCircle className="mr-2 h-4 w-4" /> Add Certification</Button>
       </>
     );
-    return <SectionCard title="Certifications & Licenses" description="Include professional certifications." sectionKey="certifications" editContent={editContent} icon={Award}>{displayContent}</SectionCard>;
+    return <SectionCard title="Certifications &amp; Licenses" description="Include professional certifications." sectionKey="certifications" editContent={editContent} onSave={handleSaveCertifications} icon={Award}>{displayContent}</SectionCard>;
   };
 
   return (
@@ -710,28 +802,18 @@ export default function ProfilePage() {
         <p className="text-muted-foreground">Keep your profile and job preferences up-to-date for the best job matches.</p>
       </header>
 
-      <form onSubmit={handleSubmit(onSubmit, onInvalid)}>
-        {renderPersonalContactInfo()}
-        <Separator className="my-6" />
-        {renderProfessionalBackground()}
-        <Separator className="my-6" />
-        {renderJobPreferences()}
-        <Separator className="my-6" />
-        {renderWorkExperiences()}
-        <Separator className="my-6" />
-        {renderEducations()}
-        <Separator className="my-6" />
-        {renderCertifications()}
-
-        <div className="mt-8 flex justify-start">
-            <Button type="submit" disabled={overallSubmitting || !!editingSection} size="lg" className="shadow-md hover:shadow-lg transition-shadow">
-                {isUploadingResume ? <UploadCloud className="mr-2 h-4 w-4 animate-pulse" /> : (isFormSubmitting ? <LoadingSpinner size={16} className="mr-2" /> : null)}
-                {isUploadingResume ? 'Uploading Resume...' : (isFormSubmitting ? 'Saving Profile...' : 'Save Profile')}
-                {!overallSubmitting && !editingSection && <Edit3 className="ml-2 h-4 w-4" />}
-            </Button>
-        </div>
-        {editingSection && <p className="text-sm text-destructive mt-2">Please click "Done" or "Cancel" in the section you are currently editing before saving the entire profile.</p>}
-      </form>
+      {/* No global form tag needed as saves are per section */}
+      {renderPersonalContactInfo()}
+      <Separator className="my-6" />
+      {renderProfessionalBackground()}
+      <Separator className="my-6" />
+      {renderJobPreferences()}
+      <Separator className="my-6" />
+      {renderWorkExperiences()}
+      <Separator className="my-6" />
+      {renderEducations()}
+      <Separator className="my-6" />
+      {renderCertifications()}
 
       <Separator className="my-10" />
       <Card className="shadow-lg">

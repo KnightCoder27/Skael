@@ -133,7 +133,7 @@ export interface User {
   skills?: string[];
   experience?: number | null;
   preferred_locations?: string[];
-  countries: string[]; // Now mandatory
+  countries: string[]; // Array of strings for frontend use
   remote_preference?: RemotePreferenceAPI | string | null;
   professional_summary?: string | null;
   expected_salary?: number | null;
@@ -141,9 +141,9 @@ export interface User {
   joined_date?: string; // ISO datetime string
   match_scores?: BackendMatchScoreLogItem[];
   saved_jobs?: SavedJob[];
-  work_experiences?: WorkExperienceItem[]; // plural as per backend relationship
-  educations?: EducationItem[]; // plural as per backend relationship
-  certifications?: CertificationItem[]; // plural as per backend relationship
+  work_experiences?: WorkExperienceItem[]; 
+  educations?: EducationItem[]; 
+  certifications?: CertificationItem[]; 
 }
 
 // API Request/Response types from the guide
@@ -174,22 +174,25 @@ export interface UserRegistrationResponse {
 }
 
 // For PUT /users/{id} - Matches Backend Documentation.md UserUpdate
+// This type is for the payload sent to the backend.
+// 'country' is a comma-separated string. 'skills' and 'preferred_locations' are also comma-separated.
 export interface UserUpdateAPI {
   username?: string;
-  number?: string | null;
+  number?: string | null; // Corresponds to User.phone_number
   desired_job_role?: string | null;
-  skills?: string;
+  skills?: string; // Comma-separated string from User.skills array
   experience?: number | null;
-  preferred_locations?: string | null;
-  country?: string;
+  preferred_locations?: string; // Comma-separated string from User.preferred_locations array
+  country?: string; // Comma-separated string from User.countries array
   remote_preference?: RemotePreferenceAPI | null;
   professional_summary?: string | null;
   expected_salary?: number | null;
-  resume?: string | null;
-  work_experiences?: Omit<WorkExperienceItem, 'id' | 'currently_working'>[] | null; // Plural to match backend model
-  educations?: Omit<EducationItem, 'id' | 'currently_studying'>[] | null; // Plural to match backend model
-  certifications?: Omit<CertificationItem, 'id'>[] | null; // Already plural
+  resume?: string | null; // URL
+  work_experiences?: Omit<WorkExperienceItem, 'id' | 'currently_working'>[] | null;
+  educations?: Omit<EducationItem, 'id' | 'currently_studying'>[] | null;
+  certifications?: Omit<CertificationItem, 'id'>[] | null;
 }
+
 
 // General success response for PUT /users/{id} and DELETE /users/{id}
 export interface UserModifyResponse {
@@ -204,7 +207,7 @@ export interface UserProfileForJobFetching {
   skills?: string[];
   experience?: number | null;
   locations?: string[];
-  countries?: string[];
+  countries?: string[]; // Array of strings
   remote?: boolean | null;
   limit?: number;
   posted_at_max_age_days?: number;
@@ -249,7 +252,7 @@ export interface JobListing {
   min_salary?: number | null;
   max_salary?: number | null;
   currency?: string | null;
-  country?: string | null;
+  country?: string | null; // This is singular on backend JobListingResponse
   seniority?: string | null;
   discovered_at: string; 
   reposted?: boolean | null;
