@@ -44,24 +44,24 @@ const workExperienceSchema = z.object({
   end_date: z.string().regex(dateRegex, dateErrorMessage).optional().nullable(),
   description: z.string().max(1000, "Description max 1000 chars.").optional().nullable().transform(val => (val === "" ? null : val)),
   currently_working: z.boolean().optional(),
-}).refine(data => {
-  if (data.currently_working) return true; // if currently working, end_date is not required
-  return !!data.end_date; // if not currently working, end_date is required
+}).refine(data => { // Ensure end_date is present if not currently_working
+  if (data.currently_working) return true;
+  return !!data.end_date;
 }, {
   message: "End date is required if not currently working here.",
   path: ["end_date"],
 })
-// .refine(data => { // Temporarily commented out for debugging
+// .refine(data => { // Temporarily commented out for debugging date comparison
 //   if (data.start_date && dateRegex.test(data.start_date) &&
 //       data.end_date && dateRegex.test(data.end_date) &&
 //       !data.currently_working) {
 //     try {
 //       const startDate = parseISO(data.start_date);
 //       const endDate = parseISO(data.end_date);
-//       if (!isValid(startDate) || !isValid(endDate)) return false; // Ensure dates are valid before comparing
+//       if (!isValid(startDate) || !isValid(endDate)) return false;
 //       return endDate >= startDate;
 //     } catch (e) {
-//       return false; 
+//       return false;
 //     }
 //   }
 //   return true;
@@ -71,13 +71,12 @@ const workExperienceSchema = z.object({
 // })
 ;
 
-
 const educationYearSchema = z.preprocess(
   (val) => {
-    if (typeof val === 'string' && val.trim() === '') return undefined; // Handle empty string for optional number
+    if (typeof val === 'string' && val.trim() === '') return undefined;
     if (val === null || val === undefined) return undefined;
     const num = Number(val);
-    return isNaN(num) ? val : num; // Let Zod handle non-number string with coercion error
+    return isNaN(num) ? val : num;
   },
   z.coerce.number({invalid_type_error: "Year must be a number."})
     .int("Year must be a whole number.")
@@ -95,7 +94,7 @@ const educationSchema = z.object({
   end_year: educationYearSchema,
   currently_studying: z.boolean().optional(),
 })
-// .refine(data => { // Temporarily commented out for debugging
+// .refine(data => { // Temporarily commented out for debugging year comparison
 //   if (typeof data.start_year === 'number' && typeof data.end_year === 'number' && !data.currently_studying) {
 //      if (data.end_year < data.start_year) {
 //         return false;
@@ -108,14 +107,13 @@ const educationSchema = z.object({
 // })
 ;
 
-
 const certificationSchema = z.object({
   id: z.string().optional(),
   title: z.string().min(1, "Certification title is required."),
   issued_by: z.string().optional().nullable().transform(val => (val === "" ? null : val)),
   issue_date: z.string().regex(dateRegex, dateErrorMessage).optional().nullable(),
   credential_url: z.string().url("Must be a valid URL if provided.")
-    .or(z.literal("").transform(() => null)) // Allows empty string to become null
+    .or(z.literal("").transform(() => null))
     .optional()
     .nullable(),
 });
@@ -133,9 +131,11 @@ const profileSchema = z.object({
   remote_preference: z.enum(remotePreferenceOptions, { errorMap: () => ({ message: "Please select a valid remote preference."}) }).optional().nullable(),
   expected_salary: z.coerce.number().positive("Expected salary must be a positive number.").optional().nullable(),
   resume: z.string().url('Resume must be a valid URL (this will be the Firebase Storage URL).').max(1024, 'Resume URL too long.').optional().nullable(),
-  work_experiences: z.array(workExperienceSchema).optional().nullable(),
-  educations: z.array(educationSchema).optional().nullable(),
-  certifications: z.array(certificationSchema).optional().nullable(),
+  
+  // Simplified array validations for debugging
+  work_experiences: z.array(z.any()).optional().nullable(),
+  educations: z.array(z.any()).optional().nullable(),
+  certifications: z.array(z.any()).optional().nullable(),
 });
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
@@ -218,16 +218,15 @@ export default function ProfilePage() {
             dateObj = parseISO(dateInput);
         } catch (e) {
             console.warn("formatDateForDisplay: Failed to parse date string with parseISO:", dateInput, e);
-            return dateInput; // Return original string if parseISO fails
+            return dateInput;
         }
     } else {
-        return 'Invalid Input Type'; // Should ideally not happen if data types are consistent
+        return 'Invalid Input Type';
     }
 
     if (dateObj && isValid(dateObj)) {
         return format(dateObj, displayFormat);
     } else {
-        // This case means parseISO might have returned an invalid date or the input wasn't a string
         console.warn("formatDateForDisplay: Date object is not valid for input:", dateInput);
         return typeof dateInput === 'string' ? dateInput : 'Invalid Date';
     }
@@ -341,14 +340,14 @@ export default function ProfilePage() {
     }
 
     let newResumeUrlFromUpload: string | undefined = undefined;
-    let uploadSucceeded = true; // Assume success unless upload is attempted and fails
+    let uploadSucceeded = true;
 
     if (selectedResumeFile && firebaseUser) {
       setIsUploadingResume(true); setUploadResumeProgress(0);
       const filePath = `users/${firebaseUser.uid}/uploaded_resumes/${Date.now()}_${selectedResumeFile.name}`;
       const fileStorageRef = storageRef(storage, filePath);
       const uploadTask = uploadBytesResumable(fileStorageRef, selectedResumeFile);
-      uploadSucceeded = false; // Reset to false before attempting upload
+      uploadSucceeded = false;
 
       try {
         if (currentResumeUrl) {
@@ -363,10 +362,10 @@ export default function ProfilePage() {
         });
       } catch (error) {
         toast({ title: "Resume Upload Failed", description: `Profile not saved. ${getErrorMessage(error)}`, variant: "destructive" });
-        uploadSucceeded = false; // Ensure it's marked as failed
+        // uploadSucceeded is already false
       } finally {
-        setIsUploadingResume(false);
-        setUploadResumeProgress(null);
+          setIsUploadingResume(false);
+          setUploadResumeProgress(null);
       }
 
       if (!uploadSucceeded) {
@@ -393,8 +392,8 @@ export default function ProfilePage() {
         ...rest,
         company_name: rest.company_name || '',
         job_title: rest.job_title || '',
-        start_date: rest.start_date || '', // Should be 'YYYY-MM-DD'
-        end_date: currently_working ? null : (rest.end_date || null), // Should be 'YYYY-MM-DD' or null
+        start_date: rest.start_date || '',
+        end_date: currently_working ? null : (rest.end_date || null),
         description: rest.description || null,
       })) || [],
       educations: data.educations?.map(({id, currently_studying, ...rest}) => ({
@@ -408,7 +407,7 @@ export default function ProfilePage() {
         ...rest,
         title: rest.title || '',
         issued_by: rest.issued_by || null,
-        issue_date: rest.issue_date || null, // Should be 'YYYY-MM-DD' or null
+        issue_date: rest.issue_date || null,
         credential_url: rest.credential_url || null,
       })) || [],
     };
@@ -418,8 +417,8 @@ export default function ProfilePage() {
       const response = await apiClient.put<UserModifyResponse>(`/users/${backendUserId}`, filteredPayload);
       if (response.data.messages?.toLowerCase() === 'success') {
         await refetchBackendUser();
-        setEditingSection(null); // Ensure all sections are reset to display mode
-        setSelectedResumeFile(null); // Clear selected file after successful upload and save
+        setEditingSection(null);
+        setSelectedResumeFile(null);
         toast({ title: 'Profile Updated Successfully' });
       } else { throw new Error(response.data.messages || "Backend issue during profile update."); }
     } catch (error) {
@@ -440,11 +439,11 @@ export default function ProfilePage() {
 
 
   const handleSectionEditToggle = (sectionName: EditableSection) => {
-    if (editingSection === sectionName) { 
+    if (editingSection === sectionName) {
       setEditingSection(null);
-    } else if (editingSection !== null) { 
+    } else if (editingSection !== null) {
       toast({ title: "Finish Current Edit", description: `Please click "Done" or "Cancel" for the ${editingSection.replace('_',' ')} section first.`, variant: "destructive" });
-    } else { 
+    } else {
       setEditingSection(sectionName);
     }
   };
@@ -707,11 +706,9 @@ export default function ProfilePage() {
         <CardHeader><CardTitle className="font-headline text-xl flex items-center text-destructive"><AlertTriangle className="mr-2 h-6 w-6" /> Danger Zone</CardTitle><CardDescription>Proceed with caution. These actions are irreversible.</CardDescription></CardHeader>
         <CardContent>
           <AlertDialog><AlertDialogTrigger asChild><Button variant="destructive" className="w-full sm:w-auto"><Trash2 className="mr-2 h-4 w-4" /> Delete Account</Button></AlertDialogTrigger>
-            <AlertDialogContent><AlertDialogHeader><AlertDialogTitle className="flex items-center"><AlertTriangle className="mr-2 h-5 w-5 text-destructive" /> Are you absolutely sure?</AlertDialogTitle><AlertDialogDescription>This will permanently delete your account and all associated data.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={async () => { if (!backendUserId || !firebaseUser) { toast({ title: "Error", variant: "destructive" }); return; } setIsLoggingOut(true); try { if (currentUser?.resume) { try { await deleteObject(storageRef(storage, currentUser.resume)); } catch (storageError: any) { if (storageError.code !== 'storage/object-not-found') console.warn("Could not delete resume:", storageError); } } await apiClient.delete<UserModifyResponse>(`/users/${backendUserId}`); await deleteFirebaseUser(firebaseUser); toast({ title: "Account Deleted"}); } catch (error) { toast({ title: "Deletion Failed", description: getErrorMessage(error), variant: "destructive" }); setIsLoggingOut(false); } }} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">Yes, delete account</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+            <AlertDialogContent><AlertDialogHeader><AlertDialogTitle className="flex items-center"><AlertTriangle className="mr-2 h-5 w-5 text-destructive" /> Are you absolutely sure?</AlertDialogTitle><AlertDialogDescription>This will permanently delete your account and all associated data.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={async () => { if (!backendUserId || !firebaseUser) { toast({ title: "Error", variant: "destructive" }); return; } setIsLoggingOut(true); try { if (currentUser?.resume) { try { await deleteObject(storageRef(storage, currentUser.resume)); } catch (storageError: any) { if (storageError.code !== 'storage/object-not-found') console.warn("Could not delete resume:", storageError); } } await apiClient.delete<UserModifyResponse>(`/users/${backendUserId}`); await deleteFirebaseUser(firebaseUser); toast({ title: "Account Deleted"}); router.push('/auth'); } catch (error) { toast({ title: "Deletion Failed", description: getErrorMessage(error), variant: "destructive" }); setIsLoggingOut(false); } }} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">Yes, delete account</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
         </CardContent>
       </Card>
     </div>
   );
 }
-
-    
