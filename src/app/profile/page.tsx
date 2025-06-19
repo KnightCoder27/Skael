@@ -36,6 +36,21 @@ const remotePreferenceOptions: RemotePreferenceAPI[] = ["Remote", "Hybrid", "Ons
 const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 const dateErrorMessage = "Date must be in YYYY-MM-DD format.";
 
+const educationYearSchema = z.preprocess(
+  (val) => {
+    if (typeof val === 'string' && val.trim() === '') return undefined; // Handle empty string for optional number
+    if (val === null || val === undefined) return undefined;
+    const num = Number(val);
+    return isNaN(num) ? val : num; // Pass non-number string for Zod to catch as invalid type
+  },
+  z.coerce.number({invalid_type_error: "Year must be a number."})
+    .int("Year must be a whole number.")
+    .min(1900, "Year must be 1900 or later.")
+    .max(new Date().getFullYear() + 15, (val) => `Year cannot be significantly far in the future. Max: ${val.max}.`)
+    .optional()
+    .nullable()
+);
+
 const workExperienceSchema = z.object({
   id: z.string().optional(),
   company_name: z.string().min(1, "Company name is required."),
@@ -44,47 +59,14 @@ const workExperienceSchema = z.object({
   end_date: z.string().regex(dateRegex, dateErrorMessage).optional().nullable(),
   description: z.string().max(1000, "Description max 1000 chars.").optional().nullable().transform(val => (val === "" ? null : val)),
   currently_working: z.boolean().optional(),
-}).refine(data => { // Ensure end_date is present if not currently_working
+}).refine(data => {
   if (data.currently_working) return true;
   return !!data.end_date;
 }, {
   message: "End date is required if not currently working here.",
   path: ["end_date"],
-})
-// .refine(data => { // Temporarily commented out for debugging date comparison
-//   if (data.start_date && dateRegex.test(data.start_date) &&
-//       data.end_date && dateRegex.test(data.end_date) &&
-//       !data.currently_working) {
-//     try {
-//       const startDate = parseISO(data.start_date);
-//       const endDate = parseISO(data.end_date);
-//       if (!isValid(startDate) || !isValid(endDate)) return false;
-//       return endDate >= startDate;
-//     } catch (e) {
-//       return false;
-//     }
-//   }
-//   return true;
-// }, {
-//   message: "End date cannot be before start date.",
-//   path: ["end_date"],
-// })
-;
+});
 
-const educationYearSchema = z.preprocess(
-  (val) => {
-    if (typeof val === 'string' && val.trim() === '') return undefined;
-    if (val === null || val === undefined) return undefined;
-    const num = Number(val);
-    return isNaN(num) ? val : num;
-  },
-  z.coerce.number({invalid_type_error: "Year must be a number."})
-    .int("Year must be a whole number.")
-    .min(1900, "Year must be 1900 or later.")
-    .max(new Date().getFullYear() + 15, (val) => `Year cannot be after ${val.max}.`)
-    .optional()
-    .nullable()
-);
 
 const educationSchema = z.object({
   id: z.string().optional(),
@@ -93,19 +75,7 @@ const educationSchema = z.object({
   start_year: educationYearSchema,
   end_year: educationYearSchema,
   currently_studying: z.boolean().optional(),
-})
-// .refine(data => { // Temporarily commented out for debugging year comparison
-//   if (typeof data.start_year === 'number' && typeof data.end_year === 'number' && !data.currently_studying) {
-//      if (data.end_year < data.start_year) {
-//         return false;
-//      }
-//   }
-//   return true;
-// }, {
-//   message: "End year cannot be before start year.",
-//   path: ["end_year"],
-// })
-;
+});
 
 const certificationSchema = z.object({
   id: z.string().optional(),
@@ -113,7 +83,7 @@ const certificationSchema = z.object({
   issued_by: z.string().optional().nullable().transform(val => (val === "" ? null : val)),
   issue_date: z.string().regex(dateRegex, dateErrorMessage).optional().nullable(),
   credential_url: z.string().url("Must be a valid URL if provided.")
-    .or(z.literal("").transform(() => null))
+    .or(z.literal("").transform(() => null)) // Allow empty string, transform to null
     .optional()
     .nullable(),
 });
@@ -131,15 +101,13 @@ const profileSchema = z.object({
   remote_preference: z.enum(remotePreferenceOptions, { errorMap: () => ({ message: "Please select a valid remote preference."}) }).optional().nullable(),
   expected_salary: z.coerce.number().positive("Expected salary must be a positive number.").optional().nullable(),
   resume: z.string().url('Resume must be a valid URL (this will be the Firebase Storage URL).').max(1024, 'Resume URL too long.').optional().nullable(),
-  
-  // Simplified array validations for debugging
-  work_experiences: z.array(z.any()).optional().nullable(),
-  educations: z.array(z.any()).optional().nullable(),
-  certifications: z.array(z.any()).optional().nullable(),
+  work_experiences: z.array(workExperienceSchema).optional().nullable(),
+  educations: z.array(educationSchema).optional().nullable(),
+  certifications: z.array(certificationSchema).optional().nullable(),
 });
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
-type EditableSection = 'work_experiences' | 'educations' | 'certifications' | null;
+type EditableSection = 'personal_contact' | 'professional_background' | 'job_preferences' | 'work_experiences' | 'educations' | 'certifications' | null;
 
 const getErrorMessage = (error: any): string => {
   if (error instanceof AxiosError && error.response) {
@@ -205,33 +173,27 @@ export default function ProfilePage() {
       if (isValid(parsed)) {
         return format(parsed, 'yyyy-MM-dd');
       }
-    } catch (e) { /* ignore, will return null */ }
+    } catch (e) { /* ignore */ }
     return null;
   };
 
   const formatDateForDisplay = (dateInput: string | undefined | null, displayFormat: string = 'MMM yyyy'): string => {
-    if (!dateInput) return 'N/A';
-    let dateObj: Date | null = null;
-
-    if (typeof dateInput === 'string') {
-        try {
-            dateObj = parseISO(dateInput);
-        } catch (e) {
-            console.warn("formatDateForDisplay: Failed to parse date string with parseISO:", dateInput, e);
-            return dateInput;
-        }
-    } else {
-        return 'Invalid Input Type';
+    if (typeof dateInput !== 'string' || !dateInput.trim()) {
+      return 'N/A';
     }
-
-    if (dateObj && isValid(dateObj)) {
+    try {
+      const dateObj = parseISO(dateInput);
+      if (isValid(dateObj)) {
         return format(dateObj, displayFormat);
-    } else {
-        console.warn("formatDateForDisplay: Date object is not valid for input:", dateInput);
-        return typeof dateInput === 'string' ? dateInput : 'Invalid Date';
+      } else {
+        console.warn("formatDateForDisplay: Parsed to invalid date:", dateInput);
+        return dateInput; 
+      }
+    } catch (e) {
+      console.warn("formatDateForDisplay: Error during parseISO:", dateInput, e);
+      return dateInput; 
     }
   };
-
 
   const mapUserToFormValues = (user: User | null, fbUser: FirebaseUser | null): ProfileFormValues => {
     const currentRPFromDBRaw: string | null | undefined = user?.remote_preference;
@@ -290,23 +252,14 @@ export default function ProfilePage() {
     setHasPopulatedFromCurrentUser(true);
   }, [currentUser, firebaseUser, reset, isLoadingAuth, isLoggingOut]);
 
-
   const handleResumeFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        toast({ title: "File Too Large", description: "Resume file should be less than 5MB.", variant: "destructive" });
-        event.target.value = ''; return;
-      }
+      if (file.size > 5 * 1024 * 1024) { toast({ title: "File Too Large", description: "Resume file should be less than 5MB.", variant: "destructive" }); event.target.value = ''; return; }
       const allowedTypes = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
-      if (!allowedTypes.includes(file.type)) {
-        toast({ title: "Invalid File Type", description: "Please upload a PDF or Word document.", variant: "destructive" });
-        event.target.value = ''; return;
-      }
+      if (!allowedTypes.includes(file.type)) { toast({ title: "Invalid File Type", description: "Please upload a PDF or Word document.", variant: "destructive" }); event.target.value = ''; return; }
       setSelectedResumeFile(file);
-    } else {
-      setSelectedResumeFile(null);
-    }
+    } else { setSelectedResumeFile(null); }
   };
 
   const handleRemoveResume = async () => {
@@ -319,8 +272,7 @@ export default function ProfilePage() {
         await apiClient.put(`/users/${backendUserId}`, { resume: null });
         setValue('resume', null, { shouldValidate: true, shouldDirty: true });
         setCurrentResumeUrl(null); setSelectedResumeFile(null);
-        await refetchBackendUser();
-        toast({ title: "Resume Removed" });
+        await refetchBackendUser(); toast({ title: "Resume Removed" });
       }
     } catch (error) { toast({ title: "Removal Failed", description: getErrorMessage(error), variant: "destructive" });
     } finally { setIsUploadingResume(false); }
@@ -328,16 +280,11 @@ export default function ProfilePage() {
 
   const onSubmit: SubmitHandler<ProfileFormValues> = async (data) => {
     console.log("Profile onSubmit called. Data:", data);
-
     if (editingSection) {
-      toast({ title: "Action Required", description: `Please click "Done" or "Cancel" for the '${editingSection.replace('_', ' ')}' section before saving the entire profile.`, variant: "destructive" });
+      toast({ title: "Action Required", description: `Please click "Done" or "Cancel" for the '${editingSection.replace(/_/g, ' ')}' section before saving the entire profile.`, variant: "destructive" });
       return;
     }
-
-    if (!backendUserId || !firebaseUser) {
-      toast({ title: "Error", description: "User session not found. Cannot save profile.", variant: "destructive" });
-      return;
-    }
+    if (!backendUserId || !firebaseUser) { toast({ title: "Error", description: "User session not found. Cannot save profile.", variant: "destructive" }); return; }
 
     let newResumeUrlFromUpload: string | undefined = undefined;
     let uploadSucceeded = true;
@@ -347,35 +294,27 @@ export default function ProfilePage() {
       const filePath = `users/${firebaseUser.uid}/uploaded_resumes/${Date.now()}_${selectedResumeFile.name}`;
       const fileStorageRef = storageRef(storage, filePath);
       const uploadTask = uploadBytesResumable(fileStorageRef, selectedResumeFile);
-      uploadSucceeded = false;
-
+      
       try {
-        if (currentResumeUrl) {
-          try { await deleteObject(storageRef(storage, currentResumeUrl)); }
-          catch (deleteError: any) { if (deleteError.code !== 'storage/object-not-found') console.warn("Could not delete old resume during update:", deleteError); }
-        }
+        if (currentResumeUrl) { try { await deleteObject(storageRef(storage, currentResumeUrl)); } catch (deleteError: any) { if (deleteError.code !== 'storage/object-not-found') console.warn("Could not delete old resume during update:", deleteError); } }
         await new Promise<void>((resolve, reject) => {
-          uploadTask.on('state_changed', (snapshot) => setUploadResumeProgress((snapshot.bytesTransferred / snapshot.totalBytes) * 100),
-            reject,
+          uploadTask.on('state_changed', 
+            (snapshot) => setUploadResumeProgress((snapshot.bytesTransferred / snapshot.totalBytes) * 100),
+            reject, 
             async () => { try { newResumeUrlFromUpload = await getDownloadURL(uploadTask.snapshot.ref); uploadSucceeded = true; resolve(); } catch (getUrlError){ reject(getUrlError); } }
           );
         });
       } catch (error) {
+        uploadSucceeded = false;
         toast({ title: "Resume Upload Failed", description: `Profile not saved. ${getErrorMessage(error)}`, variant: "destructive" });
-        // uploadSucceeded is already false
       } finally {
           setIsUploadingResume(false);
           setUploadResumeProgress(null);
       }
-
-      if (!uploadSucceeded) {
-        return; // Stop submission if resume upload was attempted and failed
-      }
+      if (!uploadSucceeded) return;
     }
 
-
     const finalResumeUrl = newResumeUrlFromUpload !== undefined ? newResumeUrlFromUpload : data.resume;
-
     const updatePayload: UserUpdateAPI = {
       username: data.username,
       number: data.phone_number || null,
@@ -388,28 +327,9 @@ export default function ProfilePage() {
       professional_summary: data.professional_summary || null,
       expected_salary: data.expected_salary ?? null,
       resume: finalResumeUrl,
-      work_experiences: data.work_experiences?.map(({id, currently_working, ...rest}) => ({
-        ...rest,
-        company_name: rest.company_name || '',
-        job_title: rest.job_title || '',
-        start_date: rest.start_date || '',
-        end_date: currently_working ? null : (rest.end_date || null),
-        description: rest.description || null,
-      })) || [],
-      educations: data.educations?.map(({id, currently_studying, ...rest}) => ({
-        ...rest,
-        institution: rest.institution || '',
-        degree: rest.degree || '',
-        start_year: rest.start_year ?? null,
-        end_year: currently_studying ? null : (rest.end_year ?? null),
-      })) || [],
-      certifications: data.certifications?.map(({id, ...rest}) => ({
-        ...rest,
-        title: rest.title || '',
-        issued_by: rest.issued_by || null,
-        issue_date: rest.issue_date || null,
-        credential_url: rest.credential_url || null,
-      })) || [],
+      work_experiences: data.work_experiences?.map(({id, currently_working, ...rest}) => ({ ...rest, company_name: rest.company_name || '', job_title: rest.job_title || '', start_date: rest.start_date || '', end_date: currently_working ? null : (rest.end_date || null), description: rest.description || null, })) || [],
+      educations: data.educations?.map(({id, currently_studying, ...rest}) => ({ ...rest, institution: rest.institution || '', degree: rest.degree || '', start_year: rest.start_year ?? null, end_year: currently_studying ? null : (rest.end_year ?? null), })) || [],
+      certifications: data.certifications?.map(({id, ...rest}) => ({ ...rest, title: rest.title || '', issued_by: rest.issued_by || null, issue_date: rest.issue_date || null, credential_url: rest.credential_url || null, })) || [],
     };
     const filteredPayload = Object.fromEntries( Object.entries(updatePayload).filter(([_, v]) => v !== undefined) ) as Partial<UserUpdateAPI>;
 
@@ -417,43 +337,67 @@ export default function ProfilePage() {
       const response = await apiClient.put<UserModifyResponse>(`/users/${backendUserId}`, filteredPayload);
       if (response.data.messages?.toLowerCase() === 'success') {
         await refetchBackendUser();
-        setEditingSection(null);
-        setSelectedResumeFile(null);
+        setEditingSection(null); setSelectedResumeFile(null);
         toast({ title: 'Profile Updated Successfully' });
       } else { throw new Error(response.data.messages || "Backend issue during profile update."); }
     } catch (error) {
       toast({ title: "Update Failed", description: getErrorMessage(error), variant: "destructive" });
     }
   };
-
   
   const onInvalid = (errors: any) => {
     console.error("Form validation errors (formState.errors object):", errors);
     console.log("Form values at time of invalid submission:", getValues());
-    toast({
-      title: "Validation Error",
-      description: "Please check the form for errors. Some fields might be invalid.",
-      variant: "destructive",
-    });
+    toast({ title: "Validation Error", description: "Please check the form for errors. Some fields might be invalid.", variant: "destructive", });
   };
 
-
   const handleSectionEditToggle = (sectionName: EditableSection) => {
-    if (editingSection === sectionName) {
+    if (editingSection === sectionName) { // User clicks "Done"
       setEditingSection(null);
-    } else if (editingSection !== null) {
-      toast({ title: "Finish Current Edit", description: `Please click "Done" or "Cancel" for the ${editingSection.replace('_',' ')} section first.`, variant: "destructive" });
-    } else {
+    } else if (editingSection !== null) { // User tries to edit another section while one is open
+      toast({ title: "Finish Current Edit", description: `Please click "Done" or "Cancel" for the '${editingSection.replace(/_/g,' ')}' section first.`, variant: "destructive" });
+    } else { // User clicks "Edit"
       setEditingSection(sectionName);
     }
   };
 
-  const handleCancelSectionEdit = (sectionName: 'work_experiences' | 'educations' | 'certifications') => {
-    const originalSectionData = mapUserToFormValues(currentUser, firebaseUser)[sectionName];
-    setValue(sectionName, originalSectionData as any, { shouldValidate: false, shouldDirty: false });
+  const handleCancelSectionEdit = (sectionName: EditableSection) => {
+    if (!currentUser && !firebaseUser) return;
+    const originalFormValues = mapUserToFormValues(currentUser, firebaseUser);
+
+    switch (sectionName) {
+      case 'personal_contact':
+        setValue('username', originalFormValues.username);
+        setValue('email_id', originalFormValues.email_id);
+        setValue('phone_number', originalFormValues.phone_number);
+        setValue('preferred_locations', originalFormValues.preferred_locations);
+        setValue('countries', originalFormValues.countries);
+        break;
+      case 'professional_background':
+        setValue('professional_summary', originalFormValues.professional_summary);
+        setValue('experience', originalFormValues.experience);
+        setValue('resume', originalFormValues.resume);
+        setCurrentResumeUrl(originalFormValues.resume);
+        setSelectedResumeFile(null);
+        setValue('skills', originalFormValues.skills);
+        break;
+      case 'job_preferences':
+        setValue('desired_job_role', originalFormValues.desired_job_role);
+        setValue('remote_preference', originalFormValues.remote_preference);
+        setValue('expected_salary', originalFormValues.expected_salary);
+        break;
+      case 'work_experiences':
+        setValue('work_experiences', originalFormValues.work_experiences);
+        break;
+      case 'educations':
+        setValue('educations', originalFormValues.educations);
+        break;
+      case 'certifications':
+        setValue('certifications', originalFormValues.certifications);
+        break;
+    }
     setEditingSection(null);
   };
-
 
   if (isLoggingOut) return <FullPageLoading message="Processing Account Deletion..." />;
   if (isLoadingAuth || !hasPopulatedFromCurrentUser) return <FullPageLoading message="Loading profile..." />;
@@ -461,103 +405,229 @@ export default function ProfilePage() {
 
   const overallSubmitting = isFormSubmitting || isUploadingResume;
 
-  const renderWorkExperiences = () => {
-    if (editingSection === 'work_experiences') {
-      return (
-        <>
-          {workFields.map((item, index) => {
-            const currentlyWorking = watch(`work_experiences.${index}.currently_working`);
-            return (
-              <Card key={item.id} className="p-4 bg-muted/30 border-dashed mb-4">
-                <div className="space-y-3">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div><Label htmlFor={`work_experiences.${index}.company_name`}>Company Name</Label><Input {...register(`work_experiences.${index}.company_name`)} placeholder="e.g., Acme Corp" className={errors.work_experiences?.[index]?.company_name ? 'border-destructive' : ''}/>{errors.work_experiences?.[index]?.company_name && <p className="text-sm text-destructive">{errors.work_experiences[index]?.company_name?.message}</p>}</div>
-                    <div><Label htmlFor={`work_experiences.${index}.job_title`}>Job Title</Label><Input {...register(`work_experiences.${index}.job_title`)} placeholder="e.g., Software Engineer" className={errors.work_experiences?.[index]?.job_title ? 'border-destructive' : ''}/>{errors.work_experiences?.[index]?.job_title && <p className="text-sm text-destructive">{errors.work_experiences[index]?.job_title?.message}</p>}</div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
-                    <div><Label htmlFor={`work_experiences.${index}.start_date`}>Start Date <span className="text-destructive">*</span></Label>
-                      <Controller control={control} name={`work_experiences.${index}.start_date`} render={({ field }) => (
-                        <Popover><PopoverTrigger asChild><Button variant={"outline"} className={cn("w-full justify-start text-left font-normal", !field.value && "text-muted-foreground", errors.work_experiences?.[index]?.start_date && "border-destructive")}><CalendarIcon className="mr-2 h-4 w-4" />{field.value && isValid(parseISO(field.value)) ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger>
-                          <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined} onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : "")} captionLayout="dropdown-buttons" fromYear={calendarFromYear} toYear={calendarToYear} initialFocus /></PopoverContent></Popover>)}/>
-                      {errors.work_experiences?.[index]?.start_date && <p className="text-sm text-destructive">{errors.work_experiences[index]?.start_date?.message}</p>}</div>
-                    <div><Label htmlFor={`work_experiences.${index}.end_date`}>End Date {currentlyWorking ? "" : <span className="text-destructive">*</span>}</Label>
-                      <Controller control={control} name={`work_experiences.${index}.end_date`} render={({ field }) => (
-                        <Popover><PopoverTrigger asChild><Button variant={"outline"} disabled={currentlyWorking} className={cn("w-full justify-start text-left font-normal", !field.value && !currentlyWorking && "text-muted-foreground", errors.work_experiences?.[index]?.end_date && !currentlyWorking && "border-destructive")}><CalendarIcon className="mr-2 h-4 w-4" />{field.value && !currentlyWorking && isValid(parseISO(field.value)) ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger>
-                          <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined} onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : null)} captionLayout="dropdown-buttons" fromYear={calendarFromYear} toYear={calendarToYear} /></PopoverContent></Popover>)}/>
-                      {errors.work_experiences?.[index]?.end_date && !currentlyWorking && <p className="text-sm text-destructive">{errors.work_experiences[index]?.end_date?.message}</p>}</div>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Controller name={`work_experiences.${index}.currently_working`} control={control} render={({ field }) => (<Checkbox id={`work_exp_current_${index}`} checked={!!field.value} onCheckedChange={(checked) => { field.onChange(checked); if (checked) { setValue(`work_experiences.${index}.end_date`, null); clearErrors(`work_experiences.${index}.end_date`); } }}/>)}/>
-                    <Label htmlFor={`work_exp_current_${index}`} className="text-sm font-normal">I currently work here</Label></div>
-                  <div><Label htmlFor={`work_experiences.${index}.description`}>Description</Label><Textarea {...register(`work_experiences.${index}.description`)} placeholder="Key responsibilities..." rows={3} className={errors.work_experiences?.[index]?.description ? 'border-destructive' : ''}/>{errors.work_experiences?.[index]?.description && <p className="text-sm text-destructive">{errors.work_experiences[index]?.description?.message}</p>}</div>
-                  <Button type="button" variant="outline" size="sm" onClick={() => removeWork(index)} className="text-destructive hover:bg-destructive/10"><Trash2 className="mr-2 h-3.5 w-3.5" /> Remove</Button>
-                </div>
-              </Card>
-            );
-          })}
-          <Button type="button" variant="outline" onClick={() => appendWork({ id: crypto.randomUUID(), company_name: '', job_title: '', start_date: '', end_date: null, description: '', currently_working: false })}><PlusCircle className="mr-2 h-4 w-4" /> Add Work Experience</Button>
-          <div className="flex gap-2 mt-4">
-            <Button type="button" variant="default" onClick={() => handleSectionEditToggle('work_experiences')}><Check className="mr-2 h-4 w-4" /> Done</Button>
-            <Button type="button" variant="ghost" onClick={() => handleCancelSectionEdit('work_experiences')}><X className="mr-2 h-4 w-4" /> Cancel</Button>
+  const SectionCard: React.FC<{title: string; description: string; sectionKey: EditableSection; children: React.ReactNode; editContent: React.ReactNode; icon?: React.ElementType }> = 
+    ({ title, description, sectionKey, children, editContent, icon: Icon }) => (
+    <Card className="shadow-lg">
+      <CardHeader className="flex flex-row justify-between items-start">
+        <div>
+          <CardTitle className="font-headline text-xl flex items-center">
+            {Icon && <Icon className="mr-2 h-5 w-5 text-primary" />}
+            {title}
+          </CardTitle>
+          <CardDescription>{description}</CardDescription>
+        </div>
+        {editingSection !== sectionKey && (
+          <Button variant="outline" size="sm" onClick={() => handleSectionEditToggle(sectionKey)} disabled={!!editingSection && editingSection !== sectionKey}>
+            <Edit className="mr-2 h-4 w-4" /> Edit
+          </Button>
+        )}
+      </CardHeader>
+      <CardContent>
+        {editingSection === sectionKey ? editContent : children}
+        {editingSection === sectionKey && (
+          <div className="flex gap-2 mt-6">
+            <Button type="button" variant="default" onClick={() => handleSectionEditToggle(sectionKey)}><Check className="mr-2 h-4 w-4" /> Done</Button>
+            <Button type="button" variant="ghost" onClick={() => handleCancelSectionEdit(sectionKey)}><X className="mr-2 h-4 w-4" /> Cancel</Button>
           </div>
-        </>
-      );
+        )}
+      </CardContent>
+    </Card>
+  );
+  
+  const DisplayField: React.FC<{label: string; value?: string | number | null | string[]; icon?: React.ElementType }> = ({ label, value, icon: Icon }) => {
+    let displayValue = 'N/A';
+    if (Array.isArray(value)) {
+      displayValue = value.length > 0 ? value.join(', ') : 'N/A';
+    } else if (value !== null && value !== undefined && String(value).trim() !== '') {
+      displayValue = String(value);
     }
     return (
+      <div className="mb-3">
+        <Label className="text-sm text-muted-foreground flex items-center">
+          {Icon && <Icon className="mr-2 h-4 w-4 text-muted-foreground" />}
+          {label}
+        </Label>
+        <p className="text-base text-foreground whitespace-pre-line">{displayValue}</p>
+      </div>
+    );
+  };
+
+  const renderPersonalContactInfo = () => {
+    const currentData = getValues();
+    const displayContent = (
       <div className="space-y-3">
-        {currentUser?.work_experiences && currentUser.work_experiences.length > 0 ? (
-          currentUser.work_experiences.map(exp => (
+        <DisplayField label="Full Name" value={currentData.username} />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+          <DisplayField label="Email Address" value={currentData.email_id} />
+          <DisplayField label="Phone Number" value={currentData.phone_number} icon={Phone} />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+          <DisplayField label="Preferred Locations" value={currentData.preferred_locations} icon={MapPin} />
+          <DisplayField label="Target Countries" value={currentData.countries} icon={Globe} />
+        </div>
+      </div>
+    );
+    const editContent = (
+      <div className="space-y-6">
+        <div className="space-y-2 md:max-w-md"><Label htmlFor="username">Full Name</Label><Input id="username" {...register('username')} placeholder="Your Full Name" className={`${errors.username ? 'border-destructive' : ''}`} />{errors.username && <p className="text-sm text-destructive">{errors.username.message}</p>}</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-2"><Label htmlFor="email_id">Email Address</Label><Input id="email_id" type="email" {...register('email_id')} placeholder="you@example.com" className={errors.email_id ? 'border-destructive' : ''} readOnly />{errors.email_id && <p className="text-sm text-destructive">{errors.email_id.message}</p>}</div>
+          <div className="space-y-2"><Label htmlFor="phone_number">Phone Number</Label><div className="relative flex items-center"><Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="phone_number" type="tel" {...register('phone_number')} placeholder="(123) 456-7890" className={`pl-10 ${errors.phone_number ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Optional.</p>{errors.phone_number && <p className="text-sm text-destructive">{errors.phone_number.message}</p>}</div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-2"><Label htmlFor="preferred_locations">Preferred Locations (comma-separated)</Label><div className="relative flex items-center"><MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="preferred_locations" {...register('preferred_locations')} placeholder="e.g., New York, Remote, London" className={`pl-10 ${errors.preferred_locations ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Optional. Enter cities or "Remote".</p>{errors.preferred_locations && <p className="text-sm text-destructive">{errors.preferred_locations.message}</p>}</div>
+          <div className="space-y-2"><Label htmlFor="countries">Target Countries (comma-separated) <span className="text-destructive">*</span></Label><div className="relative flex items-center"><Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="countries" {...register('countries')} placeholder="e.g., US, CA, GB, India" className={`pl-10 ${errors.countries ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Required. Helps in fetching relevant jobs.</p>{errors.countries && <p className="text-sm text-destructive">{errors.countries.message}</p>}</div>
+        </div>
+      </div>
+    );
+    return <SectionCard title="Personal & Contact Information" description="Basic information about you." sectionKey="personal_contact" editContent={editContent} icon={UserIcon}>{displayContent}</SectionCard>;
+  };
+
+  const renderProfessionalBackground = () => {
+    const currentData = getValues();
+    const displayContent = (
+      <div className="space-y-4">
+        <DisplayField label="Professional Summary" value={currentData.professional_summary} icon={BookUser} />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+          <DisplayField label="Years of Professional Experience" value={currentData.experience} icon={Briefcase} />
+          <div>
+            <Label className="text-sm text-muted-foreground flex items-center">
+              <Paperclip className="mr-2 h-4 w-4 text-muted-foreground" />
+              Your Resume
+            </Label>
+            {currentResumeUrl ? (
+              <div className="mt-1 flex items-center justify-between p-2 border rounded-md bg-muted/30">
+                <a href={currentResumeUrl} target="_blank" rel="noopener noreferrer" className="text-base text-primary hover:underline flex items-center truncate">
+                  <span className="truncate">{currentResumeUrl.split('/').pop()?.split('?')[0].substring(currentResumeUrl.lastIndexOf('_') + 1) || "View Current Resume"}</span>
+                </a>
+              </div>
+            ) : <p className="text-base text-foreground">N/A</p>}
+          </div>
+        </div>
+        <DisplayField label="Key Skills" value={currentData.skills} icon={ListChecks}/>
+      </div>
+    );
+    const editContent = (
+      <div className="space-y-6">
+        <div className="space-y-2"><Label htmlFor="professional_summary" className="text-base flex items-center"><BookUser className="mr-2 h-5 w-5 text-primary/80"/>Professional Summary</Label><Textarea id="professional_summary" {...register('professional_summary')} placeholder="A detailed summary..." rows={8} className={errors.professional_summary ? 'border-destructive' : ''} /><p className="text-xs text-muted-foreground">Optional. Min 50 chars if provided.</p>{errors.professional_summary && <p className="text-sm text-destructive">{errors.professional_summary.message}</p>}</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2"><Label htmlFor="experience">Years of Professional Experience</Label><div className="relative flex items-center"><Briefcase className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="experience" type="number" {...register('experience')} placeholder="e.g., 5" className={`pl-10 hide-number-spinners ${errors.experience ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Optional.</p>{errors.experience && <p className="text-sm text-destructive">{errors.experience.message}</p>}</div>
+            <div className="space-y-2"><Label htmlFor="resume-upload">Your Resume</Label><Input id="resume-upload" type="file" onChange={handleResumeFileChange} accept=".pdf,.doc,.docx" className="mb-1 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" disabled={isUploadingResume || overallSubmitting}/><p className="text-xs text-muted-foreground mt-1">Optional. PDF or Word, max 5MB.</p>{selectedResumeFile && !isUploadingResume && (<p className="text-xs text-muted-foreground mt-1">Selected: {selectedResumeFile.name}</p>)}{currentResumeUrl && !selectedResumeFile && !isUploadingResume && (<div className="mt-2 mb-2 flex items-center justify-between p-2 border rounded-md bg-muted/50"><a href={currentResumeUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center truncate"><Paperclip className="w-4 h-4 mr-2 shrink-0" /><span className="truncate">{currentResumeUrl.split('/').pop()?.split('?')[0].substring(currentResumeUrl.lastIndexOf('_') + 1) || "View Current"}</span></a><Button type="button" variant="ghost" size="icon" onClick={handleRemoveResume} className="h-7 w-7 text-destructive hover:bg-destructive/10" disabled={overallSubmitting || isUploadingResume}><XCircle className="w-4 h-4" /></Button></div>)}{isUploadingResume && uploadResumeProgress !== null && (<div className="mt-2"><Progress value={uploadResumeProgress} className="w-full h-2" /><p className="text-xs text-muted-foreground text-center mt-1">Uploading: {Math.round(uploadResumeProgress)}%</p></div>)}{errors.resume && <p className="text-sm text-destructive">{errors.resume.message}</p>}<input type="hidden" {...register('resume')} /></div>
+        </div>
+        <div className="space-y-2"><Label htmlFor="skills" className="text-base flex items-center"><ListChecks className="mr-2 h-5 w-5 text-primary/80"/>Key Skills (comma-separated)</Label><Textarea id="skills" {...register('skills')} placeholder="e.g., React, Node.js, Python" rows={3} className={errors.skills ? 'border-destructive' : ''} /><p className="text-xs text-muted-foreground">Optional. Helps AI find relevant jobs.</p>{errors.skills && <p className="text-sm text-destructive">{errors.skills.message}</p>}</div>
+      </div>
+    );
+    return <SectionCard title="Professional Background" description="Experience, skills, and resume summary." sectionKey="professional_background" editContent={editContent} icon={Briefcase}>{displayContent}</SectionCard>;
+  };
+
+  const renderJobPreferences = () => {
+    const currentData = getValues();
+    const displayContent = (
+      <div className="space-y-3">
+        <DisplayField label="Ideal Job Role" value={currentData.desired_job_role}/>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+          <DisplayField label="Remote Work Preference" value={currentData.remote_preference} icon={CloudSun}/>
+          <DisplayField label="Expected Salary" value={currentData.expected_salary ? `$${currentData.expected_salary.toLocaleString()}` : null} icon={DollarSign}/>
+        </div>
+      </div>
+    );
+    const editContent = (
+      <div className="space-y-6">
+        <div className="space-y-2"><Label htmlFor="desired_job_role" className="text-base">Ideal Job Role</Label><Textarea id="desired_job_role" {...register('desired_job_role')} placeholder="e.g., Senior Frontend Developer..." rows={5} className={errors.desired_job_role ? 'border-destructive' : ''} /><p className="text-xs text-muted-foreground">Optional. Min 10 chars if provided.</p>{errors.desired_job_role && <p className="text-sm text-destructive">{errors.desired_job_role.message}</p>}</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2"><Label htmlFor="remote_preference">Remote Work Preference</Label><Controller name="remote_preference" control={control} render={({ field }) => (<Select onValueChange={field.onChange} value={field.value ?? undefined} disabled={overallSubmitting}><SelectTrigger className={`relative w-full justify-start pl-10 pr-3 ${errors.remote_preference ? 'border-destructive' : ''}`}><CloudSun className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><SelectValue placeholder="Select preference" /></SelectTrigger><SelectContent>{remotePreferenceOptions.map(option => (<SelectItem key={option} value={option}>{option}</SelectItem>))}</SelectContent></Select>)}/><p className="text-xs text-muted-foreground">Optional.</p>{errors.remote_preference && <p className="text-sm text-destructive">{errors.remote_preference.message}</p>}</div>
+            <div className="space-y-2"><Label htmlFor="expected_salary">Expected Salary (Numeric)</Label><div className="relative flex items-center"><DollarSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="expected_salary" type="number" {...register('expected_salary')} placeholder="e.g., 120000" className={`pl-10 hide-number-spinners ${errors.expected_salary ? 'border-destructive' : ''}`} disabled={overallSubmitting}/></div><p className="text-xs text-muted-foreground">Optional. Enter as a number.</p>{errors.expected_salary && <p className="text-sm text-destructive">{errors.expected_salary.message}</p>}</div>
+        </div>
+      </div>
+    );
+    return <SectionCard title="Job Preferences" description="Tailor job suggestions to your ideal role." sectionKey="job_preferences" editContent={editContent} icon={Wand2}>{displayContent}</SectionCard>;
+  };
+
+  const renderWorkExperiences = () => {
+    const editContent = (
+      <>
+        {workFields.map((item, index) => {
+          const currentlyWorking = watch(`work_experiences.${index}.currently_working`);
+          return (
+            <Card key={item.id} className="p-4 bg-muted/30 border-dashed mb-4">
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div><Label htmlFor={`work_experiences.${index}.company_name`}>Company Name <span className="text-destructive">*</span></Label><Input {...register(`work_experiences.${index}.company_name`)} placeholder="e.g., Acme Corp" className={errors.work_experiences?.[index]?.company_name ? 'border-destructive' : ''}/>{errors.work_experiences?.[index]?.company_name && <p className="text-sm text-destructive">{errors.work_experiences[index]?.company_name?.message}</p>}</div>
+                  <div><Label htmlFor={`work_experiences.${index}.job_title`}>Job Title <span className="text-destructive">*</span></Label><Input {...register(`work_experiences.${index}.job_title`)} placeholder="e.g., Software Engineer" className={errors.work_experiences?.[index]?.job_title ? 'border-destructive' : ''}/>{errors.work_experiences?.[index]?.job_title && <p className="text-sm text-destructive">{errors.work_experiences[index]?.job_title?.message}</p>}</div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                  <div><Label htmlFor={`work_experiences.${index}.start_date`}>Start Date <span className="text-destructive">*</span></Label>
+                    <Controller control={control} name={`work_experiences.${index}.start_date`} render={({ field }) => (
+                      <Popover><PopoverTrigger asChild><Button variant={"outline"} className={cn("w-full justify-start text-left font-normal", !field.value && "text-muted-foreground", errors.work_experiences?.[index]?.start_date && "border-destructive")}><CalendarIcon className="mr-2 h-4 w-4" />{field.value && isValid(parseISO(field.value)) ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger>
+                        <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined} onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : "")} captionLayout="dropdown-buttons" fromYear={calendarFromYear} toYear={calendarToYear} initialFocus /></PopoverContent></Popover>)}/>
+                    {errors.work_experiences?.[index]?.start_date && <p className="text-sm text-destructive">{errors.work_experiences[index]?.start_date?.message}</p>}</div>
+                  <div><Label htmlFor={`work_experiences.${index}.end_date`}>End Date {currentlyWorking ? "" : <span className="text-destructive">*</span>}</Label>
+                    <Controller control={control} name={`work_experiences.${index}.end_date`} render={({ field }) => (
+                      <Popover><PopoverTrigger asChild><Button variant={"outline"} disabled={currentlyWorking} className={cn("w-full justify-start text-left font-normal", !field.value && !currentlyWorking && "text-muted-foreground", errors.work_experiences?.[index]?.end_date && !currentlyWorking && "border-destructive")}><CalendarIcon className="mr-2 h-4 w-4" />{field.value && !currentlyWorking && isValid(parseISO(field.value)) ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger>
+                        <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined} onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : null)} captionLayout="dropdown-buttons" fromYear={calendarFromYear} toYear={calendarToYear} /></PopoverContent></Popover>)}/>
+                    {errors.work_experiences?.[index]?.end_date && !currentlyWorking && <p className="text-sm text-destructive">{errors.work_experiences[index]?.end_date?.message}</p>}</div>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Controller name={`work_experiences.${index}.currently_working`} control={control} render={({ field }) => (<Checkbox id={`work_exp_current_${index}`} checked={!!field.value} onCheckedChange={(checked) => { field.onChange(checked); if (checked) { setValue(`work_experiences.${index}.end_date`, null); clearErrors(`work_experiences.${index}.end_date`); } }}/>)}/>
+                  <Label htmlFor={`work_exp_current_${index}`} className="text-sm font-normal">I currently work here</Label></div>
+                <div><Label htmlFor={`work_experiences.${index}.description`}>Description</Label><Textarea {...register(`work_experiences.${index}.description`)} placeholder="Key responsibilities..." rows={3} className={errors.work_experiences?.[index]?.description ? 'border-destructive' : ''}/>{errors.work_experiences?.[index]?.description && <p className="text-sm text-destructive">{errors.work_experiences[index]?.description?.message}</p>}</div>
+                <Button type="button" variant="outline" size="sm" onClick={() => removeWork(index)} className="text-destructive hover:bg-destructive/10"><Trash2 className="mr-2 h-3.5 w-3.5" /> Remove</Button>
+              </div>
+            </Card>
+          );
+        })}
+        <Button type="button" variant="outline" onClick={() => appendWork({ id: crypto.randomUUID(), company_name: '', job_title: '', start_date: '', end_date: null, description: '', currently_working: false })}><PlusCircle className="mr-2 h-4 w-4" /> Add Work Experience</Button>
+      </>
+    );
+    const displayContent = (
+      <div className="space-y-3">
+        {(currentUser?.work_experiences || []).length > 0 ? (
+          currentUser?.work_experiences?.map(exp => (
             <div key={exp.id || exp.company_name + exp.job_title} className="p-3 border rounded-md bg-muted/20">
               <h4 className="font-semibold">{exp.job_title} at {exp.company_name}</h4>
               <p className="text-sm text-muted-foreground">
-                {formatDateForDisplay(exp.start_date)} - {exp.currently_working ? 'Present' : formatDateForDisplay(exp.end_date)}
+                {formatDateForDisplay(exp.start_date, 'MMM yyyy')} - {exp.currently_working ? 'Present' : formatDateForDisplay(exp.end_date, 'MMM yyyy')}
               </p>
               {exp.description && <p className="text-sm mt-1 whitespace-pre-line">{exp.description}</p>}
             </div>
           ))
         ) : <p className="text-sm text-muted-foreground">No work experience added yet.</p>}
-        <Button type="button" variant="outline" onClick={() => handleSectionEditToggle('work_experiences')}><Edit className="mr-2 h-4 w-4" /> Edit Work Experience</Button>
       </div>
     );
+    return <SectionCard title="Work Experience" description="Detail your professional roles." sectionKey="work_experiences" editContent={editContent} icon={Building}>{displayContent}</SectionCard>;
   };
 
   const renderEducations = () => {
-    if (editingSection === 'educations') {
-      return (
-        <>
-          {eduFields.map((item, index) => {
-            const currentlyStudying = watch(`educations.${index}.currently_studying`);
-            return (
-              <Card key={item.id} className="p-4 bg-muted/30 border-dashed mb-4">
-                <div className="space-y-3">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div><Label htmlFor={`educations.${index}.institution`}>Institution <span className="text-destructive">*</span></Label><Input {...register(`educations.${index}.institution`)} placeholder="e.g., University of Example" className={errors.educations?.[index]?.institution ? 'border-destructive' : ''}/>{errors.educations?.[index]?.institution && <p className="text-sm text-destructive">{errors.educations[index]?.institution?.message}</p>}</div>
-                    <div><Label htmlFor={`educations.${index}.degree`}>Degree <span className="text-destructive">*</span></Label><Input {...register(`educations.${index}.degree`)} placeholder="e.g., B.S. in Computer Science" className={errors.educations?.[index]?.degree ? 'border-destructive' : ''}/>{errors.educations?.[index]?.degree && <p className="text-sm text-destructive">{errors.educations[index]?.degree?.message}</p>}</div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
-                    <div><Label htmlFor={`educations.${index}.start_year`}>Start Year</Label><Input type="number" {...register(`educations.${index}.start_year`)} placeholder="YYYY" className={`hide-number-spinners ${errors.educations?.[index]?.start_year ? 'border-destructive' : ''}`}/>{errors.educations?.[index]?.start_year && <p className="text-sm text-destructive">{errors.educations[index]?.start_year?.message}</p>}</div>
-                    <div><Label htmlFor={`educations.${index}.end_year`}>End Year</Label><Input type="number" {...register(`educations.${index}.end_year`)} placeholder="YYYY" disabled={currentlyStudying} className={`hide-number-spinners ${errors.educations?.[index]?.end_year && !currentlyStudying ? 'border-destructive' : ''}`}/>{errors.educations?.[index]?.end_year && !currentlyStudying && <p className="text-sm text-destructive">{errors.educations[index]?.end_year?.message}</p>}</div>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Controller name={`educations.${index}.currently_studying`} control={control} render={({ field }) => (<Checkbox id={`edu_current_${index}`} checked={!!field.value} onCheckedChange={(checked) => { field.onChange(checked); if (checked) { setValue(`educations.${index}.end_year`, null); clearErrors(`educations.${index}.end_year`); } }}/>)}/>
-                    <Label htmlFor={`edu_current_${index}`} className="text-sm font-normal">I am currently studying here</Label></div>
-                  <Button type="button" variant="outline" size="sm" onClick={() => removeEdu(index)} className="text-destructive hover:bg-destructive/10"><Trash2 className="mr-2 h-3.5 w-3.5" /> Remove</Button>
+    const editContent = (
+      <>
+        {eduFields.map((item, index) => {
+          const currentlyStudying = watch(`educations.${index}.currently_studying`);
+          return (
+            <Card key={item.id} className="p-4 bg-muted/30 border-dashed mb-4">
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div><Label htmlFor={`educations.${index}.institution`}>Institution <span className="text-destructive">*</span></Label><Input {...register(`educations.${index}.institution`)} placeholder="e.g., University of Example" className={errors.educations?.[index]?.institution ? 'border-destructive' : ''}/>{errors.educations?.[index]?.institution && <p className="text-sm text-destructive">{errors.educations[index]?.institution?.message}</p>}</div>
+                  <div><Label htmlFor={`educations.${index}.degree`}>Degree <span className="text-destructive">*</span></Label><Input {...register(`educations.${index}.degree`)} placeholder="e.g., B.S. in Computer Science" className={errors.educations?.[index]?.degree ? 'border-destructive' : ''}/>{errors.educations?.[index]?.degree && <p className="text-sm text-destructive">{errors.educations[index]?.degree?.message}</p>}</div>
                 </div>
-              </Card>
-            );
-          })}
-          <Button type="button" variant="outline" onClick={() => appendEdu({ id: crypto.randomUUID(), institution: '', degree: '', start_year: null, end_year: null, currently_studying: false })}><PlusCircle className="mr-2 h-4 w-4" /> Add Education</Button>
-          <div className="flex gap-2 mt-4">
-            <Button type="button" variant="default" onClick={() => handleSectionEditToggle('educations')}><Check className="mr-2 h-4 w-4" /> Done</Button>
-            <Button type="button" variant="ghost" onClick={() => handleCancelSectionEdit('educations')}><X className="mr-2 h-4 w-4" /> Cancel</Button>
-          </div>
-        </>
-      );
-    }
-    return (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                  <div><Label htmlFor={`educations.${index}.start_year`}>Start Year</Label><Input type="number" {...register(`educations.${index}.start_year`)} placeholder="YYYY" className={`hide-number-spinners ${errors.educations?.[index]?.start_year ? 'border-destructive' : ''}`}/>{errors.educations?.[index]?.start_year && <p className="text-sm text-destructive">{errors.educations[index]?.start_year?.message}</p>}</div>
+                  <div><Label htmlFor={`educations.${index}.end_year`}>End Year</Label><Input type="number" {...register(`educations.${index}.end_year`)} placeholder="YYYY" disabled={currentlyStudying} className={`hide-number-spinners ${errors.educations?.[index]?.end_year && !currentlyStudying ? 'border-destructive' : ''}`}/>{errors.educations?.[index]?.end_year && !currentlyStudying && <p className="text-sm text-destructive">{errors.educations[index]?.end_year?.message}</p>}</div>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Controller name={`educations.${index}.currently_studying`} control={control} render={({ field }) => (<Checkbox id={`edu_current_${index}`} checked={!!field.value} onCheckedChange={(checked) => { field.onChange(checked); if (checked) { setValue(`educations.${index}.end_year`, null); clearErrors(`educations.${index}.end_year`); } }}/>)}/>
+                  <Label htmlFor={`edu_current_${index}`} className="text-sm font-normal">I am currently studying here</Label></div>
+                <Button type="button" variant="outline" size="sm" onClick={() => removeEdu(index)} className="text-destructive hover:bg-destructive/10"><Trash2 className="mr-2 h-3.5 w-3.5" /> Remove</Button>
+              </div>
+            </Card>
+          );
+        })}
+        <Button type="button" variant="outline" onClick={() => appendEdu({ id: crypto.randomUUID(), institution: '', degree: '', start_year: null, end_year: null, currently_studying: false })}><PlusCircle className="mr-2 h-4 w-4" /> Add Education</Button>
+      </>
+    );
+    const displayContent = (
       <div className="space-y-3">
-        {currentUser?.educations && currentUser.educations.length > 0 ? (
-          currentUser.educations.map(edu => (
+        {(currentUser?.educations || []).length > 0 ? (
+          currentUser?.educations?.map(edu => (
             <div key={edu.id || edu.institution + edu.degree} className="p-3 border rounded-md bg-muted/20">
               <h4 className="font-semibold">{edu.degree} from {edu.institution}</h4>
               <p className="text-sm text-muted-foreground">
@@ -566,46 +636,40 @@ export default function ProfilePage() {
             </div>
           ))
         ) : <p className="text-sm text-muted-foreground">No education added yet.</p>}
-        <Button type="button" variant="outline" onClick={() => handleSectionEditToggle('educations')}><Edit className="mr-2 h-4 w-4" /> Edit Education</Button>
       </div>
     );
+    return <SectionCard title="Education" description="List your academic qualifications." sectionKey="educations" editContent={editContent} icon={School}>{displayContent}</SectionCard>;
   };
 
   const renderCertifications = () => {
-    if (editingSection === 'certifications') {
-      return (
-        <>
-          {certFields.map((item, index) => (
-            <Card key={item.id} className="p-4 bg-muted/30 border-dashed mb-4">
-              <div className="space-y-3">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><Label htmlFor={`certifications.${index}.title`}>Title <span className="text-destructive">*</span></Label><Input {...register(`certifications.${index}.title`)} placeholder="e.g., AWS Certified" className={errors.certifications?.[index]?.title ? 'border-destructive' : ''}/>{errors.certifications?.[index]?.title && <p className="text-sm text-destructive">{errors.certifications[index]?.title?.message}</p>}</div>
-                  <div><Label htmlFor={`certifications.${index}.issued_by`}>Issued By</Label><Input {...register(`certifications.${index}.issued_by`)} placeholder="e.g., Amazon Web Services" className={errors.certifications?.[index]?.issued_by ? 'border-destructive' : ''}/>{errors.certifications?.[index]?.issued_by && <p className="text-sm text-destructive">{errors.certifications[index]?.issued_by?.message}</p>}</div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><Label htmlFor={`certifications.${index}.issue_date`}>Issue Date</Label>
-                    <Controller control={control} name={`certifications.${index}.issue_date`} render={({ field }) => (
-                      <Popover><PopoverTrigger asChild><Button variant={"outline"} className={cn("w-full justify-start text-left font-normal", !field.value && "text-muted-foreground", errors.certifications?.[index]?.issue_date && "border-destructive")}><CalendarIcon className="mr-2 h-4 w-4" />{field.value && isValid(parseISO(field.value)) ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger>
-                        <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined} onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : null)} captionLayout="dropdown-buttons" fromYear={calendarFromYear} toYear={calendarToYear} /></PopoverContent></Popover>)}/>
-                    {errors.certifications?.[index]?.issue_date && <p className="text-sm text-destructive">{errors.certifications[index]?.issue_date?.message}</p>}</div>
-                  <div><Label htmlFor={`certifications.${index}.credential_url`}>Credential URL</Label><Input {...register(`certifications.${index}.credential_url`)} placeholder="https://example.com/credential" className={errors.certifications?.[index]?.credential_url ? 'border-destructive' : ''}/>{errors.certifications?.[index]?.credential_url && <p className="text-sm text-destructive">{errors.certifications[index]?.credential_url?.message}</p>}</div>
-                </div>
-                <Button type="button" variant="outline" size="sm" onClick={() => removeCert(index)} className="text-destructive hover:bg-destructive/10"><Trash2 className="mr-2 h-3.5 w-3.5" /> Remove</Button>
+    const editContent = (
+      <>
+        {certFields.map((item, index) => (
+          <Card key={item.id} className="p-4 bg-muted/30 border-dashed mb-4">
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div><Label htmlFor={`certifications.${index}.title`}>Title <span className="text-destructive">*</span></Label><Input {...register(`certifications.${index}.title`)} placeholder="e.g., AWS Certified" className={errors.certifications?.[index]?.title ? 'border-destructive' : ''}/>{errors.certifications?.[index]?.title && <p className="text-sm text-destructive">{errors.certifications[index]?.title?.message}</p>}</div>
+                <div><Label htmlFor={`certifications.${index}.issued_by`}>Issued By</Label><Input {...register(`certifications.${index}.issued_by`)} placeholder="e.g., Amazon Web Services" className={errors.certifications?.[index]?.issued_by ? 'border-destructive' : ''}/>{errors.certifications?.[index]?.issued_by && <p className="text-sm text-destructive">{errors.certifications[index]?.issued_by?.message}</p>}</div>
               </div>
-            </Card>
-          ))}
-          <Button type="button" variant="outline" onClick={() => appendCert({id: crypto.randomUUID(), title: '', issued_by: '', issue_date: null, credential_url: '' })}><PlusCircle className="mr-2 h-4 w-4" /> Add Certification</Button>
-          <div className="flex gap-2 mt-4">
-            <Button type="button" variant="default" onClick={() => handleSectionEditToggle('certifications')}><Check className="mr-2 h-4 w-4" /> Done</Button>
-            <Button type="button" variant="ghost" onClick={() => handleCancelSectionEdit('certifications')}><X className="mr-2 h-4 w-4" /> Cancel</Button>
-          </div>
-        </>
-      );
-    }
-    return (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div><Label htmlFor={`certifications.${index}.issue_date`}>Issue Date</Label>
+                  <Controller control={control} name={`certifications.${index}.issue_date`} render={({ field }) => (
+                    <Popover><PopoverTrigger asChild><Button variant={"outline"} className={cn("w-full justify-start text-left font-normal", !field.value && "text-muted-foreground", errors.certifications?.[index]?.issue_date && "border-destructive")}><CalendarIcon className="mr-2 h-4 w-4" />{field.value && isValid(parseISO(field.value)) ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger>
+                      <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined} onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : null)} captionLayout="dropdown-buttons" fromYear={calendarFromYear} toYear={calendarToYear} /></PopoverContent></Popover>)}/>
+                  {errors.certifications?.[index]?.issue_date && <p className="text-sm text-destructive">{errors.certifications[index]?.issue_date?.message}</p>}</div>
+                <div><Label htmlFor={`certifications.${index}.credential_url`}>Credential URL</Label><Input {...register(`certifications.${index}.credential_url`)} placeholder="https://example.com/credential" className={errors.certifications?.[index]?.credential_url ? 'border-destructive' : ''}/>{errors.certifications?.[index]?.credential_url && <p className="text-sm text-destructive">{errors.certifications[index]?.credential_url?.message}</p>}</div>
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={() => removeCert(index)} className="text-destructive hover:bg-destructive/10"><Trash2 className="mr-2 h-3.5 w-3.5" /> Remove</Button>
+            </div>
+          </Card>
+        ))}
+        <Button type="button" variant="outline" onClick={() => appendCert({id: crypto.randomUUID(), title: '', issued_by: '', issue_date: null, credential_url: '' })}><PlusCircle className="mr-2 h-4 w-4" /> Add Certification</Button>
+      </>
+    );
+    const displayContent = (
       <div className="space-y-3">
-        {currentUser?.certifications && currentUser.certifications.length > 0 ? (
-          currentUser.certifications.map(cert => (
+        {(currentUser?.certifications || []).length > 0 ? (
+          currentUser?.certifications?.map(cert => (
             <div key={cert.id || cert.title} className="p-3 border rounded-md bg-muted/20">
               <h4 className="font-semibold">{cert.title}</h4>
               {cert.issued_by && <p className="text-sm text-muted-foreground">Issued by: {cert.issued_by}</p>}
@@ -614,11 +678,10 @@ export default function ProfilePage() {
             </div>
           ))
         ) : <p className="text-sm text-muted-foreground">No certifications added yet.</p>}
-        <Button type="button" variant="outline" onClick={() => handleSectionEditToggle('certifications')}><Edit className="mr-2 h-4 w-4" /> Edit Certifications</Button>
       </div>
     );
+    return <SectionCard title="Certifications & Licenses" description="Include professional certifications." sectionKey="certifications" editContent={editContent} icon={Award}>{displayContent}</SectionCard>;
   };
-
 
   return (
     <div className="space-y-8">
@@ -628,59 +691,17 @@ export default function ProfilePage() {
       </header>
 
       <form onSubmit={handleSubmit(onSubmit, onInvalid)}>
-        <Card className="shadow-lg">
-            <CardHeader><CardTitle className="font-headline text-xl">Personal & Contact Information</CardTitle><CardDescription>Basic information about you. Your email is used for account identity.</CardDescription></CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-2 md:max-w-md"><Label htmlFor="username">Full Name</Label><Input id="username" {...register('username')} placeholder="Your Full Name" className={`${errors.username ? 'border-destructive' : ''}`} />{errors.username && <p className="text-sm text-destructive">{errors.username.message}</p>}</div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2"><Label htmlFor="email_id">Email Address</Label><Input id="email_id" type="email" {...register('email_id')} placeholder="you@example.com" className={errors.email_id ? 'border-destructive' : ''} readOnly />{errors.email_id && <p className="text-sm text-destructive">{errors.email_id.message}</p>}</div>
-                <div className="space-y-2"><Label htmlFor="phone_number">Phone Number</Label><div className="relative flex items-center"><Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="phone_number" type="tel" {...register('phone_number')} placeholder="(123) 456-7890" className={`pl-10 ${errors.phone_number ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Optional.</p>{errors.phone_number && <p className="text-sm text-destructive">{errors.phone_number.message}</p>}</div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2"><Label htmlFor="preferred_locations">Preferred Locations (comma-separated)</Label><div className="relative flex items-center"><MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="preferred_locations" {...register('preferred_locations')} placeholder="e.g., New York, Remote, London" className={`pl-10 ${errors.preferred_locations ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Optional. Enter cities or "Remote".</p>{errors.preferred_locations && <p className="text-sm text-destructive">{errors.preferred_locations.message}</p>}</div>
-                <div className="space-y-2"><Label htmlFor="countries">Target Countries (comma-separated) <span className="text-destructive">*</span></Label><div className="relative flex items-center"><Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="countries" {...register('countries')} placeholder="e.g., US, CA, GB, India" className={`pl-10 ${errors.countries ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Required. Helps in fetching relevant jobs.</p>{errors.countries && <p className="text-sm text-destructive">{errors.countries.message}</p>}</div>
-              </div>
-            </CardContent>
-        </Card>
+        {renderPersonalContactInfo()}
         <Separator className="my-6" />
-        <Card className="shadow-lg">
-            <CardHeader><CardTitle className="font-headline text-xl">Professional Background</CardTitle><CardDescription>Your experience, skills, and resume summary are crucial for AI matching.</CardDescription></CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-2"><Label htmlFor="professional_summary" className="text-base flex items-center"><BookUser className="mr-2 h-5 w-5 text-primary/80"/>Professional Summary</Label><Textarea id="professional_summary" {...register('professional_summary')} placeholder="A detailed summary..." rows={8} className={errors.professional_summary ? 'border-destructive' : ''} /><p className="text-xs text-muted-foreground">Optional. Min 50 chars if provided.</p>{errors.professional_summary && <p className="text-sm text-destructive">{errors.professional_summary.message}</p>}</div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2"><Label htmlFor="experience">Years of Professional Experience</Label><div className="relative flex items-center"><Briefcase className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="experience" type="number" {...register('experience')} placeholder="e.g., 5" className={`pl-10 hide-number-spinners ${errors.experience ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Optional.</p>{errors.experience && <p className="text-sm text-destructive">{errors.experience.message}</p>}</div>
-                  <div className="space-y-2"><Label htmlFor="resume-upload">Your Resume</Label><Input id="resume-upload" type="file" onChange={handleResumeFileChange} accept=".pdf,.doc,.docx" className="mb-1 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" disabled={isUploadingResume || overallSubmitting}/><p className="text-xs text-muted-foreground mt-1">Optional. PDF or Word, max 5MB.</p>{selectedResumeFile && !isUploadingResume && (<p className="text-xs text-muted-foreground mt-1">Selected: {selectedResumeFile.name}</p>)}{currentResumeUrl && !selectedResumeFile && !isUploadingResume && (<div className="mt-2 mb-2 flex items-center justify-between p-2 border rounded-md bg-muted/50"><a href={currentResumeUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center truncate"><Paperclip className="w-4 h-4 mr-2 shrink-0" /><span className="truncate">{currentResumeUrl.split('/').pop()?.split('?')[0].substring(currentResumeUrl.lastIndexOf('_') + 1) || "View Current"}</span></a><Button type="button" variant="ghost" size="icon" onClick={handleRemoveResume} className="h-7 w-7 text-destructive hover:bg-destructive/10" disabled={overallSubmitting || isUploadingResume}><XCircle className="w-4 h-4" /></Button></div>)}{isUploadingResume && uploadResumeProgress !== null && (<div className="mt-2"><Progress value={uploadResumeProgress} className="w-full h-2" /><p className="text-xs text-muted-foreground text-center mt-1">Uploading: {Math.round(uploadResumeProgress)}%</p></div>)}{errors.resume && <p className="text-sm text-destructive">{errors.resume.message}</p>}<input type="hidden" {...register('resume')} /></div>
-              </div>
-              <div className="space-y-2"><Label htmlFor="skills" className="text-base flex items-center"><ListChecks className="mr-2 h-5 w-5 text-primary/80"/>Key Skills (comma-separated)</Label><Textarea id="skills" {...register('skills')} placeholder="e.g., React, Node.js, Python" rows={3} className={errors.skills ? 'border-destructive' : ''} /><p className="text-xs text-muted-foreground">Optional. Helps AI find relevant jobs.</p>{errors.skills && <p className="text-sm text-destructive">{errors.skills.message}</p>}</div>
-            </CardContent>
-        </Card>
+        {renderProfessionalBackground()}
         <Separator className="my-6" />
-        <Card className="shadow-lg">
-            <CardHeader><CardTitle className="font-headline text-xl">Job Preferences</CardTitle><CardDescription>Tailor job suggestions to your ideal role.</CardDescription></CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-2"><Label htmlFor="desired_job_role" className="text-base">Ideal Job Role</Label><Textarea id="desired_job_role" {...register('desired_job_role')} placeholder="e.g., Senior Frontend Developer..." rows={5} className={errors.desired_job_role ? 'border-destructive' : ''} /><p className="text-xs text-muted-foreground">Optional. Min 10 chars if provided.</p>{errors.desired_job_role && <p className="text-sm text-destructive">{errors.desired_job_role.message}</p>}</div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2"><Label htmlFor="remote_preference">Remote Work Preference</Label><Controller name="remote_preference" control={control} render={({ field }) => (<Select onValueChange={field.onChange} value={field.value ?? undefined} disabled={overallSubmitting}><SelectTrigger className={`relative w-full justify-start pl-10 pr-3 ${errors.remote_preference ? 'border-destructive' : ''}`}><CloudSun className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><SelectValue placeholder="Select preference" /></SelectTrigger><SelectContent>{remotePreferenceOptions.map(option => (<SelectItem key={option} value={option}>{option}</SelectItem>))}</SelectContent></Select>)}/><p className="text-xs text-muted-foreground">Optional.</p>{errors.remote_preference && <p className="text-sm text-destructive">{errors.remote_preference.message}</p>}</div>
-                  <div className="space-y-2"><Label htmlFor="expected_salary">Expected Salary (Numeric)</Label><div className="relative flex items-center"><DollarSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="expected_salary" type="number" {...register('expected_salary')} placeholder="e.g., 120000" className={`pl-10 hide-number-spinners ${errors.expected_salary ? 'border-destructive' : ''}`} disabled={overallSubmitting}/></div><p className="text-xs text-muted-foreground">Optional. Enter as a number.</p>{errors.expected_salary && <p className="text-sm text-destructive">{errors.expected_salary.message}</p>}</div>
-              </div>
-            </CardContent>
-        </Card>
+        {renderJobPreferences()}
         <Separator className="my-6" />
-
-        <Card className="shadow-lg">
-          <CardHeader><CardTitle className="font-headline text-xl flex items-center"><Building className="mr-2 h-5 w-5 text-primary" />Work Experience</CardTitle><CardDescription>Detail your professional roles.</CardDescription></CardHeader>
-          <CardContent>{renderWorkExperiences()}</CardContent>
-        </Card>
+        {renderWorkExperiences()}
         <Separator className="my-6" />
-        <Card className="shadow-lg">
-          <CardHeader><CardTitle className="font-headline text-xl flex items-center"><School className="mr-2 h-5 w-5 text-primary" />Education</CardTitle><CardDescription>List your academic qualifications.</CardDescription></CardHeader>
-          <CardContent>{renderEducations()}</CardContent>
-        </Card>
+        {renderEducations()}
         <Separator className="my-6" />
-        <Card className="shadow-lg">
-          <CardHeader><CardTitle className="font-headline text-xl flex items-center"><Award className="mr-2 h-5 w-5 text-primary" />Certifications & Licenses</CardTitle><CardDescription>Include professional certifications.</CardDescription></CardHeader>
-          <CardContent>{renderCertifications()}</CardContent>
-        </Card>
+        {renderCertifications()}
 
         <div className="mt-8 flex justify-start">
             <Button type="submit" disabled={overallSubmitting || !!editingSection} size="lg" className="shadow-md hover:shadow-lg transition-shadow">
@@ -712,3 +733,5 @@ export default function ProfilePage() {
     </div>
   );
 }
+
+    
