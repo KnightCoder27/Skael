@@ -85,7 +85,7 @@ export type SavedJob = BackendJobListingResponseItem;
  * Dates are stored as "yyyy-MM-dd" strings.
  */
 export interface WorkExperienceItem {
-  id?: string; // Optional frontend ID for list management
+  id?: string; // Frontend ID for list management (string for UUIDs or backend numeric ID converted)
   company_name: string;
   job_title: string;
   start_date: string; // "yyyy-MM-dd" - This is required by backend
@@ -99,7 +99,7 @@ export interface WorkExperienceItem {
  * Years are numbers.
  */
 export interface EducationItem {
-  id?: string; // Optional frontend ID
+  id?: string; // Frontend ID
   institution: string; // Backend: nullable=False
   degree: string; // Backend: nullable=False
   start_year?: number | null; // Backend: nullable=True
@@ -112,7 +112,7 @@ export interface EducationItem {
  * Issue date is stored as "yyyy-MM-dd" string.
  */
 export interface CertificationItem {
-  id?: string; // Optional frontend ID
+  id?: string; // Frontend ID
   title: string; // Backend: nullable=False
   issued_by?: string | null; // Backend: nullable=True
   issue_date?: string | null; // "yyyy-MM-dd" - Backend: nullable=True
@@ -133,7 +133,8 @@ export interface User {
   skills?: string[];
   experience?: number | null;
   preferred_locations?: string[];
-  countries: string[]; // Array of strings for frontend use
+  countries: string[]; // Array of strings for frontend User type
+  country?: string; // Sometimes backend might send singular 'country' as string
   remote_preference?: RemotePreferenceAPI | string | null;
   professional_summary?: string | null;
   expected_salary?: number | null;
@@ -141,9 +142,9 @@ export interface User {
   joined_date?: string; // ISO datetime string
   match_scores?: BackendMatchScoreLogItem[];
   saved_jobs?: SavedJob[];
-  work_experiences?: WorkExperienceItem[]; 
-  educations?: EducationItem[]; 
-  certifications?: CertificationItem[]; 
+  work_experiences?: WorkExperienceItem[];
+  educations?: EducationItem[];
+  certifications?: CertificationItem[];
 }
 
 // API Request/Response types from the guide
@@ -183,7 +184,7 @@ export interface UserUpdateAPI {
   skills?: string; // Comma-separated string from User.skills array
   experience?: number | null;
   preferred_locations?: string; // Comma-separated string from User.preferred_locations array
-  country?: string; // Comma-separated string from User.countries array
+  country: string; // Comma-separated string from User.countries array - NOW REQUIRED
   remote_preference?: RemotePreferenceAPI | null;
   professional_summary?: string | null;
   expected_salary?: number | null;
@@ -230,20 +231,20 @@ export interface RelevantJobsRequestPayload {
  */
 export interface JobListing {
   // Core fields always expected
-  id: number; 
+  id: number;
   job_title: string;
-  company: string; 
+  company: string;
   location: string | null;
   description: string | null;
 
   // Fields from backend's JobListingResponse
   api_id?: string | null;
   url?: string | null;
-  date_posted?: string | null; 
+  date_posted?: string | null;
   employment_status?: string[] | null;
   matching_phrase?: string[] | null;
   matching_words?: string[] | null;
-  company_domain?: string | null; 
+  company_domain?: string | null;
   final_url?: string | null;
   source_url?: string | null;
   remote?: boolean | null;
@@ -254,10 +255,10 @@ export interface JobListing {
   currency?: string | null;
   country?: string | null; // This is singular on backend JobListingResponse
   seniority?: string | null;
-  discovered_at: string; 
+  discovered_at: string;
   reposted?: boolean | null;
-  date_reposted?: string | null; 
-  country_code?: string | null; 
+  date_reposted?: string | null;
+  country_code?: string | null;
   job_expired?: boolean | null;
   industry_id?: string | null;
   fetched_data?: string | null;
@@ -265,10 +266,10 @@ export interface JobListing {
   hiring_team?: HiringTeamMember[] | null;
 
   // Frontend specific fields or enhancements
-  technologies?: Technology[]; 
-  companyLogo?: string; 
-  matchScore?: number; 
-  matchExplanation?: string; 
+  technologies?: Technology[];
+  companyLogo?: string;
+  matchScore?: number;
+  matchExplanation?: string;
 }
 
 // Type for the raw backend job listing item, before mapping
@@ -318,14 +319,14 @@ export type ApplicationStatus = "Interested" | "Saved" | "Applied" | "Interviewi
  * Represents a job application tracked by the user.
  */
 export interface TrackedApplication {
-  id: string; 
-  jobId: number; 
+  id: string;
+  jobId: number;
   jobTitle: string;
   company: string | null;
   status: ApplicationStatus;
   appliedDate?: string;
   notes?: string;
-  lastUpdated: string; 
+  lastUpdated: string;
 }
 
 // Activity Logging Types for backend
@@ -352,14 +353,14 @@ export interface SaveJobPayload {
 }
 
 export interface SaveJobResponse { // For POST /jobs/{id}/save
-  messages: string; 
+  messages: string;
   activity_id: number;
 }
 
 // For DELETE /jobs/{id}/save
 export interface DeleteSavedJobResponse {
-    messages: string; 
-    msg: string; 
+    messages: string;
+    msg: string;
 }
 
 
@@ -380,7 +381,7 @@ export interface ResumeIn {
 
 // Response for POST /users/{id}/resume
 export interface ResumeUploadResponse {
-  messages: string; 
+  messages: string;
   resume_id: number;
 }
 
@@ -405,12 +406,12 @@ export interface LocalUserActivity {
 
 // Type for GET /users/{id}/activities - matches UserActivityOut from docs
 export interface UserActivityOut {
-  id: number; 
+  id: number;
   user_id: number;
   job_id: number | null;
   action_type: string;
   activity_metadata: { [key: string]: any } | null;
-  created_at: string; 
+  created_at: string;
 }
 
 // Feedback submission payload
@@ -426,4 +427,3 @@ export interface AnalyzeResultOut {
   explanation: string;
 }
 
-  
