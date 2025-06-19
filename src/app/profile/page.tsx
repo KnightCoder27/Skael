@@ -37,7 +37,7 @@ const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 const dateErrorMessage = "Date must be in YYYY-MM-DD format.";
 
 const workExperienceSchema = z.object({
-  id: z.string().optional(),
+  id: z.string().optional(), // Frontend ID for list management
   company_name: z.string().min(1, "Company name is required."),
   job_title: z.string().min(1, "Job title is required."),
   start_date: z.string().min(1, "Start date is required.").regex(dateRegex, dateErrorMessage),
@@ -52,9 +52,13 @@ const workExperienceSchema = z.object({
   path: ["end_date"],
 }).refine(data => {
   if (data.start_date && data.end_date && !data.currently_working) {
-    try {
-      return parseISO(data.end_date) >= parseISO(data.start_date);
-    } catch (e) { return false; }
+    // Only proceed if both dates are valid strings matching the regex
+    if (dateRegex.test(data.start_date) && dateRegex.test(data.end_date)) {
+      try {
+        return parseISO(data.end_date) >= parseISO(data.start_date);
+      } catch (e) { return false; }
+    }
+    return true; 
   }
   return true;
 }, {
@@ -71,6 +75,8 @@ const educationSchema = z.object({
   currently_studying: z.boolean().optional(),
 }).refine(data => {
   if (data.currently_studying) return true;
+  // If not currently studying, end_year might be required or validated against start_year
+  // For now, this basic refine passes if not currently studying, other rules apply
   return true; 
 }).refine(data => {
   if (data.start_year && data.end_year && !data.currently_studying) {
@@ -88,7 +94,7 @@ const certificationSchema = z.object({
   issued_by: z.string().optional().nullable().transform(val => (val === "" ? null : val)),
   issue_date: z.string().regex(dateRegex, dateErrorMessage).optional().nullable(),
   credential_url: z.string().url("Must be a valid URL.")
-    .or(z.literal("").transform(() => null)) // Allow empty string and transform to null
+    .or(z.literal("").transform(() => null)) 
     .optional()
     .nullable(),
 });
@@ -135,6 +141,7 @@ const getErrorMessage = (error: any): string => {
   }
   return "An unexpected error occurred.";
 };
+
 
 export default function ProfilePage() {
   const { currentUser, firebaseUser, isLoadingAuth, backendUserId, setBackendUser, refetchBackendUser, isLoggingOut, setIsLoggingOut } = useAuth();
@@ -238,7 +245,9 @@ export default function ProfilePage() {
 
               return {
                 ...w,
-                id: w.id || crypto.randomUUID(),
+                id: w.id || crypto.randomUUID(), // Use backend ID if available, else generate frontend ID
+                company_name: w.company_name || '',
+                job_title: w.job_title || '',
                 start_date: startDate,
                 end_date: endDate,
                 description: w.description || null,
@@ -319,7 +328,7 @@ export default function ProfilePage() {
   const handleRemoveResume = async () => {
     if (!currentResumeUrl || !firebaseUser) return;
 
-    setIsUploadingResume(true);
+    setIsUploadingResume(true); // Visually indicate processing
     try {
       const fileRef = storageRef(storage, currentResumeUrl);
       await deleteObject(fileRef);
@@ -328,7 +337,7 @@ export default function ProfilePage() {
         const updatePayload: Partial<UserUpdateAPI> = { resume: null };
         await apiClient.put(`/users/${backendUserId}`, updatePayload);
 
-        setValue('resume', null);
+        setValue('resume', null, { shouldValidate: true, shouldDirty: true });
         setCurrentResumeUrl(null);
         setSelectedResumeFile(null);
         await refetchBackendUser();
@@ -352,20 +361,23 @@ export default function ProfilePage() {
 
     let newResumeUrl: string | null | undefined = data.resume;
 
-    if (selectedResumeFile) {
+    if (selectedResumeFile && firebaseUser) {
       setIsUploadingResume(true);
       setUploadResumeProgress(0);
       const filePath = `users/${firebaseUser.uid}/uploaded_resumes/${Date.now()}_${selectedResumeFile.name}`;
       const fileStorageRef = storageRef(storage, filePath);
       const uploadTask = uploadBytesResumable(fileStorageRef, selectedResumeFile);
+      let uploadSucceeded = false;
 
       try {
-        if (currentResumeUrl && currentResumeUrl !== newResumeUrl) {
+        if (currentResumeUrl) {
             try {
                 const oldResumeRef = storageRef(storage, currentResumeUrl);
                 await deleteObject(oldResumeRef);
-            } catch (deleteError) {
-                console.warn("Could not delete old resume during update:", deleteError);
+            } catch (deleteError: any) {
+                 if (deleteError.code !== 'storage/object-not-found') {
+                    console.warn("Could not delete old resume during update:", deleteError);
+                 }
             }
         }
 
@@ -377,58 +389,75 @@ export default function ProfilePage() {
             },
             (error) => reject(error),
             async () => {
-              const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-              newResumeUrl = downloadURL;
-              setValue('resume', newResumeUrl);
-              setCurrentResumeUrl(newResumeUrl);
-              setSelectedResumeFile(null);
-              resolve();
+              try {
+                const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                newResumeUrl = downloadURL;
+                setValue('resume', newResumeUrl, { shouldValidate: true, shouldDirty: true });
+                setCurrentResumeUrl(newResumeUrl);
+                setSelectedResumeFile(null);
+                uploadSucceeded = true;
+                resolve();
+              } catch (getUrlError){
+                reject(getUrlError);
+              }
             }
           );
         });
       } catch (error) {
         const errorMsg = getErrorMessage(error);
-        toast({ title: "Resume Upload Failed", description: `Could not upload your new resume. Profile not updated with new resume. ${errorMsg}`, variant: "destructive" });
-        setIsUploadingResume(false);
-        setUploadResumeProgress(null);
-        return;
+        toast({ title: "Resume Upload Failed", description: `Your new resume could not be uploaded. Profile changes will not be saved. ${errorMsg}`, variant: "destructive" });
+        // uploadSucceeded remains false
       } finally {
         setIsUploadingResume(false);
         setUploadResumeProgress(null);
       }
+
+      if (!uploadSucceeded) {
+        return; // Stop profile update if resume upload was attempted and failed
+      }
     }
+
 
     const updatePayload: UserUpdateAPI = {
       username: data.username,
       number: data.phone_number || null,
       desired_job_role: data.desired_job_role || null,
-      skills: data.skills || undefined,
+      skills: data.skills || undefined, // Backend might prefer undefined over null for string array
       experience: data.experience ?? null,
       preferred_locations: data.preferred_locations || undefined,
-      country: data.countries,
+      country: data.countries, // This should be 'countries' in form data, and 'country' in API
       remote_preference: data.remote_preference || null,
       professional_summary: data.professional_summary || null,
       expected_salary: data.expected_salary ?? null,
-      resume: newResumeUrl,
+      resume: newResumeUrl, // This will be the new URL or existing if no new upload
       work_experiences: data.work_experiences?.map(({id, currently_working, ...rest}) => ({
-        ...rest,
-        start_date: rest.start_date, 
-        end_date: currently_working ? null : (rest.end_date || null), 
+        company_name: rest.company_name,
+        job_title: rest.job_title,
+        start_date: rest.start_date,
+        end_date: currently_working ? null : (rest.end_date || null),
+        description: rest.description || null,
       })) || [],
       educations: data.educations?.map(({id, currently_studying, ...rest}) => ({
-        ...rest,
+        institution: rest.institution,
+        degree: rest.degree,
         start_year: rest.start_year ? Number(rest.start_year) : null,
         end_year: currently_studying ? null : (rest.end_year ? Number(rest.end_year) : null),
       })) || [],
       certifications: data.certifications?.map(({id, ...rest}) => ({
-        ...rest,
-        issue_date: rest.issue_date || null, 
+        title: rest.title,
+        issued_by: rest.issued_by || null,
+        issue_date: rest.issue_date || null,
+        credential_url: rest.credential_url || null,
       })) || [],
     };
 
     const filteredUpdatePayload = Object.fromEntries(
-        Object.entries(updatePayload).filter(([_, v]) => v !== undefined)
+        Object.entries(updatePayload).filter(([key, v]) => {
+          if (key === 'skills' || key === 'preferred_locations') return v !== undefined; // Keep if undefined for these specific string fields that backend might treat as "not provided"
+          return v !== undefined;
+        })
     ) as Partial<UserUpdateAPI>;
+
 
     try {
       const response = await apiClient.put<UserModifyResponse>(`/users/${backendUserId}`, filteredUpdatePayload);
@@ -484,22 +513,26 @@ export default function ProfilePage() {
         title: "Account Deleted",
         description: "Your account has been permanently deleted.",
       });
+      // AuthContext will handle redirect via onAuthStateChanged
     } catch (error) {
       console.error("Error deleting account:", error);
       let errorMessage = getErrorMessage(error);
-       if (error instanceof AxiosError && error.response?.status === 204) {
-             errorMessage = "User account not found on the server, but attempting to delete Firebase user.";
+       if (error instanceof AxiosError && error.response?.status === 204) { // User not found in backend
+            errorMessage = "User account not found on the server, attempting to finalize Firebase cleanup.";
             try {
-                if (firebaseUser) await deleteFirebaseUser(firebaseUser);
-                toast({ title: "Account Deletion Partial", description: "Backend account not found, Firebase user deleted if existed." });
+                if (firebaseUser) await deleteFirebaseUser(firebaseUser); // Attempt to delete firebase user if exists
+                toast({ title: "Account Deletion Information", description: "Backend account was not found. Firebase session cleaned up." });
             } catch (fbDeleteError) {
-                 errorMessage = "Backend account not found, and failed to delete Firebase user.";
+                 errorMessage = "Backend account not found, and failed to fully clean Firebase session.";
+                 toast({ title: "Account Deletion Complicated", description: errorMessage, variant: "destructive" });
             }
-        } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
-        errorMessage = "Failed to delete Firebase account. You might need to re-authenticate.";
-      }
-      toast({ title: "Deletion Failed", description: errorMessage, variant: "destructive" });
-      setIsLoggingOut(false);
+        } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) { // Firebase specific errors
+            errorMessage = "Failed to delete Firebase account. You might need to re-authenticate. " + (error as any).message;
+             toast({ title: "Firebase Deletion Failed", description: errorMessage, variant: "destructive" });
+        } else { // General backend or other errors
+            toast({ title: "Deletion Failed", description: errorMessage, variant: "destructive" });
+        }
+      setIsLoggingOut(false); // Ensure this is reset if the process doesn't complete with a redirect
     }
   };
 
@@ -618,6 +651,7 @@ export default function ProfilePage() {
                   rows={8}
                   className={errors.professional_summary ? 'border-destructive' : ''}
                 />
+                 <p className="text-xs text-muted-foreground">Optional. Min 50 characters if provided.</p>
                 {errors.professional_summary && <p className="text-sm text-destructive">{errors.professional_summary.message}</p>}
               </div>
 
@@ -704,6 +738,7 @@ export default function ProfilePage() {
                   rows={5}
                   className={errors.desired_job_role ? 'border-destructive' : ''}
                 />
+                 <p className="text-xs text-muted-foreground">Optional. Min 10 characters if provided.</p>
                 {errors.desired_job_role && <p className="text-sm text-destructive">{errors.desired_job_role.message}</p>}
               </div>
 
@@ -800,7 +835,7 @@ export default function ProfilePage() {
                                 <Calendar
                                   mode="single"
                                   selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined}
-                                  onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : "")}
+                                  onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : "")} // Empty string for required validation
                                   initialFocus
                                 />
                               </PopoverContent>
@@ -834,7 +869,7 @@ export default function ProfilePage() {
                                 <Calendar
                                   mode="single"
                                   selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined}
-                                  onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : null)}
+                                  onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : null)} // null for optional
                                 />
                               </PopoverContent>
                             </Popover>
@@ -866,6 +901,7 @@ export default function ProfilePage() {
                     <div>
                       <Label htmlFor={`work_experiences.${index}.description`}>Description</Label>
                       <Textarea {...register(`work_experiences.${index}.description`)} placeholder="Key responsibilities and achievements..." rows={3} className={errors.work_experiences?.[index]?.description ? 'border-destructive' : ''}/>
+                       <p className="text-xs text-muted-foreground">Optional.</p>
                       {errors.work_experiences?.[index]?.description && <p className="text-sm text-destructive">{errors.work_experiences[index]?.description?.message}</p>}
                     </div>
                     <Button type="button" variant="outline" size="sm" onClick={() => removeWork(index)} className="text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/50">
@@ -875,7 +911,7 @@ export default function ProfilePage() {
                 </Card>
               );
             })}
-            <Button type="button" variant="outline" onClick={() => appendWork({ id: crypto.randomUUID(), company_name: '', job_title: '', start_date: format(new Date(), "yyyy-MM-dd"), end_date: null, description: '', currently_working: false })}>
+            <Button type="button" variant="outline" onClick={() => appendWork({ id: crypto.randomUUID(), company_name: '', job_title: '', start_date: '', end_date: null, description: '', currently_working: false })}>
               <PlusCircle className="mr-2 h-4 w-4" /> Add Work Experience
             </Button>
           </CardContent>
@@ -911,11 +947,13 @@ export default function ProfilePage() {
                        <div>
                         <Label htmlFor={`educations.${index}.start_year`}>Start Year</Label>
                         <Input type="number" {...register(`educations.${index}.start_year`)} placeholder="YYYY" className={`hide-number-spinners ${errors.educations?.[index]?.start_year ? 'border-destructive' : ''}`}/>
+                         <p className="text-xs text-muted-foreground">Optional.</p>
                          {errors.educations?.[index]?.start_year && <p className="text-sm text-destructive">{errors.educations[index]?.start_year?.message}</p>}
                       </div>
                        <div>
                           <Label htmlFor={`educations.${index}.end_year`}>End Year</Label>
                           <Input type="number" {...register(`educations.${index}.end_year`)} placeholder="YYYY" disabled={currentlyStudying} className={`hide-number-spinners ${errors.educations?.[index]?.end_year && !currentlyStudying ? 'border-destructive' : ''}`}/>
+                           <p className="text-xs text-muted-foreground">Optional, unless not currently studying.</p>
                            {errors.educations?.[index]?.end_year && !currentlyStudying && <p className="text-sm text-destructive">{errors.educations[index]?.end_year?.message}</p>}
                        </div>
                      </div>
@@ -973,6 +1011,7 @@ export default function ProfilePage() {
                     <div>
                       <Label htmlFor={`certifications.${index}.issued_by`}>Issued By</Label>
                       <Input {...register(`certifications.${index}.issued_by`)} placeholder="e.g., Amazon Web Services" className={errors.certifications?.[index]?.issued_by ? 'border-destructive' : ''}/>
+                      <p className="text-xs text-muted-foreground">Optional.</p>
                       {errors.certifications?.[index]?.issued_by && <p className="text-sm text-destructive">{errors.certifications[index]?.issued_by?.message}</p>}
                     </div>
                   </div>
@@ -994,7 +1033,7 @@ export default function ProfilePage() {
                                   )}
                                 >
                                   <CalendarIcon className="mr-2 h-4 w-4" />
-                                  {field.value && isValid(parseISO(field.value)) ? format(parseISO(field.value), "PPP") : <span>Pick a date (Optional)</span>}
+                                  {field.value && isValid(parseISO(field.value)) ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}
                                 </Button>
                               </PopoverTrigger>
                               <PopoverContent className="w-auto p-0">
@@ -1008,11 +1047,13 @@ export default function ProfilePage() {
                             </Popover>
                           )}
                         />
+                      <p className="text-xs text-muted-foreground">Optional.</p>
                       {errors.certifications?.[index]?.issue_date && <p className="text-sm text-destructive">{errors.certifications[index]?.issue_date?.message}</p>}
                     </div>
                     <div>
                         <Label htmlFor={`certifications.${index}.credential_url`}>Credential URL</Label>
                         <Input {...register(`certifications.${index}.credential_url`)} placeholder="https://example.com/credential" className={errors.certifications?.[index]?.credential_url ? 'border-destructive' : ''}/>
+                        <p className="text-xs text-muted-foreground">Optional.</p>
                         {errors.certifications?.[index]?.credential_url && <p className="text-sm text-destructive">{errors.certifications[index]?.credential_url?.message}</p>}
                     </div>
                    </div>
@@ -1135,5 +1176,3 @@ export default function ProfilePage() {
     </div>
   );
 }
-
-    
