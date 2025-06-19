@@ -40,7 +40,7 @@ const workExperienceSchema = z.object({
   id: z.string().optional(),
   company_name: z.string().min(1, "Company name is required."),
   job_title: z.string().min(1, "Job title is required."),
-  start_date: z.string().regex(dateRegex, dateErrorMessage), // Required
+  start_date: z.string().min(1, "Start date is required.").regex(dateRegex, dateErrorMessage),
   end_date: z.string().regex(dateRegex, dateErrorMessage).optional().nullable(),
   description: z.string().max(1000, "Description cannot exceed 1000 characters.").optional().nullable().transform(val => (val === "" ? null : val)),
   currently_working: z.boolean().optional(),
@@ -71,12 +71,7 @@ const educationSchema = z.object({
   currently_studying: z.boolean().optional(),
 }).refine(data => {
   if (data.currently_studying) return true;
-  // If not currently studying, end_year can be optional too as per backend model (nullable=True)
-  // No explicit validation needed here if end_year is truly optional when not currently_studying
-  return true;
-}, {
-  // This message path might need adjustment if specific error on end_year is desired when not currently_studying and end_year is also empty
-  // For now, rely on .optional().nullable() for end_year if not currently_studying
+  return true; 
 }).refine(data => {
   if (data.start_year && data.end_year && !data.currently_studying) {
     return data.end_year >= data.start_year;
@@ -91,11 +86,11 @@ const certificationSchema = z.object({
   id: z.string().optional(),
   title: z.string().min(1, "Certification title is required."),
   issued_by: z.string().optional().nullable().transform(val => (val === "" ? null : val)),
-  issue_date: z.string().regex(dateRegex, dateErrorMessage).optional().nullable(), // Made optional
+  issue_date: z.string().regex(dateRegex, dateErrorMessage).optional().nullable(),
   credential_url: z.string().url("Must be a valid URL.")
+    .or(z.literal("").transform(() => null)) // Allow empty string and transform to null
     .optional()
-    .nullable()
-    .transform(val => (val === "" ? null : val)),
+    .nullable(),
 });
 
 const profileSchema = z.object({
@@ -236,16 +231,15 @@ export default function ProfilePage() {
             expected_salary: currentUser.expected_salary ?? null,
             resume: currentUser.resume || null,
             work_experiences: currentUser.work_experiences?.map(w => {
-              const startDate = w.start_date && isValid(parseISO(w.start_date)) ? format(parseISO(w.start_date), 'yyyy-MM-dd') : null;
+              const startDate = w.start_date && isValid(parseISO(w.start_date)) ? format(parseISO(w.start_date), 'yyyy-MM-dd') : '';
               let endDate = w.end_date && isValid(parseISO(w.end_date)) ? format(parseISO(w.end_date), 'yyyy-MM-dd') : null;
-              // Backend may not send currently_working. Infer if end_date is null.
-              const isCurrentlyWorking = w.currently_working ?? !endDate;
+              const isCurrentlyWorking = w.currently_working ?? !w.end_date;
               if (isCurrentlyWorking) endDate = null;
 
               return {
                 ...w,
                 id: w.id || crypto.randomUUID(),
-                start_date: startDate as string, // Assert as string because it's required in form
+                start_date: startDate,
                 end_date: endDate,
                 description: w.description || null,
                 currently_working: isCurrentlyWorking,
@@ -418,8 +412,8 @@ export default function ProfilePage() {
       resume: newResumeUrl,
       work_experiences: data.work_experiences?.map(({id, currently_working, ...rest}) => ({
         ...rest,
-        start_date: rest.start_date, // Already string "yyyy-MM-dd"
-        end_date: currently_working ? null : (rest.end_date || null), // null if current or empty
+        start_date: rest.start_date, 
+        end_date: currently_working ? null : (rest.end_date || null), 
       })) || [],
       educations: data.educations?.map(({id, currently_studying, ...rest}) => ({
         ...rest,
@@ -806,7 +800,7 @@ export default function ProfilePage() {
                                 <Calendar
                                   mode="single"
                                   selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined}
-                                  onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : null)}
+                                  onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : "")}
                                   initialFocus
                                 />
                               </PopoverContent>
@@ -1141,3 +1135,5 @@ export default function ProfilePage() {
     </div>
   );
 }
+
+    
