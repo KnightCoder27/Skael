@@ -20,7 +20,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
-import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon, MessageSquare, UploadCloud, Paperclip, XCircle, GraduationCap, Award, PlusCircle, Building, School, ScrollText, CalendarIcon, Edit, Check, X, Save, Mail, Target } from 'lucide-react';
+import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon, MessageSquare, UploadCloud, Paperclip, XCircle, GraduationCap, Award, PlusCircle, Building, School, ScrollText, CalendarIcon, Edit, Check, X, Save, Mail, Target, BookText } from 'lucide-react'; // Added BookText
 import { FullPageLoading, LoadingSpinner } from '@/components/app/loading-spinner';
 import apiClient from '@/lib/apiClient';
 import { auth as firebaseAuth, storage } from '@/lib/firebase';
@@ -109,7 +109,7 @@ const personalContactSectionPayloadSchema = z.object({
   username: profileSchema.shape.username.optional(),
   number: profileSchema.shape.phone_number,
   preferred_locations: profileSchema.shape.preferred_locations,
-  country: profileSchema.shape.countries, // Backend expects 'country' as string
+  country: profileSchema.shape.countries,
 });
 
 const professionalBackgroundSectionPayloadSchema = z.object({
@@ -251,6 +251,7 @@ export default function ProfilePage() {
     if (typeof dateInput !== 'string' || !dateInput.trim()) return 'N/A';
     let dateToParse = dateInput;
 
+    // Check if it's DD-MM-YYYY and rearrange to YYYY-MM-DD for parseISO
     if (/^\d{2}-\d{2}-\d{4}$/.test(dateInput)) {
         const parts = dateInput.split('-');
         if (parts.length === 3) {
@@ -261,25 +262,25 @@ export default function ProfilePage() {
           if (d > 0 && d <= 31 && m > 0 && m <= 12 && y > 1800 && y < 2200) {
              dateToParse = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
           } else {
-            console.warn(`formatDateForDisplay: Invalid DD-MM-YYYY components: ${dateInput}`);
-            return dateInput;
+            // console.warn(`formatDateForDisplay: Invalid DD-MM-YYYY components: ${dateInput}`);
+            return dateInput; // return original if components are invalid
           }
         } else {
-           console.warn(`formatDateForDisplay: Could not split DD-MM-YYYY string: ${dateInput}`);
-           return dateInput;
+           // console.warn(`formatDateForDisplay: Could not split DD-MM-YYYY string: ${dateInput}`);
+           return dateInput; // return original if split fails
         }
     }
     try {
-        const dateObj = parseISO(dateToParse);
+        const dateObj = parseISO(dateToParse); // parseISO expects YYYY-MM-DD or other ISO formats
         if (isValid(dateObj)) {
             return format(dateObj, displayFormat);
         }
     } catch (e) {
-        console.warn("Error parsing date for display:", dateInput, "Parsed as:", dateToParse, e);
+        // console.warn("Error parsing date for display:", dateInput, "Parsed as:", dateToParse, e);
         return "Invalid Date";
     }
-    console.warn(`formatDateForDisplay: Could not parse date: "${dateInput}" (tried as "${dateToParse}"). Returning original.`);
-    return dateInput;
+    // console.warn(`formatDateForDisplay: Could not parse date: "${dateInput}" (tried as "${dateToParse}"). Returning original.`);
+    return dateInput; // Fallback to original string if all else fails
   }, []);
 
 
@@ -301,7 +302,7 @@ export default function ProfilePage() {
     let formCountries = '';
     if (user?.countries && Array.isArray(user.countries)) {
         formCountries = user.countries.join(', ');
-    } else if (user && typeof (user as any).country === 'string') { // Fallback for singular 'country' if present
+    } else if (user && typeof (user as any).country === 'string') {
         formCountries = (user as any).country;
     }
     
@@ -319,7 +320,7 @@ export default function ProfilePage() {
       expected_salary: user?.expected_salary ?? null,
       resume: user?.resume || null,
       work_experiences: user?.work_experiences?.map(w => ({
-        id: typeof w.id === 'number' ? String(w.id) : (w.id || crypto.randomUUID()),
+        id: (typeof w.id === 'number' ? String(w.id) : w.id) || crypto.randomUUID(),
         company_name: w.company_name || '',
         job_title: w.job_title || '',
         start_date: mapIncomingDateToFormValue(w.start_date) || '',
@@ -328,7 +329,7 @@ export default function ProfilePage() {
         currently_working: w.currently_working ?? (!w.end_date && !!w.start_date),
       })) || [],
       educations: user?.educations?.map(e => ({
-        id: typeof e.id === 'number' ? String(e.id) : (e.id || crypto.randomUUID()),
+        id: (typeof e.id === 'number' ? String(e.id) : e.id) || crypto.randomUUID(),
         institution: e.institution || '',
         degree: e.degree || '',
         start_year: typeof e.start_year === 'number' ? e.start_year : null,
@@ -336,7 +337,7 @@ export default function ProfilePage() {
         currently_studying: e.currently_studying ?? (!e.end_year && !!e.start_year),
       })) || [],
       certifications: user?.certifications?.map(c => ({
-        id: typeof c.id === 'number' ? String(c.id) : (c.id || crypto.randomUUID()),
+        id: (typeof c.id === 'number' ? String(c.id) : c.id) || crypto.randomUUID(),
         title: c.title || '',
         issued_by: c.issued_by || null,
         issue_date: mapIncomingDateToFormValue(c.issue_date),
@@ -373,7 +374,7 @@ export default function ProfilePage() {
 
       const payload: Partial<UserUpdateAPI> = {
         resume: null,
-        country: getValues().countries,
+        country: getValues().countries, // Always include country
       };
       await apiClient.put(`/users/${backendUserId}`, payload);
       setValue('resume', null, { shouldValidate: true, shouldDirty: true });
@@ -480,7 +481,7 @@ export default function ProfilePage() {
     const currentFormValues = getValues();
     let payloadForValidation: Partial<UserUpdateAPI> = {
       ...sectionPayloadBuilder(currentFormValues),
-      country: currentFormValues.countries, 
+      country: currentFormValues.countries, // Always include country string
     };
 
     const validationResult = sectionSchema.safeParse(payloadForValidation);
@@ -492,8 +493,10 @@ export default function ProfilePage() {
       
       const fieldErrors = validationResult.error.flatten().fieldErrors;
       Object.entries(fieldErrors).forEach(([path, messages]) => {
-        const fieldName = path as keyof ProfileFormValues;
-        form.setError(fieldName, { type: 'manual', message: (messages as string[])?.[0] || 'Invalid value' });
+        const fieldName = path as keyof ProfileFormValues; // Simple direct cast, might need refinement for nested paths
+        if (typeof fieldName === 'string' && form.getFieldState(fieldName)) {
+           form.setError(fieldName, { type: 'manual', message: (messages as string[])?.[0] || 'Invalid value' });
+        }
       });
       
       setIsSubmittingSection(null);
@@ -503,7 +506,7 @@ export default function ProfilePage() {
     try {
       const response = await apiClient.put<UserModifyResponse>(`/users/${backendUserId}`, validationResult.data);
       if (response.data.messages?.toLowerCase() === 'success') {
-        await refetchBackendUser();
+        await refetchBackendUser(); // This will internally call reset with new currentUser
         setEditingSection(null);
         clearErrors();
         toast({ title: `${sectionKey?.replace(/_/g, ' ')} Updated Successfully` });
@@ -583,7 +586,7 @@ export default function ProfilePage() {
       username: values.username,
       number: values.phone_number || null,
       preferred_locations: values.preferred_locations || undefined,
-      // 'country' will be added by handleSaveSection from values.countries
+      // 'country' is added by handleSaveSection from values.countries
     }), personalContactSectionPayloadSchema);
   };
 
@@ -614,7 +617,7 @@ export default function ProfilePage() {
           setUploadResumeProgress(null);
       }
       if (!uploadSucceeded) {
-        setIsSubmittingSection(null); // Ensure this is reset if upload fails before API call
+        setIsSubmittingSection(null);
         return;
       }
     }
@@ -789,12 +792,12 @@ export default function ProfilePage() {
                   <div><Label htmlFor={`work_experiences.${index}.start_date`}>Start Date <span className="text-destructive">*</span></Label>
                     <Controller control={control} name={`work_experiences.${index}.start_date`} render={({ field }) => (
                       <Popover><PopoverTrigger asChild><Button variant={"outline"} className={cn("w-full justify-start text-left font-normal", !field.value && "text-muted-foreground", errors.work_experiences?.[index]?.start_date && "border-destructive")}><CalendarIcon className="mr-2 h-4 w-4" />{field.value && isValid(parseISO(field.value)) ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger>
-                        <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined} onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : null)} captionLayout="dropdown-buttons" fromYear={calendarFromYear} toYear={calendarToYear} initialFocus /></PopoverContent></Popover>)}/>
+                        <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined} onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : "")} captionLayout="dropdown-buttons" fromYear={calendarFromYear} toYear={calendarToYear} initialFocus /></PopoverContent></Popover>)}/>
                     {errors.work_experiences?.[index]?.start_date && <p className="text-sm text-destructive">{errors.work_experiences[index]?.start_date?.message}</p>}</div>
                   <div><Label htmlFor={`work_experiences.${index}.end_date`}>End Date {currentlyWorking ? "" : <span className="text-destructive">*</span>}</Label>
                     <Controller control={control} name={`work_experiences.${index}.end_date`} render={({ field }) => (
                       <Popover><PopoverTrigger asChild><Button variant={"outline"} disabled={currentlyWorking} className={cn("w-full justify-start text-left font-normal", !field.value && !currentlyWorking && "text-muted-foreground", errors.work_experiences?.[index]?.end_date && !currentlyWorking && "border-destructive")}><CalendarIcon className="mr-2 h-4 w-4" />{field.value && !currentlyWorking && isValid(parseISO(field.value)) ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger>
-                        <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined} onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : null)} captionLayout="dropdown-buttons" fromYear={calendarFromYear} toYear={calendarToYear} /></PopoverContent></Popover>)}/>
+                        <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined} onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : "")} captionLayout="dropdown-buttons" fromYear={calendarFromYear} toYear={calendarToYear} /></PopoverContent></Popover>)}/>
                     {errors.work_experiences?.[index]?.end_date && !currentlyWorking && <p className="text-sm text-destructive">{errors.work_experiences[index]?.end_date?.message}</p>}</div>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -887,7 +890,7 @@ export default function ProfilePage() {
                 <div><Label htmlFor={`certifications.${index}.issue_date`}>Issue Date</Label>
                   <Controller control={control} name={`certifications.${index}.issue_date`} render={({ field }) => (
                     <Popover><PopoverTrigger asChild><Button variant={"outline"} className={cn("w-full justify-start text-left font-normal", !field.value && "text-muted-foreground", errors.certifications?.[index]?.issue_date && "border-destructive")}><CalendarIcon className="mr-2 h-4 w-4" />{field.value && isValid(parseISO(field.value)) ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger>
-                      <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined} onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : null)} captionLayout="dropdown-buttons" fromYear={calendarFromYear} toYear={calendarToYear} initialFocus/></PopoverContent></Popover>)}/>
+                      <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined} onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : "")} captionLayout="dropdown-buttons" fromYear={calendarFromYear} toYear={calendarToYear} initialFocus/></PopoverContent></Popover>)}/>
                   {errors.certifications?.[index]?.issue_date && <p className="text-sm text-destructive">{errors.certifications[index]?.issue_date?.message}</p>}</div>
                 <div><Label htmlFor={`certifications.${index}.credential_url`}>Credential URL</Label><Input {...register(`certifications.${index}.credential_url`)} placeholder="https://example.com/credential" className={errors.certifications?.[index]?.credential_url ? 'border-destructive' : ''}/>{errors.certifications?.[index]?.credential_url && <p className="text-sm text-destructive">{errors.certifications[index]?.credential_url?.message}</p>}</div>
               </div>
