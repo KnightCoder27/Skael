@@ -20,7 +20,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
-import { User as UserIcon, Edit3, FileText as FileTextIconLucide, Wand2, Phone, Briefcase, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon, MessageSquare, UploadCloud, Paperclip, XCircle, GraduationCap, Award, PlusCircle, Building, School, ScrollText, CalendarIcon, Edit, Check, X, Save, Mail, Target, LockKeyhole, Eye, EyeOff, BookText, IndianRupee } from 'lucide-react';
+import { User as UserIcon, Edit3, Wand2, Phone, Briefcase, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon, MessageSquare, UploadCloud, Paperclip, XCircle, GraduationCap, Award, PlusCircle, Building, School, ScrollText, CalendarIcon, Edit, Check, X, Save, Mail, Target, LockKeyhole, Eye, EyeOff, IndianRupee, ChevronDown, FileText as FileTextIconLucide } from 'lucide-react';
 import { FullPageLoading, LoadingSpinner } from '@/components/app/loading-spinner';
 import apiClient from '@/lib/apiClient';
 import { auth as firebaseAuth, storage } from '@/lib/firebase';
@@ -63,11 +63,11 @@ const baseWorkExperienceObjectSchema = z.object({
 
 const workExperienceSchema = baseWorkExperienceObjectSchema.refine(data => {
     if (data.currently_working) return true;
-    if (!data.start_date || !data.end_date) return true;
+    if (!data.start_date || !data.end_date) return true; // Allow validation if one is missing, regex will catch format
     try {
-      if (!isValid(parseISO(data.start_date)) || !isValid(parseISO(data.end_date))) return true;
+      if (!isValid(parseISO(data.start_date)) || !isValid(parseISO(data.end_date))) return true; // Handled by regex
       return parseISO(data.end_date) >= parseISO(data.start_date);
-    } catch (e) { return true; }
+    } catch (e) { return true; } // Should not happen if regex passes and dates are valid
   }, { message: "End date must be after start date.", path: ["end_date"] });
 
 
@@ -238,6 +238,53 @@ const mapIncomingDateToFormValue = (dateStr: string | undefined | null): string 
     }
   }
   return null;
+};
+
+// New Local DatePickerField Component
+const DatePickerField: React.FC<{
+  value: string | null | undefined;
+  onChange: (dateString: string | null) => void;
+  disabled?: boolean;
+  error?: boolean;
+  placeholder?: string;
+}> = ({ value, onChange, disabled, error, placeholder = "Select date" }) => {
+  const [open, setOpen] = React.useState(false);
+  // Ensure that 'value' is a valid date string for parseISO before parsing
+  const dateObject = value && dateRegex.test(value) && isValid(parseISO(value)) ? parseISO(value) : undefined;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          className={cn(
+            "w-full justify-between text-left font-normal",
+            !dateObject && "text-muted-foreground",
+            error && "border-destructive"
+          )}
+          disabled={disabled}
+        >
+          {dateObject ? format(dateObject, "PPP") : <span>{placeholder}</span>}
+          <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0" align="start">
+        <Calendar
+          mode="single"
+          selected={dateObject}
+          onSelect={(selectedDate) => {
+            onChange(selectedDate ? format(selectedDate, "yyyy-MM-dd") : null);
+            setOpen(false);
+          }}
+          captionLayout="dropdown-buttons"
+          fromYear={calendarFromYear}
+          toYear={calendarToYear}
+          initialFocus
+          disabled={disabled}
+        />
+      </PopoverContent>
+    </Popover>
+  );
 };
 
 
@@ -796,7 +843,7 @@ export default function ProfilePage() {
     const currentData = getValues();
     const displayContent = (
       <div className="space-y-4">
-        <DisplayField label="Professional Summary" value={currentData.professional_summary} icon={BookText} className="md:col-span-2" />
+        <DisplayField label="Professional Summary" value={currentData.professional_summary} icon={BookUser} className="md:col-span-2" />
         <div className="grid grid-cols-1 md:grid-cols-2 md:gap-x-6 md:gap-y-4">
           <DisplayField label="Years of Professional Experience" value={currentData.experience} icon={Briefcase} />
           <DisplayField label="Key Skills" value={currentData.skills} icon={ListChecks}/>
@@ -881,14 +928,10 @@ export default function ProfilePage() {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
                   <div><Label htmlFor={`work_experiences.${index}.start_date`}>Start Date <span className="text-destructive">*</span></Label>
-                    <Controller control={control} name={`work_experiences.${index}.start_date`} render={({ field }) => (
-                      <Popover><PopoverTrigger asChild><Button variant={"outline"} className={cn("w-full justify-start text-left font-normal", !field.value && "text-muted-foreground", errors.work_experiences?.[index]?.start_date && "border-destructive")}><CalendarIcon className="mr-2 h-4 w-4" />{(field.value && isValid(parseISO(field.value))) ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger>
-                        <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined} onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : "")} captionLayout="dropdown-buttons" fromYear={calendarFromYear} toYear={calendarToYear} initialFocus /></PopoverContent></Popover>)}/>
+                    <Controller control={control} name={`work_experiences.${index}.start_date`} render={({ field, fieldState }) => ( <DatePickerField value={field.value} onChange={field.onChange} error={!!fieldState.error} placeholder="Pick start date" /> )}/>
                     {errors.work_experiences?.[index]?.start_date && <p className="text-sm text-destructive">{errors.work_experiences[index]?.start_date?.message}</p>}</div>
                   <div><Label htmlFor={`work_experiences.${index}.end_date`}>End Date {currentlyWorking ? "" : <span className="text-destructive">*</span>}</Label>
-                    <Controller control={control} name={`work_experiences.${index}.end_date`} render={({ field }) => (
-                      <Popover><PopoverTrigger asChild><Button variant={"outline"} disabled={currentlyWorking} className={cn("w-full justify-start text-left font-normal", !field.value && !currentlyWorking && "text-muted-foreground", errors.work_experiences?.[index]?.end_date && !currentlyWorking && "border-destructive")}><CalendarIcon className="mr-2 h-4 w-4" />{(field.value && !currentlyWorking && isValid(parseISO(field.value))) ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger>
-                        <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined} onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : "")} captionLayout="dropdown-buttons" fromYear={calendarFromYear} toYear={calendarToYear} /></PopoverContent></Popover>)}/>
+                     <Controller control={control} name={`work_experiences.${index}.end_date`} render={({ field, fieldState }) => ( <DatePickerField value={field.value} onChange={field.onChange} disabled={currentlyWorking} error={!!fieldState.error && !currentlyWorking} placeholder="Pick end date" /> )}/>
                     {errors.work_experiences?.[index]?.end_date && !currentlyWorking && <p className="text-sm text-destructive">{errors.work_experiences[index]?.end_date?.message}</p>}</div>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -979,9 +1022,7 @@ export default function ProfilePage() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div><Label htmlFor={`certifications.${index}.issue_date`}>Issue Date</Label>
-                  <Controller control={control} name={`certifications.${index}.issue_date`} render={({ field }) => (
-                    <Popover><PopoverTrigger asChild><Button variant={"outline"} className={cn("w-full justify-start text-left font-normal", !field.value && "text-muted-foreground", errors.certifications?.[index]?.issue_date && "border-destructive")}><CalendarIcon className="mr-2 h-4 w-4" />{(field.value && isValid(parseISO(field.value))) ? format(parseISO(field.value), "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger>
-                      <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={field.value && isValid(parseISO(field.value)) ? parseISO(field.value) : undefined} onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : "")} captionLayout="dropdown-buttons" fromYear={calendarFromYear} toYear={calendarToYear} initialFocus/></PopoverContent></Popover>)}/>
+                  <Controller control={control} name={`certifications.${index}.issue_date`} render={({ field, fieldState }) => ( <DatePickerField value={field.value} onChange={field.onChange} error={!!fieldState.error} placeholder="Pick issue date" /> )}/>
                   {errors.certifications?.[index]?.issue_date && <p className="text-sm text-destructive">{errors.certifications[index]?.issue_date?.message}</p>}</div>
                 <div><Label htmlFor={`certifications.${index}.credential_url`}>Credential URL</Label><Input {...register(`certifications.${index}.credential_url`)} placeholder="https://example.com/credential" className={errors.certifications?.[index]?.credential_url ? 'border-destructive' : ''}/>{errors.certifications?.[index]?.credential_url && <p className="text-sm text-destructive">{errors.certifications[index]?.credential_url?.message}</p>}</div>
               </div>
@@ -1084,4 +1125,3 @@ export default function ProfilePage() {
     </div>
   );
 }
-
