@@ -1,6 +1,7 @@
 
 "use client";
 
+import * as React from 'react'; // Added missing React import
 import { useEffect, useState, ChangeEvent, useCallback } from 'react';
 import { useForm, type SubmitHandler, Controller, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -67,7 +68,7 @@ const workExperienceSchema = baseWorkExperienceObjectSchema.refine(data => {
     try {
       if (!isValid(parseISO(data.start_date)) || !isValid(parseISO(data.end_date))) return true; // Handled by regex
       return parseISO(data.end_date) >= parseISO(data.start_date);
-    } catch (e) { return true; } // Should not happen if regex passes and dates are valid
+    } catch (e) { return true; }
   }, { message: "End date must be after start date.", path: ["end_date"] });
 
 
@@ -249,7 +250,6 @@ const DatePickerField: React.FC<{
   placeholder?: string;
 }> = ({ value, onChange, disabled, error, placeholder = "Select date" }) => {
   const [open, setOpen] = React.useState(false);
-  // Ensure that 'value' is a valid date string for parseISO before parsing
   const dateObject = value && dateRegex.test(value) && isValid(parseISO(value)) ? parseISO(value) : undefined;
 
   return (
@@ -1125,3 +1125,5 @@ export default function ProfilePage() {
     </div>
   );
 }
+
+    
