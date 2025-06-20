@@ -32,6 +32,8 @@ import { FeedbackDialog } from '@/components/app/feedback-dialog';
 import { Progress } from '@/components/ui/progress';
 import { format, parseISO, isValid } from 'date-fns';
 import { cn } from '@/lib/utils';
+import type { CaptionLabelProps } from 'react-day-picker';
+
 
 const remotePreferenceOptions: RemotePreferenceAPI[] = ["Remote", "Hybrid", "Onsite"];
 const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
@@ -52,6 +54,7 @@ const educationYearSchema = z.preprocess(
     .nullable()
 );
 
+// Base Zod object schema for WorkExperienceItem without refine (for .omit to work)
 const baseWorkExperienceObjectSchema = z.object({
   id: z.string().optional(),
   company_name: z.string().min(1, "Company name is required."),
@@ -62,16 +65,18 @@ const baseWorkExperienceObjectSchema = z.object({
   currently_working: z.boolean().optional(),
 });
 
+// Refined schema for form validation
 const workExperienceSchema = baseWorkExperienceObjectSchema.refine(data => {
     if (data.currently_working) return true;
-    if (!data.start_date || !data.end_date) return true;
+    if (!data.start_date || !data.end_date) return true; // Allow validation if one is missing, regex will catch format
     try {
-      if (!isValid(parseISO(data.start_date)) || !isValid(parseISO(data.end_date))) return true;
+      if (!isValid(parseISO(data.start_date)) || !isValid(parseISO(data.end_date))) return true; // Let regex handle format errors first
       return parseISO(data.end_date) >= parseISO(data.start_date);
-    } catch (e) { return true; }
+    } catch (e) { return true; } // Should not happen if regex and isValid pass
   }, { message: "End date must be after start date.", path: ["end_date"] });
 
 
+// Base Zod object schema for EducationItem without refine
 const baseEducationObjectSchema = z.object({
   id: z.string().optional(),
   institution: z.string().min(1, "Institution name is required."),
@@ -81,6 +86,7 @@ const baseEducationObjectSchema = z.object({
   currently_studying: z.boolean().optional(),
 });
 
+// Refined schema for form validation
 const educationSchema = baseEducationObjectSchema.refine(data => {
   if (data.currently_studying) return true;
   if (data.start_year && data.end_year) {
@@ -160,7 +166,7 @@ const workExperiencesSectionPayloadSchema = z.object({
   work_experiences: z.array(
     baseWorkExperienceObjectSchema.omit({ id: true, currently_working: true })
       .extend({
-        start_date: z.string().min(1, "Start date is required.").regex(dateRegex, dateErrorMessage),
+        start_date: z.string().min(1, "Start date is required.").regex(dateRegex, dateErrorMessage), // Ensure start_date is required
         end_date: z.string().regex(dateRegex, dateErrorMessage).nullable(),
       })
   ).optional().nullable(),
@@ -241,6 +247,11 @@ const mapIncomingDateToFormValue = (dateStr: string | undefined | null): string 
   return null;
 };
 
+// Custom empty caption label to prevent text display with dropdowns
+const EmptyCaptionLabel = (props: CaptionLabelProps) => {
+  return null;
+};
+
 const DatePickerField: React.FC<{
   value: string | null | undefined;
   onChange: (dateString: string | null) => void;
@@ -276,6 +287,7 @@ const DatePickerField: React.FC<{
             setOpen(false);
           }}
           captionLayout="dropdown"
+          components={{ CaptionLabel: EmptyCaptionLabel }}
           fromYear={calendarFromYear}
           toYear={calendarToYear}
           initialFocus
