@@ -1,7 +1,7 @@
 
 "use client";
 
-import * as React from 'react'; // Added missing React import
+import * as React from 'react';
 import { useEffect, useState, ChangeEvent, useCallback } from 'react';
 import { useForm, type SubmitHandler, Controller, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -64,9 +64,9 @@ const baseWorkExperienceObjectSchema = z.object({
 
 const workExperienceSchema = baseWorkExperienceObjectSchema.refine(data => {
     if (data.currently_working) return true;
-    if (!data.start_date || !data.end_date) return true; // Allow validation if one is missing, regex will catch format
+    if (!data.start_date || !data.end_date) return true;
     try {
-      if (!isValid(parseISO(data.start_date)) || !isValid(parseISO(data.end_date))) return true; // Handled by regex
+      if (!isValid(parseISO(data.start_date)) || !isValid(parseISO(data.end_date))) return true;
       return parseISO(data.end_date) >= parseISO(data.start_date);
     } catch (e) { return true; }
   }, { message: "End date must be after start date.", path: ["end_date"] });
@@ -241,7 +241,6 @@ const mapIncomingDateToFormValue = (dateStr: string | undefined | null): string 
   return null;
 };
 
-// New Local DatePickerField Component
 const DatePickerField: React.FC<{
   value: string | null | undefined;
   onChange: (dateString: string | null) => void;
@@ -276,7 +275,7 @@ const DatePickerField: React.FC<{
             onChange(selectedDate ? format(selectedDate, "yyyy-MM-dd") : null);
             setOpen(false);
           }}
-          captionLayout="dropdown-buttons"
+          captionLayout="dropdown"
           fromYear={calendarFromYear}
           toYear={calendarToYear}
           initialFocus
