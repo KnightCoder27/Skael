@@ -10,6 +10,7 @@ import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -39,6 +40,9 @@ const registerSchema = z.object({
     .regex(/[0-9]/, { message: "Password must contain at least one number." })
     .regex(/[^a-zA-Z0-9]/, { message: "Password must contain at least one special character." }),
   confirmPassword: z.string(),
+  agreeToTerms: z.boolean().refine(value => value === true, {
+    message: "You must accept the Terms and Conditions to register."
+  }),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords do not match.",
   path: ["confirmPassword"],
@@ -95,7 +99,7 @@ export default function AuthPage() {
 
   const registerForm = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
-    defaultValues: { name: "", email: "", phoneNumber: "", password: "", confirmPassword: "" },
+    defaultValues: { name: "", email: "", phoneNumber: "", password: "", confirmPassword: "", agreeToTerms: false },
   });
 
   const forgotPasswordForm = useForm<ForgotPasswordFormValues>({
@@ -152,6 +156,7 @@ export default function AuthPage() {
         email: data.email,
         number: data.phoneNumber && data.phoneNumber.trim() !== "" ? data.phoneNumber : null,
         password: data.password,
+        has_agreed_terms: true, // This is true because validation passed
       };
       const backendRegisterResponse = await apiClient.post<UserRegistrationResponse>('/users/', backendRegisterPayload);
 
@@ -190,7 +195,7 @@ export default function AuthPage() {
         }
       }
 
-      if (!registerForm.formState.errors.email && !registerForm.formState.errors.password) {
+      if (!registerForm.formState.errors.email && !registerForm.formState.errors.password && !registerForm.formState.errors.agreeToTerms) {
         toast({ title: "Registration Failed", description: errorMessage, variant: "destructive" });
       }
     }
@@ -249,7 +254,7 @@ export default function AuthPage() {
                 {activeTab === 'login' ? 'Welcome Back!' : 'Create an Account'}
             </CardTitle>
             <CardDescription>
-                {activeTab === 'login' ? 'Sign in to access your career dashboard.' : 'Join Career Compass AI to find your path.'}
+                {activeTab === 'login' ? 'Sign in to access your career dashboard.' : 'Join Skael to find your path.'}
             </CardDescription>
             <TabsList className="grid w-full grid-cols-2 mt-6 bg-muted">
               <TabsTrigger value="login">Login</TabsTrigger>
@@ -431,6 +436,33 @@ export default function AuthPage() {
                     <p className="text-sm text-destructive">{registerForm.formState.errors.confirmPassword.message}</p>
                   )}
                 </div>
+                 <div className="items-top flex space-x-2 pt-1">
+                  <Checkbox
+                    id="agreeToTerms"
+                    checked={registerForm.watch('agreeToTerms')}
+                    onCheckedChange={(checked) => registerForm.setValue('agreeToTerms', !!checked, { shouldValidate: true })}
+                    className={registerForm.formState.errors.agreeToTerms ? 'border-destructive' : ''}
+                  />
+                  <div className="grid gap-1.5 leading-none">
+                    <label
+                      htmlFor="agreeToTerms"
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                    >
+                      I agree to the{" "}
+                      <Link href="#" onClick={(e) => {e.preventDefault(); toast({title: "Placeholder", description: "Link to Terms and Conditions page."})}} className="underline underline-offset-4 hover:text-primary">
+                        Terms and Conditions
+                      </Link>{" "}
+                      and{" "}
+                      <Link href="#" onClick={(e) => {e.preventDefault(); toast({title: "Placeholder", description: "Link to Privacy Policy page."})}} className="underline underline-offset-4 hover:text-primary">
+                        Privacy Policy
+                      </Link>
+                      .
+                    </label>
+                    {registerForm.formState.errors.agreeToTerms && (
+                      <p className="text-sm text-destructive">{registerForm.formState.errors.agreeToTerms.message}</p>
+                    )}
+                  </div>
+                </div>
               </CardContent>
               <CardFooter className="flex flex-col gap-4 pt-2">
                 <Button type="submit" className="w-full" disabled={registerForm.formState.isSubmitting}>
@@ -438,17 +470,6 @@ export default function AuthPage() {
                   {registerForm.formState.isSubmitting ? 'Creating Account...' : 'Create Account'}
                   {!registerForm.formState.isSubmitting && <UserPlus className="ml-2 h-4 w-4" />}
                 </Button>
-                <p className="px-6 text-center text-xs text-muted-foreground">
-                    By clicking Create Account, you agree to our{" "}
-                    <Link href="#" className="underline underline-offset-4 hover:text-primary" tabIndex={-1} onClick={(e) => {e.preventDefault(); toast({title: "Placeholder", description: "Terms of Service link."})}}>
-                        Terms of Service
-                    </Link>{" "}
-                    and{" "}
-                    <Link href="#" className="underline underline-offset-4 hover:text-primary" tabIndex={-1} onClick={(e) => {e.preventDefault(); toast({title: "Placeholder", description: "Privacy Policy link."})}}>
-                        Privacy Policy
-                    </Link>
-                    .
-                </p>
                  <p className="text-center text-sm text-muted-foreground">
                     Already have an account?{" "}
                      <Button variant="link" className="p-0 h-auto text-primary" onClick={() => {

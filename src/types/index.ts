@@ -155,6 +155,7 @@ export interface UserIn {
   email: string;
   number: string | null;
   password: string;
+  has_agreed_terms: boolean;
 }
 
 export interface UserLogin { // For POST /users/login
@@ -435,6 +436,6 @@ export interface ChangePasswordPayload {
 
 // The backend might return a simple success message for password change
 export interface ChangePasswordResponse {
-  messages: string; 
+  messages: string;
   detail?: string; // Often used for error messages from FastAPI
 }
