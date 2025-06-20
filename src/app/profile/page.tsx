@@ -8,7 +8,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useAuth } from '@/contexts/AuthContext';
 import type { User, UserUpdateAPI, RemotePreferenceAPI, UserModifyResponse, WorkExperienceItem, EducationItem, CertificationItem, ChangePasswordPayload } from '@/types';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -21,7 +21,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
-import { User as UserIcon, Edit3, Wand2, Phone, Briefcase, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon, MessageSquare, UploadCloud, Paperclip, XCircle, GraduationCap, Award, PlusCircle, Building, School, ScrollText, CalendarIcon, Edit, Check, X, Save, Mail, Target, LockKeyhole, Eye, EyeOff, IndianRupee, ChevronDown } from 'lucide-react';
+import { User as UserIcon, Edit3, Wand2, Phone, Briefcase, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon, MessageSquare, UploadCloud, Paperclip, XCircle, GraduationCap, Award, PlusCircle, Building, School, ScrollText, CalendarIcon, Edit, Check, X, Save, Mail, Target, LockKeyhole, Eye, EyeOff, IndianRupee, ChevronDown, ChevronDownIcon } from 'lucide-react';
 import { FullPageLoading, LoadingSpinner } from '@/components/app/loading-spinner';
 import apiClient from '@/lib/apiClient';
 import { auth as firebaseAuth, storage } from '@/lib/firebase';
@@ -32,8 +32,7 @@ import { FeedbackDialog } from '@/components/app/feedback-dialog';
 import { Progress } from '@/components/ui/progress';
 import { format, parseISO, isValid } from 'date-fns';
 import { cn } from '@/lib/utils';
-import type { CaptionLabelProps } from 'react-day-picker'; // Import CaptionLabelProps
-import { buttonVariants } from "@/components/ui/button"; // Import for nav_button styling
+import type { CaptionLabelProps } from 'react-day-picker';
 
 
 const remotePreferenceOptions: RemotePreferenceAPI[] = ["Remote", "Hybrid", "Onsite"];
@@ -67,11 +66,11 @@ const baseWorkExperienceObjectSchema = z.object({
 
 const workExperienceSchema = baseWorkExperienceObjectSchema.refine(data => {
     if (data.currently_working) return true;
-    if (!data.start_date || !data.end_date) return true; 
+    if (!data.start_date || !data.end_date) return true;
     try {
-      if (!isValid(parseISO(data.start_date)) || !isValid(parseISO(data.end_date))) return true; 
+      if (!isValid(parseISO(data.start_date)) || !isValid(parseISO(data.end_date))) return true;
       return parseISO(data.end_date) >= parseISO(data.start_date);
-    } catch (e) { return true; } 
+    } catch (e) { return true; }
   }, { message: "End date must be after start date.", path: ["end_date"] });
 
 
@@ -163,7 +162,7 @@ const workExperiencesSectionPayloadSchema = z.object({
   work_experiences: z.array(
     baseWorkExperienceObjectSchema.omit({ id: true, currently_working: true })
       .extend({
-        start_date: z.string().min(1, "Start date is required.").regex(dateRegex, dateErrorMessage), 
+        start_date: z.string().min(1, "Start date is required.").regex(dateRegex, dateErrorMessage),
         end_date: z.string().regex(dateRegex, dateErrorMessage).nullable(),
       })
   ).optional().nullable(),
@@ -257,7 +256,7 @@ const DatePickerField: React.FC<{
           disabled={disabled}
         >
           {dateObject ? format(dateObject, "PPP") : <span>{placeholder}</span>}
-          <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
+          <ChevronDownIcon className="ml-2 h-4 w-4 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">
@@ -275,8 +274,9 @@ const DatePickerField: React.FC<{
           initialFocus
           disabled={disabled}
           classNames={{
-            caption: "flex justify-between items-center px-1 py-2 relative", 
-            caption_dropdowns: "flex flex-row items-center gap-x-2 mx-auto", 
+            caption_label: "hidden",
+            caption: "flex justify-between items-center px-1 py-2 relative",
+            caption_dropdowns: "flex flex-row items-center gap-x-2 mx-auto",
             nav_button_previous: cn(buttonVariants({ variant: "outline" }), "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100 absolute left-1 top-1/2 -translate-y-1/2"),
             nav_button_next: cn(buttonVariants({ variant: "outline" }), "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100 absolute right-1 top-1/2 -translate-y-1/2"),
             dropdown: "rdp-dropdown bg-background text-foreground border border-input rounded-md px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring",
