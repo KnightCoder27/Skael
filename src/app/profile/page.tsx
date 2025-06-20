@@ -21,7 +21,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
-import { User as UserIcon, Edit3, Wand2, Phone, Briefcase, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon, MessageSquare, UploadCloud, Paperclip, XCircle, GraduationCap, Award, PlusCircle, Building, School, ScrollText, CalendarIcon, Edit, Check, X, Save, Mail, Target, LockKeyhole, Eye, EyeOff, IndianRupee, ChevronDown, ChevronDownIcon } from 'lucide-react';
+import { User as UserIcon, Edit3, Wand2, Phone, Briefcase, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon, MessageSquare, UploadCloud, Paperclip, XCircle, GraduationCap, Award, PlusCircle, Building, School, ScrollText, CalendarIcon, Edit, Check, X, Save, Mail, Target, LockKeyhole, Eye, EyeOff, IndianRupee, ChevronDownIcon } from 'lucide-react';
 import { FullPageLoading, LoadingSpinner } from '@/components/app/loading-spinner';
 import apiClient from '@/lib/apiClient';
 import { auth as firebaseAuth, storage } from '@/lib/firebase';
@@ -32,7 +32,7 @@ import { FeedbackDialog } from '@/components/app/feedback-dialog';
 import { Progress } from '@/components/ui/progress';
 import { format, parseISO, isValid } from 'date-fns';
 import { cn } from '@/lib/utils';
-import type { CaptionLabelProps } from 'react-day-picker';
+import type { CaptionLabelProps, DropdownProps } from 'react-day-picker';
 
 
 const remotePreferenceOptions: RemotePreferenceAPI[] = ["Remote", "Hybrid", "Onsite"];
@@ -229,9 +229,38 @@ const mapIncomingDateToFormValue = (dateStr: string | undefined | null): string 
   return null;
 };
 
-const EmptyCaptionLabel = (props: CaptionLabelProps): null => {
+
+const EmptyCaptionLabel: React.FC<CaptionLabelProps> = () => {
   return null;
 };
+
+const CustomDropdown: React.FC<DropdownProps> = (props) => {
+  const { name, value, onChange, children, caption } = props;
+  const selectRef = React.useRef<HTMLSelectElement>(null);
+
+  if (!children) return null;
+
+  const handleChange: React.ChangeEventHandler<HTMLSelectElement> = (e) => {
+    if (onChange) {
+      onChange(e);
+    }
+  };
+  const ariaLabel = caption === 'months' ? 'Select Month' : 'Select Year';
+
+  return (
+    <select
+      ref={selectRef}
+      name={name}
+      aria-label={ariaLabel}
+      className="rdp-dropdown bg-background text-foreground border border-input rounded-md px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+      value={value}
+      onChange={handleChange}
+    >
+      {children}
+    </select>
+  );
+};
+
 
 const DatePickerField: React.FC<{
   value: string | null | undefined;
@@ -268,7 +297,7 @@ const DatePickerField: React.FC<{
             setOpen(false);
           }}
           captionLayout="dropdown-buttons"
-          components={{ CaptionLabel: EmptyCaptionLabel }}
+          components={{ Dropdown: CustomDropdown, CaptionLabel: EmptyCaptionLabel }}
           fromYear={calendarFromYear}
           toYear={calendarToYear}
           initialFocus
@@ -280,8 +309,6 @@ const DatePickerField: React.FC<{
             nav_button_previous: cn(buttonVariants({ variant: "outline" }), "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100 absolute left-1 top-1/2 -translate-y-1/2"),
             nav_button_next: cn(buttonVariants({ variant: "outline" }), "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100 absolute right-1 top-1/2 -translate-y-1/2"),
             dropdown: "rdp-dropdown bg-background text-foreground border border-input rounded-md px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring",
-            dropdown_month: "rdp-dropdown_month",
-            dropdown_year: "rdp-dropdown_year",
           }}
         />
       </PopoverContent>
@@ -608,5 +635,3 @@ export default function ProfilePage() {
     </div>
   );
 }
-
-    
