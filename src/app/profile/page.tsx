@@ -20,7 +20,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
-import { User as UserIcon, Edit3, FileText, Wand2, Phone, Briefcase, DollarSign, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon, MessageSquare, UploadCloud, Paperclip, XCircle, GraduationCap, Award, PlusCircle, Building, School, ScrollText, CalendarIcon, Edit, Check, X, Save, Mail, Target, LockKeyhole, Eye, EyeOff, BookText as BookTextIcon } from 'lucide-react';
+import { User as UserIcon, Edit3, FileText as FileTextIconLucide, Wand2, Phone, Briefcase, CloudSun, BookUser, ListChecks, MapPin, Globe, Trash2, AlertTriangle, LogOut as LogOutIcon, MessageSquare, UploadCloud, Paperclip, XCircle, GraduationCap, Award, PlusCircle, Building, School, ScrollText, CalendarIcon, Edit, Check, X, Save, Mail, Target, LockKeyhole, Eye, EyeOff, BookText, IndianRupee } from 'lucide-react';
 import { FullPageLoading, LoadingSpinner } from '@/components/app/loading-spinner';
 import apiClient from '@/lib/apiClient';
 import { auth as firebaseAuth, storage } from '@/lib/firebase';
@@ -63,11 +63,11 @@ const baseWorkExperienceObjectSchema = z.object({
 
 const workExperienceSchema = baseWorkExperienceObjectSchema.refine(data => {
     if (data.currently_working) return true;
-    if (!data.start_date || !data.end_date) return true; // Allow validation if one is missing, handled by required field
+    if (!data.start_date || !data.end_date) return true;
     try {
-      if (!isValid(parseISO(data.start_date)) || !isValid(parseISO(data.end_date))) return true; // Let regex handle format
+      if (!isValid(parseISO(data.start_date)) || !isValid(parseISO(data.end_date))) return true;
       return parseISO(data.end_date) >= parseISO(data.start_date);
-    } catch (e) { return true; } // Should not happen if regex passes and isValid passes
+    } catch (e) { return true; }
   }, { message: "End date must be after start date.", path: ["end_date"] });
 
 
@@ -218,13 +218,13 @@ const mapIncomingDateToFormValue = (dateStr: string | undefined | null): string 
   } else if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) { // YYYY-MM-DD
     [year, month, day] = dateStr.split('-');
   } else {
-    try { // Attempt to parse other common formats or ISO
+    try {
       const parsed = parseISO(dateStr);
       if (isValid(parsed)) {
         return format(parsed, 'yyyy-MM-dd');
       }
     } catch (e) { /* Ignore parsing errors here, will return null */ }
-    return null; // Unrecognized format
+    return null;
   }
 
   const d = parseInt(day, 10);
@@ -305,14 +305,14 @@ export default function ProfilePage() {
     if (!formValueDate) return 'N/A';
 
     try {
-        const dateObj = parseISO(formValueDate); // formValueDate is YYYY-MM-DD
+        const dateObj = parseISO(formValueDate);
         if (isValid(dateObj)) {
             return format(dateObj, displayFormat);
         }
     } catch (e) {
         return "Invalid Date";
     }
-    return formValueDate; // Fallback if formatting fails after successful parsing check
+    return formValueDate;
   }, []);
 
 
@@ -329,13 +329,12 @@ export default function ProfilePage() {
       }
     }
 
-    let formCountries = 'India'; // Default to India
+    let formCountries = 'India';
     if (user?.countries && Array.isArray(user.countries) && user.countries.length > 0) {
         formCountries = user.countries.join(', ');
     } else if (user && typeof (user as any).country === 'string' && (user as any).country.trim() !== '') {
         formCountries = (user as any).country;
     }
-
 
     return {
       username: user?.username || fbUser?.displayName || '',
@@ -545,13 +544,8 @@ export default function ProfilePage() {
 
       Object.entries(fieldErrors).forEach(([path, messages]) => {
         const fieldName = path as keyof ProfileFormValues;
-        // Check if fieldName is part of the current form before setting error
         if (form.control._fields[fieldName] !== undefined) {
            form.setError(fieldName, { type: 'manual', message: (messages as string[])?.[0] || 'Invalid value' });
-        } else {
-          // Handle errors for nested fields (like work_experiences.0.company_name)
-          // This part might need more sophisticated error propagation to nested fields
-          // For now, a general toast or console log might be the best we can do without deep RHF integration for partial schemas
         }
       });
 
@@ -564,7 +558,7 @@ export default function ProfilePage() {
       if (response.data.messages?.toLowerCase() === 'success') {
         await refetchBackendUser();
         setEditingSection(null);
-        clearErrors(); // Clear all form errors after successful save
+        clearErrors();
         toast({ title: `${sectionKey?.replace(/_/g, ' ')} Updated Successfully` });
       } else {
         throw new Error(response.data.messages || `Backend issue during ${sectionKey} update.`);
@@ -579,7 +573,7 @@ export default function ProfilePage() {
 
   if (isLoggingOut) return <FullPageLoading message="Processing Account Deletion..." />;
   if (isLoadingAuth || !hasPopulatedFromCurrentUser) return <FullPageLoading message="Loading profile..." />;
-  if (!currentUser && !isLoadingAuth && !isLoggingOut && !firebaseUser) return <FullPageLoading message="Verifying session..." />; // Fallback, should be caught by useEffect
+  if (!currentUser && !isLoadingAuth && !isLoggingOut && !firebaseUser) return <FullPageLoading message="Verifying session..." />;
 
   const overallSubmitting = isUploadingResume || !!isSubmittingSection || changePasswordForm.formState.isSubmitting;
 
@@ -674,7 +668,7 @@ export default function ProfilePage() {
           setUploadResumeProgress(null);
       }
       if (!uploadSucceeded) {
-        setIsSubmittingSection(null); // Ensure submitting state is cleared
+        setIsSubmittingSection(null);
         return;
       }
     }
@@ -802,7 +796,7 @@ export default function ProfilePage() {
     const currentData = getValues();
     const displayContent = (
       <div className="space-y-4">
-        <DisplayField label="Professional Summary" value={currentData.professional_summary} icon={BookTextIcon} className="md:col-span-2" />
+        <DisplayField label="Professional Summary" value={currentData.professional_summary} icon={BookText} className="md:col-span-2" />
         <div className="grid grid-cols-1 md:grid-cols-2 md:gap-x-6 md:gap-y-4">
           <DisplayField label="Years of Professional Experience" value={currentData.experience} icon={Briefcase} />
           <DisplayField label="Key Skills" value={currentData.skills} icon={ListChecks}/>
@@ -815,7 +809,7 @@ export default function ProfilePage() {
             {currentResumeUrl ? (
               <div className="mt-1 flex items-center justify-between p-2 border rounded-md bg-muted/20 hover:bg-muted/30 transition-colors">
                 <a href={currentResumeUrl} target="_blank" rel="noopener noreferrer" className="text-base text-primary hover:underline flex items-center truncate">
-                  <FileText className="w-4 h-4 mr-2 shrink-0" />
+                  <FileTextIconLucide className="w-4 h-4 mr-2 shrink-0" />
                   <span className="truncate">{currentResumeUrl.split('/').pop()?.split('?')[0].substring(currentResumeUrl.lastIndexOf('_') + 1) || "View Current Resume"}</span>
                 </a>
               </div>
@@ -842,7 +836,7 @@ export default function ProfilePage() {
       <div className="space-y-3 md:space-y-0 md:grid md:grid-cols-2 md:gap-x-6 md:gap-y-4">
         <DisplayField label="Ideal Job Role" value={currentData.desired_job_role} icon={Target} className="md:col-span-2"/>
         <DisplayField label="Remote Work Preference" value={currentData.remote_preference} icon={CloudSun}/>
-        <DisplayField label="Expected Salary (INR)" value={currentData.expected_salary} icon={DollarSign}/>
+        <DisplayField label="Expected Salary (INR)" value={currentData.expected_salary} icon={IndianRupee}/>
       </div>
     );
     const editContent = (
@@ -850,7 +844,7 @@ export default function ProfilePage() {
         <div className="space-y-2"><Label htmlFor="desired_job_role" className="text-base">Ideal Job Role</Label><Textarea id="desired_job_role" {...register('desired_job_role')} placeholder="e.g., Senior Frontend Developer..." rows={5} className={errors.desired_job_role ? 'border-destructive' : ''} /><p className="text-xs text-muted-foreground">Optional. Min 10 chars if provided.</p>{errors.desired_job_role && <p className="text-sm text-destructive">{errors.desired_job_role.message}</p>}</div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2"><Label htmlFor="remote_preference">Remote Work Preference</Label><Controller name="remote_preference" control={control} render={({ field }) => (<Select onValueChange={field.onChange} value={field.value ?? undefined} disabled={overallSubmitting}><SelectTrigger className={`relative w-full justify-start pl-10 pr-3 ${errors.remote_preference ? 'border-destructive' : ''}`}><CloudSun className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><SelectValue placeholder="Select preference" /></SelectTrigger><SelectContent>{remotePreferenceOptions.map(option => (<SelectItem key={option} value={option}>{option}</SelectItem>))}</SelectContent></Select>)}/><p className="text-xs text-muted-foreground">Optional.</p>{errors.remote_preference && <p className="text-sm text-destructive">{errors.remote_preference.message}</p>}</div>
-            <div className="space-y-2"><Label htmlFor="expected_salary">Expected Salary (INR, Numeric)</Label><div className="relative flex items-center"><DollarSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="expected_salary" type="number" {...register('expected_salary')} placeholder="e.g., 1500000" className={`pl-10 hide-number-spinners ${errors.expected_salary ? 'border-destructive' : ''}`} disabled={overallSubmitting}/></div><p className="text-xs text-muted-foreground">Optional. Enter as a number.</p>{errors.expected_salary && <p className="text-sm text-destructive">{errors.expected_salary.message}</p>}</div>
+            <div className="space-y-2"><Label htmlFor="expected_salary">Expected Salary (INR, Numeric)</Label><div className="relative flex items-center"><IndianRupee className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="expected_salary" type="number" {...register('expected_salary')} placeholder="e.g., 1500000" className={`pl-10 hide-number-spinners ${errors.expected_salary ? 'border-destructive' : ''}`} disabled={overallSubmitting}/></div><p className="text-xs text-muted-foreground">Optional. Enter as a number.</p>{errors.expected_salary && <p className="text-sm text-destructive">{errors.expected_salary.message}</p>}</div>
         </div>
       </div>
     );
@@ -1090,3 +1084,4 @@ export default function ProfilePage() {
     </div>
   );
 }
+
