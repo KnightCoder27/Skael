@@ -35,7 +35,7 @@ export default function LandingPage() {
                 Find Your Dream Job, <span className="block md:inline">Without the Hassle.</span>
               </h1>
               <p className="text-lg md:text-xl text-foreground/80 mb-8 max-w-xl mx-auto md:mx-0">
-                Tired of juggling a dozen job boards and wondering if your resume stands a chance? Our AI-powered platform, Skael, simplifies your search.
+                Tired of juggling a dozen job boards and wondering if your resume stands a chance? Our AI-powered Job Search Platform, Skael, simplifies your search.
               </p>
               <Button asChild size="lg" className="shadow-lg hover:shadow-xl transition-shadow duration-300">
                 <Link href="/auth">

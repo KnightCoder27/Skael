@@ -59,17 +59,14 @@ const workExperienceSchema = z.object({
   end_date: z.string().regex(dateRegex, dateErrorMessage).optional().nullable(),
   description: z.string().max(1000, "Description max 1000 chars.").optional().nullable().transform(val => (val === "" || val === undefined) ? null : val),
   currently_working: z.boolean().optional(),
-});
-// Temporarily commented out for debugging
-// .refine(data => { 
-//     if (data.currently_working) return true;
-//     if (!data.end_date) return false; // If not currently working, end_date is required
-//     try {
-//       if (!data.start_date || !isValid(parseISO(data.start_date))) return true; 
-//       if (!data.end_date || !isValid(parseISO(data.end_date))) return true;
-//       return parseISO(data.end_date) >= parseISO(data.start_date);
-//     } catch (e) { return true; } 
-//   }, { message: "End date must be after start date.", path: ["end_date"] });
+}).refine(data => { 
+    if (data.currently_working) return true;
+    if (!data.start_date || !data.end_date) return true; // Pass if dates are not set, let individual field validation handle it
+    try {
+      if (!isValid(parseISO(data.start_date)) || !isValid(parseISO(data.end_date))) return true; // If dates are invalid, don't block here
+      return parseISO(data.end_date) >= parseISO(data.start_date);
+    } catch (e) { return true; } // If parsing fails, don't block here
+  }, { message: "End date must be after start date.", path: ["end_date"] });
 
 
 const educationSchema = z.object({
@@ -79,15 +76,13 @@ const educationSchema = z.object({
   start_year: educationYearSchema,
   end_year: educationYearSchema,
   currently_studying: z.boolean().optional(),
-});
-// Temporarily commented out for debugging
-// .refine(data => { 
-//   if (data.currently_studying) return true;
-//   if (data.start_year && data.end_year) {
-//     return data.end_year >= data.start_year;
-//   }
-//   return true;
-// }, { message: "End year must be after or same as start year.", path: ["end_year"] });
+}).refine(data => { 
+  if (data.currently_studying) return true;
+  if (data.start_year && data.end_year) {
+    return data.end_year >= data.start_year;
+  }
+  return true;
+}, { message: "End year must be after or same as start year.", path: ["end_year"] });
 
 
 const certificationSchema = z.object({
@@ -341,6 +336,8 @@ export default function ProfilePage() {
         formCountries = user.countries.join(', ');
     } else if (user && typeof (user as any).country === 'string') {
         formCountries = (user as any).country;
+    } else if (user) {
+        formCountries = 'India'; // Default to India if no country info
     }
     
     return {
@@ -411,7 +408,7 @@ export default function ProfilePage() {
 
       const payload: Partial<UserUpdateAPI> = {
         resume: null,
-        country: getValues().countries, 
+        country: getValues().countries || 'India', 
       };
       await apiClient.put(`/users/${backendUserId}`, payload);
       setValue('resume', null, { shouldValidate: true, shouldDirty: true });
@@ -525,7 +522,7 @@ export default function ProfilePage() {
     setIsSubmittingSection(sectionKey);
 
     const currentFormValues = getValues();
-    const countriesString = currentFormValues.countries || currentUser?.countries?.join(', ') || '';
+    const countriesString = currentFormValues.countries || currentUser?.countries?.join(', ') || 'India'; // Default to India if empty
     if (!countriesString) {
        toast({ title: "Missing Country", description: "Target countries are required to save any section.", variant: "destructive" });
        setIsSubmittingSection(null);
@@ -626,8 +623,8 @@ export default function ProfilePage() {
     if (Array.isArray(value)) {
       displayValue = value.length > 0 ? value.join(', ') : 'N/A';
     } else if (value !== null && value !== undefined && String(value).trim() !== '') {
-      if (label === "Expected Salary" && typeof value === 'number') {
-        displayValue = `$${value.toLocaleString()}`;
+      if (label.toLowerCase().includes("salary") && typeof value === 'number') {
+        displayValue = `₹${value.toLocaleString('en-IN')}`;
       } else {
         displayValue = String(value);
       }
@@ -794,11 +791,11 @@ export default function ProfilePage() {
         <div className="space-y-2 md:max-w-md"><Label htmlFor="username">Full Name</Label><Input id="username" {...register('username')} placeholder="Your Full Name" className={`${errors.username ? 'border-destructive' : ''}`} />{errors.username && <p className="text-sm text-destructive">{errors.username.message}</p>}</div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-2"><Label htmlFor="email_id">Email Address</Label><Input id="email_id" type="email" {...register('email_id')} placeholder="you@example.com" className={errors.email_id ? 'border-destructive' : ''} readOnly />{errors.email_id && <p className="text-sm text-destructive">{errors.email_id.message}</p>}</div>
-          <div className="space-y-2"><Label htmlFor="phone_number">Phone Number</Label><div className="relative flex items-center"><Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="phone_number" type="tel" {...register('phone_number')} placeholder="(123) 456-7890" className={`pl-10 ${errors.phone_number ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Optional.</p>{errors.phone_number && <p className="text-sm text-destructive">{errors.phone_number.message}</p>}</div>
+          <div className="space-y-2"><Label htmlFor="phone_number">Phone Number</Label><div className="relative flex items-center"><Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="phone_number" type="tel" {...register('phone_number')} placeholder="+91 XXXXX XXXXX" className={`pl-10 ${errors.phone_number ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Optional.</p>{errors.phone_number && <p className="text-sm text-destructive">{errors.phone_number.message}</p>}</div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-2"><Label htmlFor="preferred_locations">Preferred Locations (comma-separated)</Label><div className="relative flex items-center"><MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="preferred_locations" {...register('preferred_locations')} placeholder="e.g., New York, Remote, London" className={`pl-10 ${errors.preferred_locations ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Optional. Enter cities or "Remote".</p>{errors.preferred_locations && <p className="text-sm text-destructive">{errors.preferred_locations.message}</p>}</div>
-          <div className="space-y-2"><Label htmlFor="countries">Target Countries (comma-separated) <span className="text-destructive">*</span></Label><div className="relative flex items-center"><Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="countries" {...register('countries')} placeholder="e.g., US, CA, GB, India" className={`pl-10 ${errors.countries ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Required. Helps in fetching relevant jobs.</p>{errors.countries && <p className="text-sm text-destructive">{errors.countries.message}</p>}</div>
+          <div className="space-y-2"><Label htmlFor="preferred_locations">Preferred Locations (comma-separated)</Label><div className="relative flex items-center"><MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="preferred_locations" {...register('preferred_locations')} placeholder="e.g., Mumbai, Remote, Bengaluru" className={`pl-10 ${errors.preferred_locations ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Optional. Enter cities or "Remote".</p>{errors.preferred_locations && <p className="text-sm text-destructive">{errors.preferred_locations.message}</p>}</div>
+          <div className="space-y-2"><Label htmlFor="countries">Target Countries (comma-separated) <span className="text-destructive">*</span></Label><div className="relative flex items-center"><Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="countries" {...register('countries')} placeholder="e.g., IN, India" className={`pl-10 ${errors.countries ? 'border-destructive' : ''}`} /></div><p className="text-xs text-muted-foreground">Required. Helps in fetching relevant jobs.</p>{errors.countries && <p className="text-sm text-destructive">{errors.countries.message}</p>}</div>
         </div>
       </div>
     );
@@ -849,7 +846,7 @@ export default function ProfilePage() {
       <div className="space-y-3 md:space-y-0 md:grid md:grid-cols-2 md:gap-x-6 md:gap-y-4">
         <DisplayField label="Ideal Job Role" value={currentData.desired_job_role} icon={Target} className="md:col-span-2"/>
         <DisplayField label="Remote Work Preference" value={currentData.remote_preference} icon={CloudSun}/>
-        <DisplayField label="Expected Salary" value={currentData.expected_salary} icon={DollarSign}/>
+        <DisplayField label="Expected Salary (INR)" value={currentData.expected_salary} icon={DollarSign}/>
       </div>
     );
     const editContent = (
@@ -857,7 +854,7 @@ export default function ProfilePage() {
         <div className="space-y-2"><Label htmlFor="desired_job_role" className="text-base">Ideal Job Role</Label><Textarea id="desired_job_role" {...register('desired_job_role')} placeholder="e.g., Senior Frontend Developer..." rows={5} className={errors.desired_job_role ? 'border-destructive' : ''} /><p className="text-xs text-muted-foreground">Optional. Min 10 chars if provided.</p>{errors.desired_job_role && <p className="text-sm text-destructive">{errors.desired_job_role.message}</p>}</div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2"><Label htmlFor="remote_preference">Remote Work Preference</Label><Controller name="remote_preference" control={control} render={({ field }) => (<Select onValueChange={field.onChange} value={field.value ?? undefined} disabled={overallSubmitting}><SelectTrigger className={`relative w-full justify-start pl-10 pr-3 ${errors.remote_preference ? 'border-destructive' : ''}`}><CloudSun className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><SelectValue placeholder="Select preference" /></SelectTrigger><SelectContent>{remotePreferenceOptions.map(option => (<SelectItem key={option} value={option}>{option}</SelectItem>))}</SelectContent></Select>)}/><p className="text-xs text-muted-foreground">Optional.</p>{errors.remote_preference && <p className="text-sm text-destructive">{errors.remote_preference.message}</p>}</div>
-            <div className="space-y-2"><Label htmlFor="expected_salary">Expected Salary (Numeric)</Label><div className="relative flex items-center"><DollarSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="expected_salary" type="number" {...register('expected_salary')} placeholder="e.g., 120000" className={`pl-10 hide-number-spinners ${errors.expected_salary ? 'border-destructive' : ''}`} disabled={overallSubmitting}/></div><p className="text-xs text-muted-foreground">Optional. Enter as a number.</p>{errors.expected_salary && <p className="text-sm text-destructive">{errors.expected_salary.message}</p>}</div>
+            <div className="space-y-2"><Label htmlFor="expected_salary">Expected Salary (INR, Numeric)</Label><div className="relative flex items-center"><DollarSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="expected_salary" type="number" {...register('expected_salary')} placeholder="e.g., 1500000" className={`pl-10 hide-number-spinners ${errors.expected_salary ? 'border-destructive' : ''}`} disabled={overallSubmitting}/></div><p className="text-xs text-muted-foreground">Optional. Enter as a number.</p>{errors.expected_salary && <p className="text-sm text-destructive">{errors.expected_salary.message}</p>}</div>
         </div>
       </div>
     );

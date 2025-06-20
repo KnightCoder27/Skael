@@ -147,7 +147,7 @@ export default function JobExplorerPage() {
       setFetchJobTitlesInput(currentUser.desired_job_role || '');
       setFetchSkillsInput(currentUser.skills?.join(', ') || '');
       setFetchLocationsInput(currentUser.preferred_locations?.join(', ') || '');
-      const countriesStringForFilter = currentUser.countries?.join(', ') || '';
+      const countriesStringForFilter = currentUser.countries?.join(', ') || 'India'; // Default to India
       setFetchCountriesInput(countriesStringForFilter);
       setFetchExperienceInput(currentUser.experience?.toString() || '');
       let remotePref: 'any' | 'true' | 'false' = 'any';
@@ -917,7 +917,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                         </div>
                         <div>
                             <Label htmlFor="fetch-locations" className="flex items-center text-sm font-medium"><MapPinned className="mr-2 h-4 w-4 text-muted-foreground" />Locations (comma-separated)</Label>
-                            <Input id="fetch-locations" placeholder="e.g., New York, Remote, London" value={fetchLocationsInput} onChange={(e) => setFetchLocationsInput(e.target.value)} className="mt-1" />
+                            <Input id="fetch-locations" placeholder="e.g., Mumbai, Remote, Bengaluru" value={fetchLocationsInput} onChange={(e) => setFetchLocationsInput(e.target.value)} className="mt-1" />
                         </div>
                         <div>
                             <Label htmlFor="fetch-experience" className="flex items-center text-sm font-medium"><CheckSquare className="mr-2 h-4 w-4 text-muted-foreground" />Years of Experience</Label>
@@ -935,7 +935,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                                     <Label htmlFor="fetch-countries" className="flex items-center text-sm font-medium"><Globe className="mr-2 h-4 w-4 text-muted-foreground" />Countries (comma-separated)</Label>
-                                    <Input id="fetch-countries" placeholder="e.g., US, CA, GB, India" value={fetchCountriesInput} onChange={(e) => setFetchCountriesInput(e.target.value)} className="mt-1" />
+                                    <Input id="fetch-countries" placeholder="e.g., IN, India" value={fetchCountriesInput} onChange={(e) => setFetchCountriesInput(e.target.value)} className="mt-1" />
                                     <p className="text-xs text-muted-foreground mt-1">Optional. Enter country names or ISO alpha-2 codes.</p>
                                 </div>
                                 <div>
@@ -1113,7 +1113,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
               </div>
               <div>
                 <Label htmlFor="filter-loc" className="text-sm font-medium">Location (comma-separated)</Label>
-                <Input id="filter-loc" placeholder="e.g., New York, Remote" value={filterLocation} onChange={(e) => setFilterLocation(e.target.value)} className="mt-1" />
+                <Input id="filter-loc" placeholder="e.g., Mumbai, Remote" value={filterLocation} onChange={(e) => setFilterLocation(e.target.value)} className="mt-1" />
               </div>
               <div>
                 <Label htmlFor="filter-exp" className="text-sm font-medium">Experience (e.g., 5+ years)</Label>

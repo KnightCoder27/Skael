@@ -369,7 +369,7 @@ export default function AuthPage() {
                         id="register-phone"
                         type="tel"
                         autoComplete="tel"
-                        placeholder="(123) 456-7890"
+                        placeholder="+91 XXXXX XXXXX"
                         {...registerForm.register('phoneNumber')}
                         className={`pl-10 ${registerForm.formState.errors.phoneNumber ? 'border-destructive focus-visible:ring-destructive' : ''}`}
                     />
