@@ -6,12 +6,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Trash2, Eye, Loader2 } from 'lucide-react'; // Replaced ExternalLink with Eye, added Loader2
+import { Trash2, Eye, Loader2, Briefcase } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import Link from 'next/link';
-// Removed sampleJobs import as it's not used for URLs anymore
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Briefcase } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { useState, useEffect } from 'react';
 
@@ -19,8 +17,8 @@ interface ApplicationTrackerTableProps {
   applications: TrackedApplication[];
   onUpdateStatus: (jobId: number, status: ApplicationStatus) => void;
   onDeleteApplication: (jobId: number) => void;
-  onViewDetails: (jobId: number) => void; // Callback to open details modal
-  isLoadingDetails: boolean; // To show loading state on view details button
+  onViewDetails: (jobId: number) => void;
+  isLoadingDetails: boolean;
 }
 
 const statusOptions: ApplicationStatus[] = ["Interested", "Saved", "Applied", "Interviewing", "Offer", "Rejected"];
@@ -46,7 +44,6 @@ export function ApplicationTrackerTable({ applications, onUpdateStatus, onDelete
     try {
       return format(parseISO(dateString), 'MM/dd/yyyy');
     } catch (error) {
-      console.error("Error formatting date:", error);
       return dateString;
     }
   };
@@ -54,10 +51,6 @@ export function ApplicationTrackerTable({ applications, onUpdateStatus, onDelete
   const handleViewDetailsClick = (jobId: number) => {
     setLoadingDetailJobId(jobId);
     onViewDetails(jobId);
-    // setLoadingDetailJobId will be reset by the parent component
-    // or when the modal closes, or after a timeout if necessary.
-    // For simplicity, we rely on parent to manage visual loading state,
-    // or it could be reset once the modal is open.
   };
 
   useEffect(() => {

@@ -3,7 +3,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Compass, Briefcase, User, LogOut as LogOutIcon, LogIn, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -28,23 +28,17 @@ export function Header() {
   const { toast } = useToast();
 
   const handleLogout = async () => {
-    console.log("Header: handleLogout initiated.");
     setIsLoggingOut(true);
-    setBackendUser(null); // Proactively clear user state
+    setBackendUser(null);
 
     try {
-      console.log("Header: Attempting Firebase signOut...");
       await signOut(firebaseAuth);
-      console.log("Header: Firebase signOut successful.");
-      
       router.push('/auth');
-      // setIsLoggingOut(false) is now handled by AuthContext upon Firebase confirming logout (fbUser === null)
       toast({ title: "Logged Out", description: "You have been successfully logged out." });
       setIsSheetOpen(false);
     } catch (error) {
-      console.error("Header: Error signing out from Firebase: ", error);
       toast({ title: "Logout Failed", description: "Could not log you out. Please try again.", variant: "destructive" });
-      setIsLoggingOut(false); // Reset on error as a fallback
+      setIsLoggingOut(false);
     }
   };
 
@@ -82,8 +76,8 @@ export function Header() {
             </div>
         );
     }
-    
-    if (isLoadingAuth) { 
+
+    if (isLoadingAuth) {
         return (
             <div className={cn(
                 "flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground",

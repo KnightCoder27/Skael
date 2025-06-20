@@ -1,8 +1,7 @@
 
 "use client";
 
-import { useState }
-from 'react';
+import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import apiClient from '@/lib/apiClient';
 import { Button } from '@/components/ui/button';
@@ -67,7 +66,6 @@ export function FeedbackDialog({ triggerButton, source }: FeedbackDialogProps) {
       setFeedbackText('');
       setIsOpen(false); // Close dialog on success
     } catch (error) {
-      console.error('Error submitting feedback:', error);
       toast({
         title: 'Submission Failed',
         description: 'Could not submit your feedback. Please try again.',

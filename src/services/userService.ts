@@ -1,5 +1,5 @@
 
-"use server"; 
+"use server";
 
 import { db } from '@/lib/firebase';
 import { collection, query, where, getDocs, addDoc, doc, getDoc, updateDoc, deleteDoc, Timestamp } from 'firebase/firestore';
@@ -24,7 +24,6 @@ export async function getUserByEmail(email: string): Promise<{ success: true, us
     }
     return { success: true, user: null };
   } catch (error: any) {
-    console.error("Error fetching user by email:", error);
     const message = error instanceof Error ? error.message : String(error);
     return { success: false, error: `Failed to fetch user by email: ${message}` };
   }
@@ -33,7 +32,7 @@ export async function getUserByEmail(email: string): Promise<{ success: true, us
 /**
  * Fetches a user profile from Firestore by ID.
  * @param userId The user's Firestore document ID.
- * @returns The user data if found, otherwise null. (Keeps original error throwing for now, can be refactored if needed)
+ * @returns The user data if found, otherwise null.
  */
 export async function getUserById(userId: string): Promise<User | null> {
   try {
@@ -45,7 +44,6 @@ export async function getUserById(userId: string): Promise<User | null> {
     }
     return null;
   } catch (error: any) {
-    console.error("Error fetching user by ID:", error);
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`Failed to fetch user by ID: ${message}`);
   }
@@ -67,7 +65,6 @@ export async function createUser(userData: Omit<User, 'id' | 'joined_date'>): Pr
     const docRef = await addDoc(collection(db, USERS_COLLECTION), userToCreate);
     return { success: true, user: { ...userToCreate, id: docRef.id } as User };
   } catch (error: any) {
-    console.error("Error creating user:", error);
     const message = error instanceof Error ? error.message : String(error);
     return { success: false, error: `Failed to create user: ${message}` };
   }
@@ -77,14 +74,12 @@ export async function createUser(userData: Omit<User, 'id' | 'joined_date'>): Pr
  * Updates an existing user profile in Firestore.
  * @param userId The Firestore document ID of the user.
  * @param userData Partial user data to update.
- * (Keeps original error throwing for now, can be refactored if needed)
  */
 export async function updateUser(userId: string, userData: Partial<Omit<User, 'id'>>): Promise<void> {
   try {
     const userDocRef = doc(db, USERS_COLLECTION, userId);
     await updateDoc(userDocRef, userData);
   } catch (error: any) {
-    console.error("Error updating user:", error);
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`Failed to update user: ${message}`);
   }
@@ -93,14 +88,12 @@ export async function updateUser(userId: string, userData: Partial<Omit<User, 'i
 /**
  * Deletes a user profile from Firestore.
  * @param userId The Firestore document ID of the user.
- * (Keeps original error throwing for now, can be refactored if needed)
  */
 export async function deleteUser(userId: string): Promise<void> {
   try {
     const userDocRef = doc(db, USERS_COLLECTION, userId);
     await deleteDoc(userDocRef);
   } catch (error: any) {
-    console.error("Error deleting user:", error);
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`Failed to delete user: ${message}`);
   }

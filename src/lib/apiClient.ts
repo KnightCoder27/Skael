@@ -4,32 +4,29 @@ import { auth } from '@/lib/firebase'; // Import Firebase auth instance
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
-if (!API_BASE_URL) {
-  console.error("Error: NEXT_PUBLIC_API_BASE_URL is not defined in your .env.local file. API calls will fail.");
+if (!API_BASE_URL && process.env.NODE_ENV === 'development') {
+  // This console.warn will only appear in development if the URL is missing
+  console.warn("Warning: NEXT_PUBLIC_API_BASE_URL is not defined. API calls may fail or point to an incorrect backend.");
 }
 
 const apiClient: AxiosInstance = axios.create({
-  baseURL: API_BASE_URL || '', // Fallback to empty string if not set, but will likely cause issues
+  baseURL: API_BASE_URL || '',
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// Interceptor to add Firebase ID token to requests
 apiClient.interceptors.request.use(
   async (config: InternalAxiosRequestConfig) => {
     const currentUser = auth.currentUser;
     if (currentUser) {
       try {
-        const token = await currentUser.getIdToken(true); // Force refresh
+        const token = await currentUser.getIdToken(true);
         config.headers.Authorization = `Bearer ${token}`;
-        console.log("apiClient Interceptor: Token added to headers for config URL:", config.url);
       } catch (error) {
-        console.error('apiClient Interceptor: Error getting Firebase ID token:', error);
-        // Optionally handle token refresh errors or redirect to login
+        // Silently handle token refresh errors in production
+        // Optionally, log to a dedicated error monitoring service if needed
       }
-    } else {
-      console.log("apiClient Interceptor: No current user, no token added for config URL:", config.url);
     }
     return config;
   },
@@ -38,22 +35,13 @@ apiClient.interceptors.request.use(
   }
 );
 
-// Generic error handler for responses (optional, but good practice)
 apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
-    // Handle specific error codes or log them
-    if (error.response) {
-      console.error('API Error Response:', error.response.data, error.response.status, error.response.headers);
-    } else if (error.request) {
-      console.error('API Error Request:', error.request);
-    } else {
-      console.error('API Error Message:', error.message);
-    }
-    // It's important to return a rejected promise so that calling code can catch it
+    // In production, avoid logging full error objects to the console
+    // Instead, rely on specific error handling in components or use an error monitoring service
     return Promise.reject(error);
   }
 );
 
 export default apiClient;
-

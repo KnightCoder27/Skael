@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { LogIn, UserPlus, Eye, EyeOff, Compass, Phone, KeyRound } from 'lucide-react';
 import type { UserIn, UserLogin as UserLoginType, UserLoginResponse, UserRegistrationResponse } from '@/types';
@@ -123,7 +123,7 @@ export default function AuthPage() {
       let errorMessage = getErrorMessage(error);
       if (error instanceof AxiosError && (error.response?.status === 400 || error.response?.status === 401)) {
           loginForm.setError("password", { type: "manual", message: "Invalid email or password." });
-          errorMessage = "Invalid email or password."; 
+          errorMessage = "Invalid email or password.";
       } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
         const firebaseError = error as any;
         const firebaseErrorCode = firebaseError.code;
@@ -174,7 +174,7 @@ export default function AuthPage() {
             registerForm.setError("email", { type: "manual", message: "This email is already registered." });
             errorMessage = "This email is already registered.";
           } else {
-             errorMessage = "Invalid data for registration. " + (typeof detail === 'string' && detail.length < 100 ? detail : ''); 
+             errorMessage = "Invalid data for registration. " + (typeof detail === 'string' && detail.length < 100 ? detail : '');
           }
       } else if (error instanceof Error && (error as any).code?.startsWith('auth/')) {
         const firebaseError = error as any;
@@ -212,9 +212,8 @@ export default function AuthPage() {
       } else if (error.code === 'auth/invalid-email') {
         errorMessage = "Invalid email format.";
          forgotPasswordForm.setError("email", { type: "manual", message: errorMessage });
-      } else {
-        console.error("Forgot Password Error:", error);
       }
+
       if (!forgotPasswordForm.formState.errors.email) {
         toast({ title: "Request Failed", description: errorMessage, variant: "destructive" });
       }

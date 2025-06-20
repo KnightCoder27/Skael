@@ -3,10 +3,10 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import useLocalStorage from '@/hooks/use-local-storage';
-import type { TrackedApplication, ApplicationStatus, UserActivityOut, ActivityIn, JobListing, BackendJobListingResponseItem, Technology, BackendTechnologyObject, SaveJobPayload, SaveJobResponse, DeleteSavedJobResponse } from '@/types';
+import type { TrackedApplication, ApplicationStatus, UserActivityOut, ActivityIn, JobListing, BackendJobListingResponseItem, Technology, BackendTechnologyObject, DeleteSavedJobResponse } from '@/types';
 import { ApplicationTrackerTable } from '@/components/app/application-tracker-table';
 import { Button } from '@/components/ui/button';
-import { Briefcase, FilePlus2, LogOut as LogOutIcon, ServerCrash, FileWarning, Eye, MessageSquare } from 'lucide-react';
+import { Briefcase, FilePlus2, LogOut as LogOutIcon, ServerCrash, MessageSquare } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
@@ -181,11 +181,7 @@ export default function TrackerPage() {
         }
       }
       setTrackedApplications(derivedApplications);
-       if (derivedApplications.length === 0) {
-         // Handled by table component if empty
-      }
     } catch (error) {
-      console.error("Error fetching or processing activities for tracker:", error);
       const message = getErrorMessage(error);
       setErrorTracker(message);
       toast({ title: "Error Loading Tracker", description: message, variant: (error instanceof AxiosError && error.response?.status === 204) ? "default" : "destructive" });
@@ -221,24 +217,19 @@ export default function TrackerPage() {
     toast({ title: "Status Updated Locally", description: `Application status changed to ${newStatus}. Syncing...` });
 
     if (newStatus !== oldStatus) {
-      // This activity logging is frontend specific for now.
-      // Backend docs don't specify an endpoint for "APPLICATION_STATUS_UPDATED".
-      // The existing /activity/log endpoint on frontend is used.
-      // TODO: Confirm if backend has a specific endpoint for this, or if general activity log is okay.
       const activityPayload: ActivityIn = {
         user_id: currentUser.id,
         job_id: jobId,
-        action_type: "APPLICATION_STATUS_UPDATED", // This might need adjustment based on backend capabilities
-        metadata: { 
+        action_type: "APPLICATION_STATUS_UPDATED",
+        metadata: {
           jobTitle: application.jobTitle, company: application.company,
           oldStatus: oldStatus, newStatus: newStatus,
         }
       };
       try {
-        await apiClient.post('/activity/log', activityPayload); // Assuming this is a general purpose log endpoint
+        await apiClient.post('/activity/log', activityPayload);
         toast({ title: "Status Update Logged", description: `Change to ${newStatus} recorded.` });
       } catch (error) {
-        console.error("Error logging status update to backend:", error);
         toast({ title: "Sync Failed", description: "Could not log status update.", variant: "destructive" });
       }
     }
@@ -265,7 +256,6 @@ export default function TrackerPage() {
             throw new Error(response.data.msg || "Backend did not confirm removal.");
         }
     } catch (error) {
-        console.error("Error removing application via API:", error);
         const message = getErrorMessage(error);
         toast({ title: "Removal Failed", description: message, variant: "destructive" });
     }
@@ -281,7 +271,6 @@ export default function TrackerPage() {
       setSelectedJobForDetailsModal(mappedJob);
       setIsDetailsModalOpen(true);
     } catch (error) {
-      console.error("Error fetching job details for tracker modal:", error);
       const message = getErrorMessage(error);
       toast({ title: "Error", description: message, variant: "destructive" });
     } finally {
@@ -310,7 +299,6 @@ export default function TrackerPage() {
       setJobForExtractedPoints(jobToGetPointsFor);
       return pointsResult;
     } catch (error) {
-      console.error("Error extracting job description points:", error);
       const message = getErrorMessage(error);
       toast({ title: "Point Extraction Failed", description: message, variant: "destructive" });
       return null;
@@ -400,7 +388,7 @@ export default function TrackerPage() {
         </div>
       )}
 
-      {!isLoadingTracker && errorTracker && !trackedApplications.length && ( 
+      {!isLoadingTracker && errorTracker && !trackedApplications.length && (
         <Alert variant="destructive" className="my-6">
           <ServerCrash className="h-5 w-5" />
           <AlertTitle>Error Loading Tracker Data</AlertTitle>
@@ -411,7 +399,7 @@ export default function TrackerPage() {
         </Alert>
       )}
 
-      {!isLoadingTracker && ( 
+      {!isLoadingTracker && (
         <ApplicationTrackerTable
           applications={trackedApplications}
           onUpdateStatus={handleUpdateStatus}
@@ -420,7 +408,7 @@ export default function TrackerPage() {
           isLoadingDetails={isLoadingJobDetails}
         />
       )}
-      
+
       <JobDetailsModal
         job={selectedJobForDetailsModal}
         isOpen={isDetailsModalOpen}

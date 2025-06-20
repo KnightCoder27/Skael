@@ -1,7 +1,7 @@
 
 "use client";
 
-import type { User, UserModifyResponse } from '@/types'; // Added UserModifyResponse
+import type { User } from '@/types';
 import React, { createContext, useContext, useState, useEffect, type ReactNode, useCallback, useRef } from 'react';
 import { auth as firebaseAuth } from '@/lib/firebase';
 import type { User as FirebaseUser } from 'firebase/auth';
@@ -62,14 +62,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setBackendUserContext(null);
         return;
       }
-      // Backend docs: GET /users/{id} returns UserOut
-      // Assuming UserOut is the structure of our frontend User type
       const response = await apiClient.get<User>(`/users/${idToFetch}`, { headers: { Authorization: `Bearer ${token}` } });
-      
+
       let actualUserProfileData = response.data;
 
-      // Check for potential nesting like user_data or user if the direct response isn't the User object
-      // This part might be redundant if backend directly returns UserOut structure
       if (response.data && typeof response.data === 'object') {
         if ('user_data' in response.data && typeof (response.data as any).user_data === 'object') {
           actualUserProfileData = (response.data as any).user_data;
@@ -77,22 +73,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           actualUserProfileData = (response.data as any).user;
         }
       }
-      
+
       let backendUserObject: User = {
-        ...actualUserProfileData, // Spread first to get all fields
-        id: actualUserProfileData.id || idToFetch, // Ensure ID is correct
+        ...actualUserProfileData,
+        id: actualUserProfileData.id || idToFetch,
         username: actualUserProfileData.username || '',
         email_id: actualUserProfileData.email_id || fbUserForToken.email || '',
-        countries: [], // Initialize
+        countries: [],
       };
-      
-      // Transform 'country' (string from backend) to 'countries' (string[] for frontend User type)
+
       if (actualUserProfileData && typeof (actualUserProfileData as any).country === 'string' && (actualUserProfileData as any).country.trim() !== '') {
         backendUserObject.countries = (actualUserProfileData as any).country.split(',').map((c: string) => c.trim()).filter((c: string) => c);
       } else if (actualUserProfileData && Array.isArray((actualUserProfileData as any).countries) && (actualUserProfileData as any).countries.length > 0) {
         backendUserObject.countries = (actualUserProfileData as any).countries.map((c: any) => String(c).trim()).filter((c: string) => c);
       }
-      
+
       if ('country' in backendUserObject && typeof (backendUserObject as any).country === 'string') {
         delete (backendUserObject as any).country;
       }
@@ -104,7 +99,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       } else {
         toast({ title: "Session Error", description: "Could not load your profile data.", variant: "destructive" });
       }
-      console.error(`AuthContext: fetchBackendUserProfile - Failed for ID ${idToFetch}:`, error);
       setBackendUserContext(null);
     }
   }, [toast, setBackendUserContext]);
@@ -122,20 +116,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                     initialEmailFromStorage = storedUser.email_id;
                 }
             }
-        } catch (e) { console.warn("AuthContext: Error reading localStorage initially", e); }
+        } catch (e) { /* localStorage read error handled silently */ }
     }
 
     const unsubscribe = onAuthStateChanged(firebaseAuth, async (fbUser) => {
-      setIsLoadingAuth(true); 
+      setIsLoadingAuth(true);
 
       if (isLoggingOut) {
-        if (!fbUser) { 
+        if (!fbUser) {
           setFirebaseUser(null);
           setBackendUserContext(null);
           pendingBackendIdRef.current = null;
-          setIsLoggingOutState(false); 
+          setIsLoggingOutState(false);
         }
-        setIsLoadingAuth(false); 
+        setIsLoadingAuth(false);
         return;
       }
 
@@ -146,19 +140,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
         if (idFromPendingRef !== null) {
           idToFetchProfileFor = idFromPendingRef;
-          pendingBackendIdRef.current = null; 
+          pendingBackendIdRef.current = null;
         } else if (initialBackendIdFromStorage !== null && initialEmailFromStorage === fbUser.email) {
           idToFetchProfileFor = initialBackendIdFromStorage;
         } else if (initialBackendIdFromStorage !== null && initialEmailFromStorage !== fbUser.email) {
-            setBackendUserContext(null); 
+            setBackendUserContext(null);
         }
 
         if (idToFetchProfileFor !== null) {
           await fetchBackendUserProfile(idToFetchProfileFor, fbUser);
         } else {
-          setBackendUserContext(null); 
+          setBackendUserContext(null);
         }
-      } else { 
+      } else {
         setFirebaseUser(null);
         setBackendUserContext(null);
         pendingBackendIdRef.current = null;
@@ -167,7 +161,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     });
 
     return () => unsubscribe();
-  }, [fetchBackendUserProfile, setBackendUserContext, isLoggingOut, setIsLoggingOutContext]); 
+  }, [fetchBackendUserProfile, setBackendUserContext, isLoggingOut, setIsLoggingOutContext]);
 
   const value = {
       currentUser,
@@ -184,7 +178,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setIsLoadingAuth(false);
         } else {
           if (!currentFbUser) setBackendUserContext(null);
-          if (isLoadingAuth) setIsLoadingAuth(false); 
+          if (isLoadingAuth) setIsLoadingAuth(false);
         }
       },
       setPendingBackendIdForFirebaseAuth,

@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useState, ChangeEvent, useCallback } from 'react';
-import { useForm, type SubmitHandler, Controller, useFieldArray, FieldErrors } from 'react-hook-form';
+import { useForm, type SubmitHandler, Controller, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useAuth } from '@/contexts/AuthContext';
@@ -59,13 +59,13 @@ const workExperienceSchema = z.object({
   end_date: z.string().regex(dateRegex, dateErrorMessage).optional().nullable(),
   description: z.string().max(1000, "Description max 1000 chars.").optional().nullable().transform(val => (val === "" || val === undefined) ? null : val),
   currently_working: z.boolean().optional(),
-}).refine(data => { 
+}).refine(data => {
     if (data.currently_working) return true;
-    if (!data.start_date || !data.end_date) return true; // Pass if dates are not set, let individual field validation handle it
+    if (!data.start_date || !data.end_date) return true;
     try {
-      if (!isValid(parseISO(data.start_date)) || !isValid(parseISO(data.end_date))) return true; // If dates are invalid, don't block here
+      if (!isValid(parseISO(data.start_date)) || !isValid(parseISO(data.end_date))) return true;
       return parseISO(data.end_date) >= parseISO(data.start_date);
-    } catch (e) { return true; } // If parsing fails, don't block here
+    } catch (e) { return true; }
   }, { message: "End date must be after start date.", path: ["end_date"] });
 
 
@@ -76,7 +76,7 @@ const educationSchema = z.object({
   start_year: educationYearSchema,
   end_year: educationYearSchema,
   currently_studying: z.boolean().optional(),
-}).refine(data => { 
+}).refine(data => {
   if (data.currently_studying) return true;
   if (data.start_year && data.end_year) {
     return data.end_year >= data.start_year;
@@ -153,7 +153,7 @@ const jobPreferencesSectionPayloadSchema = z.object({
 
 const workExperiencesSectionPayloadSchema = z.object({
   work_experiences: z.array(
-    workExperienceSchema.omit({ id: true, currently_working: true }) 
+    workExperienceSchema.omit({ id: true, currently_working: true })
       .extend({
         start_date: z.string().min(1, "Start date is required.").regex(dateRegex, dateErrorMessage),
         end_date: z.string().regex(dateRegex, dateErrorMessage).nullable(),
@@ -207,7 +207,6 @@ const calendarToYear = currentYear + 10;
 const mapIncomingDateToFormValue = (dateStr: string | undefined | null): string | null => {
   if (!dateStr || typeof dateStr !== 'string' || dateStr.trim() === '') return null;
 
-  // Attempt 1: Check if it's DD-MM-YYYY (common from some backends)
   if (/^\d{2}-\d{2}-\d{4}$/.test(dateStr)) {
     const parts = dateStr.split('-');
     if (parts.length === 3) {
@@ -223,15 +222,13 @@ const mapIncomingDateToFormValue = (dateStr: string | undefined | null): string 
       }
     }
   }
-  // Attempt 2: Check if it's already YYYY-MM-DD (or close enough for parseISO)
   try {
     const parsed = parseISO(dateStr);
     if (isValid(parsed)) {
       return format(parsed, 'yyyy-MM-dd');
     }
   } catch (e) { /* Ignore parsing errors here */ }
-  
-  console.warn(`mapIncomingDateToFormValue: Could not parse date "${dateStr}" into YYYY-MM-DD format. Returning null.`);
+
   return null;
 };
 
@@ -257,7 +254,7 @@ export default function ProfilePage() {
     resolver: zodResolver(profileSchema),
     defaultValues: { /* Defaults set in useEffect */ }
   });
-  const { register, handleSubmit, formState: { errors }, reset, control, setValue, watch, clearErrors, getValues, trigger } = form;
+  const { register, handleSubmit, formState: { errors }, reset, control, setValue, watch, clearErrors, getValues } = form;
 
   const changePasswordForm = useForm<ChangePasswordFormValues>({
     resolver: zodResolver(changePasswordSchema),
@@ -294,25 +291,21 @@ export default function ProfilePage() {
           if (d > 0 && d <= 31 && m > 0 && m <= 12 && y > 1800 && y < 2200) {
              dateToParse = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
           } else {
-            console.warn(`formatDateForDisplay: Malformed DD-MM-YYYY string "${dateInput}". Returning as is.`);
-            return dateInput; 
+            return dateInput;
           }
         } else {
-           console.warn(`formatDateForDisplay: Could not split DD-MM-YYYY string "${dateInput}". Returning as is.`);
-           return dateInput; 
+           return dateInput;
         }
     }
     try {
-        const dateObj = parseISO(dateToParse); 
+        const dateObj = parseISO(dateToParse);
         if (isValid(dateObj)) {
             return format(dateObj, displayFormat);
         }
     } catch (e) {
-        console.warn(`formatDateForDisplay: Error parsing date "${dateToParse}" (original: "${dateInput}"):`, e);
         return "Invalid Date";
     }
-    console.warn(`formatDateForDisplay: Date "${dateToParse}" (original: "${dateInput}") was not valid after parsing. Returning as is.`);
-    return dateInput; 
+    return dateInput;
   }, []);
 
 
@@ -326,8 +319,6 @@ export default function ProfilePage() {
       );
       if (matchedOption) {
         formRPValue = matchedOption;
-      } else {
-        console.warn(`Remote preference "${currentRPFromDBRaw}" from backend does not match defined options: ${remotePreferenceOptions.join(', ')}`);
       }
     }
 
@@ -337,9 +328,9 @@ export default function ProfilePage() {
     } else if (user && typeof (user as any).country === 'string') {
         formCountries = (user as any).country;
     } else if (user) {
-        formCountries = 'India'; // Default to India if no country info
+        formCountries = 'India';
     }
-    
+
     return {
       username: user?.username || fbUser?.displayName || '',
       email_id: user?.email_id || fbUser?.email || '',
@@ -408,7 +399,7 @@ export default function ProfilePage() {
 
       const payload: Partial<UserUpdateAPI> = {
         resume: null,
-        country: getValues().countries || 'India', 
+        country: getValues().countries || 'India',
       };
       await apiClient.put(`/users/${backendUserId}`, payload);
       setValue('resume', null, { shouldValidate: true, shouldDirty: true });
@@ -458,10 +449,10 @@ export default function ProfilePage() {
           replaceCert(freshFormValues.certifications || []);
           break;
         case 'password':
-          changePasswordForm.reset(); 
+          changePasswordForm.reset();
           break;
       }
-      clearErrors(); 
+      clearErrors();
       if (sectionName !== 'password') form.clearErrors();
       setEditingSection(sectionName);
     }
@@ -522,7 +513,7 @@ export default function ProfilePage() {
     setIsSubmittingSection(sectionKey);
 
     const currentFormValues = getValues();
-    const countriesString = currentFormValues.countries || currentUser?.countries?.join(', ') || 'India'; // Default to India if empty
+    const countriesString = currentFormValues.countries || currentUser?.countries?.join(', ') || 'India';
     if (!countriesString) {
        toast({ title: "Missing Country", description: "Target countries are required to save any section.", variant: "destructive" });
        setIsSubmittingSection(null);
@@ -532,15 +523,12 @@ export default function ProfilePage() {
 
     let payloadForValidation: Partial<UserUpdateAPI> = {
       ...sectionPayloadBuilder(currentFormValues),
-      country: countriesString, 
+      country: countriesString,
     };
-    
+
     const validationResult = sectionSchema.safeParse(payloadForValidation);
 
     if (!validationResult.success) {
-      console.error(`${sectionKey} Section - Validation Errors:`, validationResult.error.flatten());
-      console.log(`${sectionKey} Section - Data that failed validation:`, payloadForValidation);
-      
       const fieldErrors = validationResult.error.flatten().fieldErrors;
       let errorMessages = Object.entries(fieldErrors)
         .map(([path, messages]) => `${path}: ${(messages as string[])?.[0] || 'Invalid value'}`)
@@ -548,14 +536,14 @@ export default function ProfilePage() {
       if (!errorMessages) errorMessages = validationResult.error.flatten().formErrors.join(', ') || "Unknown validation error.";
 
       toast({ title: "Validation Error", description: `Please check entries in the ${sectionKey?.replace(/_/g, ' ')} section. ${errorMessages}`, variant: "destructive" });
-      
+
       Object.entries(fieldErrors).forEach(([path, messages]) => {
-        const fieldName = path as keyof ProfileFormValues; 
+        const fieldName = path as keyof ProfileFormValues;
         if (typeof fieldName === 'string' && form.getFieldState(fieldName)) {
            form.setError(fieldName, { type: 'manual', message: (messages as string[])?.[0] || 'Invalid value' });
         }
       });
-      
+
       setIsSubmittingSection(null);
       return;
     }
@@ -563,9 +551,9 @@ export default function ProfilePage() {
     try {
       const response = await apiClient.put<UserModifyResponse>(`/users/${backendUserId}`, validationResult.data);
       if (response.data.messages?.toLowerCase() === 'success') {
-        await refetchBackendUser(); 
+        await refetchBackendUser();
         setEditingSection(null);
-        clearErrors(); 
+        clearErrors();
         toast({ title: `${sectionKey?.replace(/_/g, ' ')} Updated Successfully` });
       } else {
         throw new Error(response.data.messages || `Backend issue during ${sectionKey} update.`);
@@ -607,8 +595,8 @@ export default function ProfilePage() {
           <div className="flex gap-2 mt-6">
             <Button type="button" variant="default" onClick={onSave} disabled={isSubmittingSection === sectionKey || overallSubmitting || (isPasswordSection && changePasswordForm.formState.isSubmitting) }>
              {(isSubmittingSection === sectionKey || (isPasswordSection && changePasswordForm.formState.isSubmitting)) ? <LoadingSpinner size={16} className="mr-2" /> : <Save className="mr-2 h-4 w-4" />}
-              {(isSubmittingSection === sectionKey || (isPasswordSection && changePasswordForm.formState.isSubmitting)) 
-                ? (isPasswordSection ? 'Updating Password...' : 'Saving...') 
+              {(isSubmittingSection === sectionKey || (isPasswordSection && changePasswordForm.formState.isSubmitting))
+                ? (isPasswordSection ? 'Updating Password...' : 'Saving...')
                 : (isPasswordSection ? 'Update Password' : 'Save Section')}
             </Button>
             <Button type="button" variant="ghost" onClick={() => handleCancelSectionEdit(sectionKey)} disabled={isSubmittingSection === sectionKey || overallSubmitting || (isPasswordSection && changePasswordForm.formState.isSubmitting)}><X className="mr-2 h-4 w-4" /> Cancel</Button>
@@ -659,12 +647,12 @@ export default function ProfilePage() {
       const uploadTask = uploadBytesResumable(fileStorageRef, selectedResumeFile);
 
       try {
-        if (currentResumeUrl) { try { await deleteObject(storageRef(storage, currentResumeUrl)); } catch (deleteError: any) { if (deleteError.code !== 'storage/object-not-found') console.warn("Could not delete old resume during update:", deleteError); } }
+        if (currentResumeUrl) { try { await deleteObject(storageRef(storage, currentResumeUrl)); } catch (deleteError: any) { if (deleteError.code !== 'storage/object-not-found') {/* Potential console.warn here was removed */} } }
         await new Promise<void>((resolve, reject) => {
           uploadTask.on('state_changed',
             (snapshot) => setUploadResumeProgress((snapshot.bytesTransferred / snapshot.totalBytes) * 100),
-            (error) => { console.error("Upload task error:", error); reject(error); },
-            async () => { try { newResumeUrlFromUpload = await getDownloadURL(uploadTask.snapshot.ref); uploadSucceeded = true; resolve(); } catch (getUrlError){ console.error("Get URL error:", getUrlError); reject(getUrlError); } }
+            (error) => { reject(error); },
+            async () => { try { newResumeUrlFromUpload = await getDownloadURL(uploadTask.snapshot.ref); uploadSucceeded = true; resolve(); } catch (getUrlError){ reject(getUrlError); } }
           );
         });
       } catch (error) {
@@ -679,7 +667,7 @@ export default function ProfilePage() {
         return;
       }
     }
-    
+
     await handleSaveSection('professional_background', (values) => ({
       professional_summary: values.professional_summary || null,
       experience: values.experience ?? null,
@@ -702,7 +690,7 @@ export default function ProfilePage() {
       work_experiences: values.work_experiences?.map(({ id, currently_working, ...rest }) => ({
         company_name: rest.company_name || '',
         job_title: rest.job_title || '',
-        start_date: rest.start_date || '', 
+        start_date: rest.start_date || '',
         end_date: currently_working ? null : (rest.end_date || null),
         description: rest.description || null,
       })) || [],
@@ -736,7 +724,7 @@ export default function ProfilePage() {
       toast({ title: "Error", description: "User not authenticated.", variant: "destructive" });
       return;
     }
-    setIsSubmittingSection('password'); 
+    setIsSubmittingSection('password');
     try {
       const credential = EmailAuthProvider.credential(firebaseUser.email!, data.oldPassword);
       await reauthenticateWithCredential(firebaseUser, credential);
@@ -751,12 +739,11 @@ export default function ProfilePage() {
       };
       await apiClient.post(`/users/${backendUserId}/change_password`, backendPasswordPayload);
       toast({ title: "Password Changed Successfully", description: "Your password has been updated on both Firebase and our backend." });
-      
+
       changePasswordForm.reset();
       setEditingSection(null);
 
     } catch (error: any) {
-      console.error("Password change error:", error);
       let errorMessage = getErrorMessage(error);
       if (error.code === 'auth/wrong-password') {
         errorMessage = "Incorrect current password. Please try again.";
@@ -1097,10 +1084,9 @@ export default function ProfilePage() {
         <CardHeader><CardTitle className="font-headline text-xl flex items-center text-destructive"><AlertTriangle className="mr-2 h-6 w-6" /> Danger Zone</CardTitle><CardDescription>Proceed with caution. These actions are irreversible.</CardDescription></CardHeader>
         <CardContent>
           <AlertDialog><AlertDialogTrigger asChild><Button variant="destructive" className="w-full sm:w-auto"><Trash2 className="mr-2 h-4 w-4" /> Delete Account</Button></AlertDialogTrigger>
-            <AlertDialogContent><AlertDialogHeader><AlertDialogTitle className="flex items-center"><AlertTriangle className="mr-2 h-5 w-5 text-destructive" /> Are you absolutely sure?</AlertDialogTitle><AlertDialogDescription>This will permanently delete your account and all associated data.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={async () => { if (!backendUserId || !firebaseUser) { toast({ title: "Error", variant: "destructive" }); return; } setIsLoggingOut(true); try { if (currentUser?.resume) { try { await deleteObject(storageRef(storage, currentUser.resume)); } catch (storageError: any) { if (storageError.code !== 'storage/object-not-found') console.warn("Could not delete resume:", storageError); } } await apiClient.delete<UserModifyResponse>(`/users/${backendUserId}`); await deleteFirebaseUser(firebaseUser); toast({ title: "Account Deleted"}); router.push('/auth'); } catch (error) { toast({ title: "Deletion Failed", description: getErrorMessage(error), variant: "destructive" }); setIsLoggingOut(false); } }} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">Yes, delete account</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+            <AlertDialogContent><AlertDialogHeader><AlertDialogTitle className="flex items-center"><AlertTriangle className="mr-2 h-5 w-5 text-destructive" /> Are you absolutely sure?</AlertDialogTitle><AlertDialogDescription>This will permanently delete your account and all associated data.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={async () => { if (!backendUserId || !firebaseUser) { toast({ title: "Error", variant: "destructive" }); return; } setIsLoggingOut(true); try { if (currentUser?.resume) { try { await deleteObject(storageRef(storage, currentUser.resume)); } catch (storageError: any) { if (storageError.code !== 'storage/object-not-found') { /* Potential console.warn here was removed */ } } } await apiClient.delete<UserModifyResponse>(`/users/${backendUserId}`); await deleteFirebaseUser(firebaseUser); toast({ title: "Account Deleted"}); router.push('/auth'); } catch (error) { toast({ title: "Deletion Failed", description: getErrorMessage(error), variant: "destructive" }); setIsLoggingOut(false); } }} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">Yes, delete account</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
         </CardContent>
       </Card>
     </div>
   );
 }
-

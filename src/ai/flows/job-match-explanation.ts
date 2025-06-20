@@ -41,8 +41,6 @@ const getUserHistory = ai.defineTool(
   },
   async (input) => {
     // In a real application, this would fetch the user history from a database or external source
-    // based on the user identified by input.profile or a user ID derived from it.
-    console.log('Tool: getUserHistory called for profile summary starting with:', input.profile.substring(0, 50) + "...");
     // For now, return a placeholder. This data will be fed back to the LLM.
     return 'User History: Previously applied for "Software Engineer at TechCorp" (Outcome: Interviewed), "Product Manager at InnovateSolutions" (Outcome: Offer Declined).';
   }
@@ -89,4 +87,3 @@ const jobMatchExplanationFlow = ai.defineFlow(
     return output!;
   }
 );
-
