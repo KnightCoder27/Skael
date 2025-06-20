@@ -156,7 +156,7 @@ export default function AuthPage() {
         email: data.email,
         number: data.phoneNumber && data.phoneNumber.trim() !== "" ? data.phoneNumber : null,
         password: data.password,
-        has_agreed_terms: true, // This is true because validation passed
+        has_agreed_terms: data.agreeToTerms, // This is true because validation passed
       };
       const backendRegisterResponse = await apiClient.post<UserRegistrationResponse>('/users/', backendRegisterPayload);
 
@@ -439,8 +439,7 @@ export default function AuthPage() {
                  <div className="items-top flex space-x-2 pt-1">
                   <Checkbox
                     id="agreeToTerms"
-                    checked={registerForm.watch('agreeToTerms')}
-                    onCheckedChange={(checked) => registerForm.setValue('agreeToTerms', !!checked, { shouldValidate: true })}
+                    {...registerForm.register('agreeToTerms')}
                     className={registerForm.formState.errors.agreeToTerms ? 'border-destructive' : ''}
                   />
                   <div className="grid gap-1.5 leading-none">
@@ -449,11 +448,11 @@ export default function AuthPage() {
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                     >
                       I agree to the{" "}
-                      <Link href="#" onClick={(e) => {e.preventDefault(); toast({title: "Placeholder", description: "Link to Terms and Conditions page."})}} className="underline underline-offset-4 hover:text-primary">
+                      <Link href="/terms-and-conditions" target="_blank" className="underline underline-offset-4 hover:text-primary">
                         Terms and Conditions
                       </Link>{" "}
                       and{" "}
-                      <Link href="#" onClick={(e) => {e.preventDefault(); toast({title: "Placeholder", description: "Link to Privacy Policy page."})}} className="underline underline-offset-4 hover:text-primary">
+                      <Link href="/privacy-policy" target="_blank" className="underline underline-offset-4 hover:text-primary">
                         Privacy Policy
                       </Link>
                       .

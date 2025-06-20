@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { Compass, Briefcase, User, LogOut as LogOutIcon, LogIn, Menu } from 'lucide-react';
+import { Compass, Briefcase, User, LogOut as LogOutIcon, LogIn, Menu, DollarSign } from 'lucide-react'; // Added DollarSign
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
@@ -17,6 +17,7 @@ import { LoadingSpinner } from './loading-spinner';
 const navItemsLoggedIn = [
   { href: '/jobs', label: 'Job Listings', icon: Compass },
   { href: '/tracker', label: 'Application Tracker', icon: Briefcase },
+  { href: '/pricing', label: 'Pricing', icon: DollarSign }, // Added Pricing
   { href: '/profile', label: 'My Profile', icon: User },
 ];
 
@@ -116,8 +117,12 @@ export function Header() {
       );
     }
     else {
+      // For logged-out users, show Pricing link as well
       return (
-        <NavLink href="/auth" icon={LogIn}>Login / Register</NavLink>
+        <>
+          <NavLink href="/pricing" icon={DollarSign}>Pricing</NavLink>
+          <NavLink href="/auth" icon={LogIn}>Login / Register</NavLink>
+        </>
       );
     }
   };
