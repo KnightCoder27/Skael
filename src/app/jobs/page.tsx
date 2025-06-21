@@ -849,7 +849,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
   };
 
 
-  const isProfileIncompleteForAIFeatures = currentUser && (!currentUser.username || !currentUser.professional_summary || !currentUser.skills || currentUser.skills.length === 0);
+  const isProfileIncompleteForAIFeatures = currentUser && (!currentUser.username || currentUser.username.trim() === '' || !currentUser.professional_summary || currentUser.professional_summary.trim() === '' || !currentUser.skills || currentUser.skills.length === 0);
 
 
   if (isLoggingOut) return <FullPageLoading message="Logging out..." />;
