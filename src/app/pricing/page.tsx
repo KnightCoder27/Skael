@@ -2,7 +2,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { CheckCircle, Zap, TrendingUp, Rocket, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
