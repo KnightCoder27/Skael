@@ -851,16 +851,13 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
 
   const isProfileIncompleteForAIFeatures = (() => {
     if (!currentUser) {
-      // Don't show the banner if there is no user or while user is loading.
       return false;
     }
-
-    const usernameIsMissing = typeof currentUser.username !== 'string' || currentUser.username.trim() === '';
-    const summaryIsMissing = typeof currentUser.professional_summary !== 'string' || currentUser.professional_summary.trim() === '';
-    // Ensure skills is an array and has items.
+    const summaryIsMissing = !currentUser.professional_summary || currentUser.professional_summary.trim() === '';
     const skillsAreMissing = !Array.isArray(currentUser.skills) || currentUser.skills.length === 0;
-
-    return usernameIsMissing || summaryIsMissing || skillsAreMissing;
+    const countriesAreMissing = !Array.isArray(currentUser.countries) || currentUser.countries.length === 0;
+    const locationsAreMissing = !Array.isArray(currentUser.preferred_locations) || currentUser.preferred_locations.length === 0;
+    return summaryIsMissing || skillsAreMissing || countriesAreMissing || locationsAreMissing;
   })();
 
 
@@ -886,7 +883,7 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
           <ActivityIcon className="h-5 w-5 text-primary" />
           <AlertTitle className="font-semibold text-primary">Enhance Your Job Matches!</AlertTitle>
           <AlertDescription className="text-primary/80">
-            AI-powered match analysis and material generation require a complete profile (username, summary and skills). Some AI features may be limited.
+            AI-powered match analysis and material generation require a complete profile (summary, skills, countries, and locations). Some AI features may be limited.
             <Button variant="link" asChild className="p-0 h-auto ml-1 text-primary font-semibold">
               <Link href="/profile">Update your profile now.</Link>
             </Button>

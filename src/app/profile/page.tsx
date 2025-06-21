@@ -296,7 +296,7 @@ const DatePickerField: React.FC<{
             onChange(selectedDate ? format(selectedDate, "yyyy-MM-dd") : null);
             setOpen(false);
           }}
-          captionLayout="dropdown-buttons"
+          captionLayout="dropdown"
           components={{ Dropdown: CustomDropdown, CaptionLabel: EmptyCaptionLabel }}
           fromYear={calendarFromYear}
           toYear={calendarToYear}
@@ -308,7 +308,6 @@ const DatePickerField: React.FC<{
             caption_dropdowns: "flex flex-row items-center gap-x-2 mx-auto",
             nav_button_previous: cn(buttonVariants({ variant: "outline" }), "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100 absolute left-1 top-1/2 -translate-y-1/2"),
             nav_button_next: cn(buttonVariants({ variant: "outline" }), "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100 absolute right-1 top-1/2 -translate-y-1/2"),
-            dropdown: "rdp-dropdown bg-background text-foreground border border-input rounded-md px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring",
           }}
         />
       </PopoverContent>
