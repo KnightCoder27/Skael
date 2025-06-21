@@ -1,6 +1,7 @@
-
+import { Button } from "@/components/ui/button";
 import { Users, Target, Lightbulb, Zap } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 
 export default function AboutUsPage() {
   const lastUpdatedDate = "July 26, 2024"; // Placeholder date
