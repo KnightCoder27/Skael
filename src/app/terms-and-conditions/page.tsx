@@ -25,12 +25,14 @@ export default function TermsAndConditionsPage() {
         </p>
         <p>
           <strong>Definitions:</strong> For the purposes of these Terms and Conditions:
-          <ul>
-            <li><strong>"Service"</strong> refers to the Skael application and website.</li>
-            <li><strong>"User", "You", "Your"</strong> refers to you, the person log on this website and compliant to the Company’s terms and conditions.</li>
-            <li><strong>"Company", "Ourselves", "We", "Our", "Us"</strong> refers to Skael.</li>
-            <li><strong>"Content"</strong> refers to text, images, or other information that can be posted, uploaded, linked to or otherwise made available by You, regardless of the form of that content.</li>
-          </ul>
+        </p>
+        <ul>
+          <li><strong>"Service"</strong> refers to the Skael application and website.</li>
+          <li><strong>"User", "You", "Your"</strong> refers to you, the person log on this website and compliant to the Company’s terms and conditions.</li>
+          <li><strong>"Company", "Ourselves", "We", "Our", "Us"</strong> refers to Skael.</li>
+          <li><strong>"Content"</strong> refers to text, images, or other information that can be posted, uploaded, linked to or otherwise made available by You, regardless of the form of that content.</li>
+        </ul>
+        <p>
           [Add more definitions as necessary...]
         </p>
 
@@ -40,12 +42,14 @@ export default function TermsAndConditionsPage() {
         </p>
         <p>
           You must not:
-          <ul>
-            <li>Republish material from Skael</li>
-            <li>Sell, rent or sub-license material from Skael</li>
-            <li>Reproduce, duplicate or copy material from Skael</li>
-            <li>Redistribute content from Skael</li>
-          </ul>
+        </p>
+        <ul>
+          <li>Republish material from Skael</li>
+          <li>Sell, rent or sub-license material from Skael</li>
+          <li>Reproduce, duplicate or copy material from Skael</li>
+          <li>Redistribute content from Skael</li>
+        </ul>
+        <p>
           This Agreement shall begin on the date hereof.
         </p>
          <p>
@@ -76,11 +80,13 @@ export default function TermsAndConditionsPage() {
         <h2 className="text-2xl font-semibold text-primary mt-8 mb-3">5. Prohibited Uses</h2>
         <p>
           You may use the Service only for lawful purposes and in accordance with Terms. You agree not to use the Service:
-          <ul>
-            <li>In any way that violates any applicable national or international law or regulation.</li>
-            <li>For the purpose of exploiting, harming, or attempting to exploit or harm minors in any way by exposing them to inappropriate content or otherwise.</li>
-            <li>To transmit, or procure the sending of, any advertising or promotional material, including any "junk mail", "chain letter," "spam," or any other similar solicitation.</li>
-          </ul>
+        </p>
+        <ul>
+          <li>In any way that violates any applicable national or international law or regulation.</li>
+          <li>For the purpose of exploiting, harming, or attempting to exploit or harm minors in any way by exposing them to inappropriate content or otherwise.</li>
+          <li>To transmit, or procure the sending of, any advertising or promotional material, including any "junk mail", "chain letter," "spam," or any other similar solicitation.</li>
+        </ul>
+        <p>
           [Expand on prohibited uses, including system abuse, data scraping, etc.]
         </p>
 
@@ -128,11 +134,11 @@ export default function TermsAndConditionsPage() {
         <h2 className="text-2xl font-semibold text-primary mt-8 mb-3">11. Contact Us</h2>
         <p>
           If you have any questions about these Terms and Conditions, You can contact us:
-          <ul>
-            <li>By email: [Your Contact Email]</li>
-            <li>By visiting this page on our website: [Link to Your Contact Page]</li>
-          </ul>
         </p>
+        <ul>
+          <li>By email: [Your Contact Email]</li>
+          <li>By visiting this page on our website: [Link to Your Contact Page]</li>
+        </ul>
       </article>
     </div>
   );

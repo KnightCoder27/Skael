@@ -47,15 +47,17 @@ export default function PrivacyPolicyPage() {
         <h2 className="text-2xl font-semibold text-primary mt-8 mb-3">How We Use Your Information</h2>
         <p>
           We use the information we collect in various ways, including to:
-          <ul>
-            <li>Provide, operate, and maintain our website and services</li>
-            <li>Improve, personalize, and expand our website and services</li>
-            <li>Understand and analyze how you use our website and services</li>
-            <li>Develop new products, services, features, and functionality</li>
-            <li>Communicate with you, either directly or through one of our partners, including for customer service, to provide you with updates and other information relating to the website, and for marketing and promotional purposes</li>
-            <li>Send you emails</li>
-            <li>Find and prevent fraud</li>
-          </ul>
+        </p>
+        <ul>
+          <li>Provide, operate, and maintain our website and services</li>
+          <li>Improve, personalize, and expand our website and services</li>
+          <li>Understand and analyze how you use our website and services</li>
+          <li>Develop new products, services, features, and functionality</li>
+          <li>Communicate with you, either directly or through one of our partners, including for customer service, to provide you with updates and other information relating to the website, and for marketing and promotional purposes</li>
+          <li>Send you emails</li>
+          <li>Find and prevent fraud</li>
+        </ul>
+        <p>
           [Detailed content about how user information is used. For an AI job app, this would include job matching, resume generation, etc. Mention data processing for AI features.]
         </p>
 
@@ -121,11 +123,11 @@ export default function PrivacyPolicyPage() {
         <h2 className="text-2xl font-semibold text-primary mt-8 mb-3">Contact Us</h2>
         <p>
           If you have any questions about this Privacy Policy, You can contact us:
-          <ul>
-            <li>By email: [Your Contact Email]</li>
-            <li>By visiting this page on our website: [Link to Your Contact Page]</li>
-          </ul>
         </p>
+        <ul>
+          <li>By email: [Your Contact Email]</li>
+          <li>By visiting this page on our website: [Link to Your Contact Page]</li>
+        </ul>
       </article>
     </div>
   );
