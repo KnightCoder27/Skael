@@ -849,7 +849,19 @@ const performAiAnalysis = useCallback(async (jobToAnalyze: JobListing) => {
   };
 
 
-  const isProfileIncompleteForAIFeatures = currentUser && (!currentUser.username || currentUser.username.trim() === '' || !currentUser.professional_summary || currentUser.professional_summary.trim() === '' || !currentUser.skills || currentUser.skills.length === 0);
+  const isProfileIncompleteForAIFeatures = (() => {
+    if (!currentUser) {
+      // Don't show the banner if there is no user or while user is loading.
+      return false;
+    }
+
+    const usernameIsMissing = typeof currentUser.username !== 'string' || currentUser.username.trim() === '';
+    const summaryIsMissing = typeof currentUser.professional_summary !== 'string' || currentUser.professional_summary.trim() === '';
+    // Ensure skills is an array and has items.
+    const skillsAreMissing = !Array.isArray(currentUser.skills) || currentUser.skills.length === 0;
+
+    return usernameIsMissing || summaryIsMissing || skillsAreMissing;
+  })();
 
 
   if (isLoggingOut) return <FullPageLoading message="Logging out..." />;
